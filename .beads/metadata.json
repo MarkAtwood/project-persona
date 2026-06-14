@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "persona",
+  "project_id": "28eab239-6faa-40e8-92ab-4a95016c6735"
+}
