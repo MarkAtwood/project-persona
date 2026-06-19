@@ -1,12 +1,25 @@
 //! Attestor plugin trait and identity source implementations.
 
+pub mod did_key;
+pub mod fido2;
+pub mod goa;
+pub mod gpg;
 pub mod oidc;
+pub mod piv;
 pub mod ssh;
 pub mod tailscale;
 
+pub use did_key::DidKeyAttestor;
+pub use fido2::Fido2Attestor;
+pub use goa::GoaAttestor;
+pub use gpg::GpgAttestor;
 pub use oidc::OidcCachedAttestor;
+pub use piv::PivAttestor;
 pub use ssh::SshAgentAttestor;
 pub use tailscale::TailscaleAttestor;
+
+pub mod registry;
+pub use registry::probe_sources;
 
 use persona_core::{IdentityAssurance, PresenceLevel, SpiffeId};
 use std::fmt;
@@ -28,6 +41,25 @@ pub struct Claim {
     pub spiffe_id: SpiffeId,
     /// Human-readable display name, e.g. "mark@example.com".
     pub display_name: String,
+}
+
+impl Claim {
+    /// Construct a new [`Claim`].
+    pub fn new(
+        source: impl Into<String>,
+        assurance: IdentityAssurance,
+        presence: PresenceLevel,
+        spiffe_id: SpiffeId,
+        display_name: impl Into<String>,
+    ) -> Self {
+        Self {
+            source: source.into(),
+            assurance,
+            presence,
+            spiffe_id,
+            display_name: display_name.into(),
+        }
+    }
 }
 
 /// A signed cryptographic assertion produced by prove().

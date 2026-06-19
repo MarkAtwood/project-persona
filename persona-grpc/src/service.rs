@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use tonic::{Request, Response, Status};
 
-use persona_attestors::Attestor;
-use persona_core::{SvidSigner, TrustBundleStore};
+use persona_attestors::{Attestor, Claim};
+use persona_core::{AudienceExtensions, PresenceLevel, SvidSigner, TrustBundleStore};
 
 use crate::workload::{
     spiffe_workload_api_server::SpiffeWorkloadApi, JwtBundlesRequest, JwtBundlesResponse,
@@ -95,19 +95,160 @@ impl SpiffeWorkloadApi for WorkloadApiService {
         Ok(Response::new(Box::pin(stream)))
     }
 
-    // Stub — persona-rrv will implement JWT-SVID issuance
+    // persona-rrv: JWT-SVID issuance
     async fn fetch_jwtsvid(
         &self,
-        _req: Request<JwtsvidRequest>,
+        req: Request<JwtsvidRequest>,
     ) -> Result<Response<JwtsvidResponse>, Status> {
-        Err(Status::unimplemented("FetchJWTSVID not yet implemented"))
+        use crate::workload::Jwtsvid;
+
+        let req = req.into_inner();
+        if req.audience.is_empty() {
+            let reason = "audience must not be empty";
+            tracing::info!(event = "svid_denied", reason);
+            return Err(Status::invalid_argument(reason));
+        }
+
+        // Parse presence requirements from the first audience string.
+        let ext = AudienceExtensions::parse(&req.audience[0]).map_err(|e| {
+            let reason = e.to_string();
+            tracing::info!(event = "svid_denied", reason = %reason);
+            Status::invalid_argument(reason)
+        })?;
+
+        // Enumerate claims from all active attestors; pick highest assurance.
+        let mut best: Option<Claim> = None;
+        for attestor in &self.attestors {
+            match attestor.enumerate().await {
+                Ok(claims) => {
+                    for claim in claims {
+                        if best
+                            .as_ref()
+                            .map_or(true, |b| claim.assurance > b.assurance)
+                        {
+                            best = Some(claim);
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(name = attestor.name(), err = %e, "attestor enumerate failed");
+                }
+            }
+        }
+
+        let claim = best.ok_or_else(|| {
+            let reason = "no identity claims available";
+            tracing::info!(event = "svid_denied", reason);
+            Status::unauthenticated(reason)
+        })?;
+
+        // Check presence requirement.
+        if ext.require_presence > claim.presence {
+            let reason = format!(
+                "required presence level not satisfied (need {:?}, have {:?})",
+                ext.require_presence, claim.presence
+            );
+            tracing::info!(event = "svid_denied", reason = %reason);
+            return Err(Status::unauthenticated(reason));
+        }
+
+        // ponytail: timestamps as Unix seconds | upgrade to RFC 3339 strings when chrono added
+        let now_secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let present_until = now_secs + 300; // 5 min presence TTL
+
+        let persona_ext = serde_json::json!({
+            "root_trust_domain": claim.spiffe_id.trust_domain.to_string(),
+            "sources": [&claim.source],
+            "identity_assurance": claim.assurance.to_string(),
+            "presence": {
+                "present": claim.presence != PresenceLevel::None,
+                "attested_by": &claim.source,
+                "attested_at": now_secs,
+                "present_until": present_until,
+            },
+            "auth_methods": [&claim.source],
+        });
+
+        let spiffe_id_str = claim.spiffe_id.uri();
+        let audiences: Vec<&str> = req.audience.iter().map(String::as_str).collect();
+
+        let token = self
+            .signer
+            .sign_jwt_svid(&spiffe_id_str, &audiences, persona_ext)
+            .map_err(|e| {
+                let reason = e.to_string();
+                tracing::info!(event = "svid_denied", reason = %reason);
+                Status::internal(reason)
+            })?;
+
+        // ponytail: consumer_uid via SO_PEERCRED not yet plumbed through tonic | upgrade when tonic exposes peer creds
+        tracing::info!(
+            event = "svid_issued",
+            consumer_uid = "unknown",
+            spiffe_id = %spiffe_id_str,
+            source = %claim.source,
+            assurance = %claim.assurance,
+            presence = ?claim.presence,
+            audience = %req.audience[0],
+        );
+
+        Ok(Response::new(JwtsvidResponse {
+            svids: vec![Jwtsvid {
+                spiffe_id: spiffe_id_str,
+                svid: token,
+                hint: String::new(),
+            }],
+        }))
     }
 
+    // persona-t67: JWT-SVID validation
     async fn validate_jwtsvid(
         &self,
-        _req: Request<ValidateJwtsvidRequest>,
+        req: Request<ValidateJwtsvidRequest>,
     ) -> Result<Response<ValidateJwtsvidResponse>, Status> {
-        Err(Status::unimplemented("ValidateJWTSVID not yet implemented"))
+        use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
+
+        let req = req.into_inner();
+        if req.svid.is_empty() {
+            return Err(Status::invalid_argument("svid must not be empty"));
+        }
+
+        // Get the local trust bundle's public key for verification.
+        let pub_key_der = self.signer.public_key_der();
+        let decoding_key = DecodingKey::from_ec_der(pub_key_der);
+
+        let mut validation = Validation::new(Algorithm::ES256);
+        validation.set_audience(&[&req.audience]);
+
+        // Decode and validate: checks signature, exp, aud.
+        let token_data = decode::<serde_json::Value>(&req.svid, &decoding_key, &validation)
+            .map_err(|e| Status::invalid_argument(format!("JWT validation failed: {e}")))?;
+
+        let spiffe_id = token_data
+            .claims
+            .get("spiffe_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned();
+
+        if spiffe_id.is_empty() {
+            return Err(Status::invalid_argument("JWT missing spiffe_id claim"));
+        }
+
+        tracing::info!(
+            event = "svid_validated",
+            spiffe_id = %spiffe_id,
+            audience = %req.audience,
+        );
+
+        // ponytail: empty claims in ValidateJWTSVID response | upgrade to prost_types::Struct conversion when needed
+        Ok(Response::new(ValidateJwtsvidResponse {
+            spiffe_id,
+            claims: None,
+        }))
     }
 
     async fn fetch_witsvid(

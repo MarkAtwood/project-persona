@@ -67,6 +67,24 @@ The consumer-facing API is identical on every platform -- the SPIFFE Workload AP
 
 Implementation is a single Rust binary with `#[cfg]` feature flags per platform.
 
+## Installation
+
+### systemd (Linux)
+
+```bash
+# Build and install
+cargo install --path personad
+
+# Install user systemd units
+persona install-service
+
+# Enable and start
+systemctl --user enable --now personad
+
+# Verify
+persona whoami
+```
+
 ## Status
 
 Design phase. See DESIGN.md for the full technical design.

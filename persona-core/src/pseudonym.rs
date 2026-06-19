@@ -26,10 +26,46 @@ pub fn derive_pseudonym(ikm: &[u8], trust_domain: &str, consumer_app_id: &str) -
 mod tests {
     use super::*;
 
-    // NOTE: Full cross-validated test vectors (openssl kdf -kdfopt digest:SHA2-256 ...) are
-    // TODO: compute via `openssl kdf` once OpenSSL 3.x KDF CLI is available in CI and hardcode
-    // the hex here.  Until then the tests below verify correctness properties that do not
-    // require an external oracle.
+    #[test]
+    fn known_vector_v1() {
+        // oracle: python3 -c "
+        // from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+        // from cryptography.hazmat.primitives import hashes
+        // hkdf = HKDF(algorithm=hashes.SHA256(), length=32,
+        //             salt=b'example.com', info=b'com.example.app')
+        // print(hkdf.derive(b'secret-ikm').hex())"
+        let got = derive_pseudonym(b"secret-ikm", "example.com", "com.example.app");
+        assert_eq!(
+            got,
+            "219792b31e1c5054b9dd68b70a7f94320098a61b2f8481915828aafd5aec7be0"
+        );
+    }
+
+    #[test]
+    fn known_vector_v2() {
+        // oracle: python3 -c "
+        // hkdf = HKDF(algorithm=hashes.SHA256(), length=32,
+        //             salt=b'tailscale', info=b'com.example.app')
+        // print(hkdf.derive(b'secret-ikm').hex())"
+        let got = derive_pseudonym(b"secret-ikm", "tailscale", "com.example.app");
+        assert_eq!(
+            got,
+            "e7464bdc10f6fc78c94c3fab9bbb044506f2662fdfdc6b1d53f69f038804fa91"
+        );
+    }
+
+    #[test]
+    fn known_vector_v3() {
+        // oracle: python3 -c "
+        // hkdf = HKDF(algorithm=hashes.SHA256(), length=32,
+        //             salt=b'example.com', info=b'com.app.one')
+        // print(hkdf.derive(b'ikm').hex())"
+        let got = derive_pseudonym(b"ikm", "example.com", "com.app.one");
+        assert_eq!(
+            got,
+            "157b585e2f388f205942c9c2b53c47fef0e07f8e4f20bc44d29bbdcea2c0ae22"
+        );
+    }
 
     #[test]
     fn output_is_64_hex_chars() {

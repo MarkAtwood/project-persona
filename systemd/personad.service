@@ -1,0 +1,14 @@
+[Unit]
+Description=Persona identity daemon (SPIFFE Workload API)
+After=tailscaled.service
+Documentation=https://github.com/persona-id/persona
+
+[Service]
+Type=simple
+ExecStart=%h/.cargo/bin/personad
+Restart=on-failure
+RestartSec=5
+Environment=RUST_LOG=info
+
+[Install]
+WantedBy=default.target

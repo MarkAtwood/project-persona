@@ -13,6 +13,21 @@ pub struct TrustBundle {
     pub jwt_authorities: serde_json::Value,
 }
 
+impl TrustBundle {
+    /// Construct a new [`TrustBundle`].
+    pub fn new(
+        trust_domain: TrustDomain,
+        x509_authorities: Vec<Vec<u8>>,
+        jwt_authorities: serde_json::Value,
+    ) -> Self {
+        Self {
+            trust_domain,
+            x509_authorities,
+            jwt_authorities,
+        }
+    }
+}
+
 /// Thread-safe store of trust bundles keyed by trust domain.
 ///
 /// Populated at daemon startup from the local CA key and any federated sources.

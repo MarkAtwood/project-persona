@@ -5,12 +5,14 @@ members = [
     "persona-grpc",
     "personad",
     "persona",
+    "persona-nmh",
 ]
 resolver = "2"
 
 [workspace.package]
 edition = "2021"
 version  = "0.1.0"
+rust-version = "1.75"
 
 [workspace.dependencies]
 persona-core     = { path = "persona-core" }
@@ -33,6 +35,8 @@ serde_json         = "1"
 base64             = "0.22"
 
 libc              = "0.2"
+tower             = "0.4"
+hyper-util        = "0.1"
 
 # Cryptography
 ring              = "0.17"

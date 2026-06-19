@@ -1,5 +1,86 @@
 //! personad — human identity daemon, SPIFFE Workload API.
 
-fn main() {
-    println!("personad starting");
+use std::{path::PathBuf, sync::Arc};
+
+use anyhow::Context;
+use persona_attestors::registry::probe_sources;
+use persona_core::{SvidSigner, TrustBundle, TrustBundleStore, TrustDomain};
+use persona_grpc::{server, service::WorkloadApiService};
+use tokio::signal::unix::{signal, SignalKind};
+use tracing::info;
+
+// ponytail: localhost HTTP gateway stub | upgrade path: axum with rustls, JWT endpoint,
+//   SO_PEERCRED analog via Origin header, enrolled origins allowlist
+async fn maybe_start_http_gateway() {
+    // HTTP gateway not yet implemented in this version.
+    // Browser consumers should use the native messaging host instead.
+    tracing::debug!("http gateway: stub, not started");
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::from_default_env()
+                .add_directive(tracing::Level::INFO.into()),
+        )
+        .init();
+
+    info!("personad starting");
+
+    // Ephemeral CA keypair — never persisted
+    let signer = Arc::new(SvidSigner::new().context("failed to generate signing keypair")?);
+
+    // Trust bundle store: seed with our local CA public key
+    let bundles = Arc::new(TrustBundleStore::new());
+    // ponytail: hardcoded local trust domain | upgrade to configurable trust domain per SPEC-HIA §Trust Domain Model
+    let local_bundle = TrustBundle::new(
+        TrustDomain::SshLocal,
+        vec![signer.public_key_der().to_vec()],
+        serde_json::json!({ "keys": [] }),
+    );
+    bundles.upsert(local_bundle);
+
+    // Probe identity sources
+    let attestors = probe_sources().await;
+
+    maybe_start_http_gateway().await;
+
+    // Build gRPC service
+    let service = WorkloadApiService::new(Arc::clone(&signer), Arc::clone(&bundles), attestors);
+
+    // Determine socket path: /run/user/{uid}/persona/workload.sock
+    let uid = unsafe { libc::getuid() };
+    let socket_path = PathBuf::from(format!("/run/user/{uid}/persona/workload.sock"));
+
+    info!(?socket_path, "binding SPIFFE Workload API socket");
+
+    // Signal handling: SIGTERM and SIGINT trigger graceful shutdown
+    let mut sigterm = signal(SignalKind::terminate()).context("SIGTERM handler")?;
+    let mut sigint = signal(SignalKind::interrupt()).context("SIGINT handler")?;
+
+    let socket_path_cleanup = socket_path.clone();
+    tokio::select! {
+        result = server::serve(&socket_path, service) => {
+            if let Err(e) = result {
+                tracing::error!(err = %e, "server error");
+                return Err(anyhow::anyhow!("{e}"));
+            }
+        }
+        _ = sigterm.recv() => {
+            info!("received SIGTERM, shutting down");
+        }
+        _ = sigint.recv() => {
+            info!("received SIGINT, shutting down");
+        }
+    }
+
+    // Clean up socket file
+    if socket_path_cleanup.exists() {
+        let _ = std::fs::remove_file(&socket_path_cleanup);
+        info!("socket removed");
+    }
+
+    info!("personad stopped");
+    Ok(())
 }

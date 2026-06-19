@@ -173,4 +173,54 @@ mod tests {
         let sig = signer.sign_raw(msg).unwrap();
         assert!(!sig.is_empty());
     }
+
+    #[test]
+    fn jwt_svid_claims_are_correct() {
+        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+
+        let signer = SvidSigner::new().unwrap();
+        let spiffe_id = "spiffe://example.org/workload";
+        let audience = "api.example.org";
+        let persona_val = serde_json::json!({"level": "asserted"});
+
+        let token = signer
+            .sign_jwt_svid(spiffe_id, &[audience], persona_val.clone())
+            .unwrap();
+
+        let parts: Vec<&str> = token.split('.').collect();
+        assert_eq!(parts.len(), 3);
+
+        let payload_json = URL_SAFE_NO_PAD.decode(parts[1]).unwrap();
+        let claims: serde_json::Value = serde_json::from_slice(&payload_json).unwrap();
+
+        assert_eq!(claims["sub"].as_str().unwrap(), spiffe_id);
+        assert!(
+            claims["aud"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|v| v.as_str() == Some(audience)),
+            "audience not found in aud claim"
+        );
+        assert!(
+            claims["exp"].as_u64().unwrap() > claims["iat"].as_u64().unwrap(),
+            "exp must be after iat"
+        );
+        assert_eq!(claims["spiffe_id"].as_str().unwrap(), spiffe_id);
+        assert_eq!(claims["persona"], persona_val);
+    }
+
+    #[test]
+    fn sign_raw_verifies_with_ring() {
+        use ring::signature::{UnparsedPublicKey, ECDSA_P256_SHA256_FIXED};
+
+        let signer = SvidSigner::new().unwrap();
+        let msg = b"hello persona";
+        let sig = signer.sign_raw(msg).unwrap();
+
+        let pub_key = UnparsedPublicKey::new(&ECDSA_P256_SHA256_FIXED, signer.public_key_der());
+        pub_key
+            .verify(msg, &sig)
+            .expect("signature verification failed");
+    }
 }
