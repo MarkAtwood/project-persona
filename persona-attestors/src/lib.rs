@@ -1,5 +1,13 @@
 //! Attestor plugin trait and identity source implementations.
 
+pub mod oidc;
+pub mod ssh;
+pub mod tailscale;
+
+pub use oidc::OidcCachedAttestor;
+pub use ssh::SshAgentAttestor;
+pub use tailscale::TailscaleAttestor;
+
 use persona_core::{IdentityAssurance, PresenceLevel, SpiffeId};
 use std::fmt;
 

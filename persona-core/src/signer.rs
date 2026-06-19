@@ -66,13 +66,15 @@ impl SvidSigner {
         let rng = SystemRandom::new();
         let pkcs8 = EcdsaKeyPair::generate_pkcs8(&ECDSA_P256_SHA256_FIXED_SIGNING, &rng)?;
         let pkcs8_der = pkcs8.as_ref().to_vec();
-        let key_pair = EcdsaKeyPair::from_pkcs8(
-            &ECDSA_P256_SHA256_FIXED_SIGNING,
-            pkcs8.as_ref(),
-            &rng,
-        )?;
+        let key_pair =
+            EcdsaKeyPair::from_pkcs8(&ECDSA_P256_SHA256_FIXED_SIGNING, pkcs8.as_ref(), &rng)?;
         let public_key_der = key_pair.public_key().as_ref().to_vec();
-        Ok(Self { key_pair, rng, public_key_der, pkcs8_der })
+        Ok(Self {
+            key_pair,
+            rng,
+            public_key_der,
+            pkcs8_der,
+        })
     }
 
     /// DER-encoded public key for JWKS / trust-bundle publication.

@@ -58,8 +58,7 @@ impl AudienceExtensions {
         if let Some(q) = query {
             for param in q.split('&').filter(|s| !s.is_empty()) {
                 if let Some(val) = param.strip_prefix("persona_require_presence=") {
-                    require_presence = PresenceLevel::from_str(val)
-                        .unwrap_or(PresenceLevel::None);
+                    require_presence = PresenceLevel::from_str(val).unwrap_or(PresenceLevel::None);
                 } else if let Some(val) = param.strip_prefix("persona_max_age=") {
                     max_age_secs = Some(
                         val.parse::<u64>()
@@ -120,28 +119,22 @@ mod tests {
 
     #[test]
     fn unknown_presence_level_defaults_to_none() {
-        let ext = AudienceExtensions::parse(
-            "https://example.com?persona_require_presence=biometric",
-        )
-        .unwrap();
+        let ext =
+            AudienceExtensions::parse("https://example.com?persona_require_presence=biometric")
+                .unwrap();
         assert_eq!(ext.require_presence, PresenceLevel::None);
     }
 
     #[test]
     fn invalid_max_age_returns_error() {
-        let err = AudienceExtensions::parse(
-            "https://example.com?persona_max_age=notanumber",
-        )
-        .unwrap_err();
+        let err = AudienceExtensions::parse("https://example.com?persona_max_age=notanumber")
+            .unwrap_err();
         assert!(matches!(err, AudienceParseError::InvalidMaxAge(_)));
     }
 
     #[test]
     fn only_persona_params_no_other_query() {
-        let ext = AudienceExtensions::parse(
-            "https://example.com?persona_max_age=60",
-        )
-        .unwrap();
+        let ext = AudienceExtensions::parse("https://example.com?persona_max_age=60").unwrap();
         assert_eq!(ext.audience, "https://example.com");
         assert_eq!(ext.max_age_secs, Some(60));
     }

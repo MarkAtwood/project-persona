@@ -113,8 +113,7 @@ mod tests {
 
     #[test]
     fn chrome_extension_selector_key() {
-        let key =
-            ConsumerIdentity::ChromeExtension("aabbccddeeffgghh".into()).selector_key();
+        let key = ConsumerIdentity::ChromeExtension("aabbccddeeffgghh".into()).selector_key();
         assert_eq!(key, "chrome_extension:id:aabbccddeeffgghh");
     }
 

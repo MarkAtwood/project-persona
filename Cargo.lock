@@ -761,7 +761,10 @@ name = "persona-attestors"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "base64",
  "persona-core",
+ "serde_json",
+ "sha2",
  "thiserror",
  "tokio",
  "tracing",
@@ -785,13 +788,17 @@ dependencies = [
 name = "persona-grpc"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "persona-attestors",
  "persona-core",
  "prost",
  "prost-types",
  "rustls",
+ "serde_json",
+ "sha2",
  "thiserror",
  "tokio",
+ "tokio-stream",
  "tonic",
  "tonic-build",
  "tracing",

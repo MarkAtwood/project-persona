@@ -35,7 +35,10 @@ mod tests {
     fn output_is_64_hex_chars() {
         let out = derive_pseudonym(b"ikm", "example.com", "com.example.app");
         assert_eq!(out.len(), 64, "expected 64 hex chars, got {}", out.len());
-        assert!(out.chars().all(|c| c.is_ascii_hexdigit()), "not lowercase hex: {out}");
+        assert!(
+            out.chars().all(|c| c.is_ascii_hexdigit()),
+            "not lowercase hex: {out}"
+        );
     }
 
     #[test]
