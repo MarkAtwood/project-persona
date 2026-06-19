@@ -1,0 +1,2 @@
+cargo:rerun-if-changed=../proto/spiffe/workload/workload.proto
+cargo:rerun-if-changed=../proto

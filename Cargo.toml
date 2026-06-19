@@ -21,7 +21,16 @@ thiserror          = "2"
 anyhow             = "1"
 tokio              = { version = "1", features = ["full"] }
 tonic              = "0.12"
+tonic-build        = "0.12"
 prost              = "0.13"
 tracing            = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 serde              = { version = "1", features = ["derive"] }
+
+# Cryptography
+ring              = "0.17"
+hkdf              = "0.12"
+sha2              = "0.10"
+rustls            = { version = "0.23", default-features = false, features = ["ring"] }
+x509-cert         = "0.2"
+jsonwebtoken      = "9"
