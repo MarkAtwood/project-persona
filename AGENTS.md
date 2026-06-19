@@ -36,49 +36,104 @@ cp -rf source dest          # NOT: cp -r source dest
 - `apt-get` - use `-y` flag
 - `brew` - use `HOMEBREW_NO_AUTO_UPDATE=1` env var
 
-<!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
+## Project Context
+
+personad is a **user-session daemon** that federates heterogeneous human-identity sources behind the standard SPIFFE Workload API socket. It is "SPIRE for humans": a local daemon that answers "who is the person at this workstation and how confident are we they are physically present?" CLI is `persona`, daemon is `personad`. No new wire protocol -- consumers call `FetchJWTSVID` / `FetchX509SVIDs` on the local socket and get standard SPIFFE SVIDs. Any SPIFFE-aware client works unmodified.
+
+Read `~/PROJECT/SPEC-HIA.md` before making design changes -- it is the authoritative spec.
+
+## Before Writing Code
+
+For any task touching more than 3 files or requiring more than a few steps:
+1. File a Beads epic and break it into issues
+2. Write a plan and get approval before touching code
+3. Work through issues one at a time, using parallel subagents within each issue
+
+## Crate Boundaries
+
+| Crate | What belongs here |
+|---|---|
+| `personad` | Daemon binary: socket listener, startup, signal handling, systemd/launchd integration |
+| `persona` | CLI binary: `persona whoami`, `persona enumerate`, `persona fetch-jwt`, etc. |
+| `persona-core` | Shared types: SPIFFE ID schema, assurance levels (`iaa1`/`iaa2`/`iaa3`), presence model (`none`/`session`/`software`/`hardware`), trust domain model |
+| `persona-attestors` | Attestor plugin trait (`enumerate`/`prove`/`freshness`) + implementations: tailscale, fido2, piv, oidc, ssh-agent, gpg, did, secure-enclave, windows-hello, gnome-online-accounts |
+| `persona-grpc` | SPIFFE Workload API gRPC server: `FetchX509SVIDs`, `FetchX509Bundles`, `FetchJWTSVID`, `FetchJWTBundles`, `ValidateJWTSVID` |
+
+**No gRPC outside `persona-grpc`. No platform-specific attestation outside `persona-attestors`. No `unsafe`.**
+
+## Key Design Decisions
+
+**Standard SPIFFE Workload API.** The gRPC service implements the upstream SPIFFE proto definitions (`spiffe.api.agent.v1`). No custom wire protocol. Any SPIFFE client library (go-spiffe, rust-spiffe, java-spiffe, py-spiffe) works against personad unmodified.
+
+**Per-audience pseudonymity.** The default SPIFFE ID exposed to a consumer is an HKDF-derived pseudonym: `spiffe://{trust-domain}/pseudonym/{hkdf-id}/for/{consumer-app-id}`. Consumers get stable identifiers that cannot be correlated across apps without explicit user consent. Derivation uses `HKDF-SHA256(ikm=root_identity_key, salt=trust_domain, info=consumer_app_id)`.
+
+**Attestor plugin architecture.** Each identity source is a plugin implementing three methods: `enumerate()` discovers available claims, `prove(claim, challenge)` produces a signed assertion, `freshness(claim)` checks liveness. Plugins are loaded at startup based on platform availability. Missing sources are logged and skipped, never fatal.
+
+**Consumer authentication via OS process attestation.** On each API call, personad attests the calling process: `SO_PEERCRED` on Linux, `LOCAL_PEERCRED` on macOS, `GetNamedPipeClientProcessId` on Windows. The consumer's verified identity drives pseudonym derivation.
+
+**No persistent storage.** personad is a normalizer, not a vault. Any data it caches is wiped on session end. It holds no secrets that are not already held by the underlying identity source.
+
+**Cryptography via ring and rustls.** TLS on the gRPC socket via `rustls`. SVID signing (X.509, JWT, ECDSA P-256/P-384) and HKDF derivation via `ring`. Algorithm primitives via RustCrypto crates as needed.
+
+## Code Conventions
+
+- Rust, edition 2021
+- `#[non_exhaustive]` on all public enums
+- Types from `jmap-chat-types` / `jmap-types` are constructed via serde (`serde_json::from_value` pattern) -- do NOT add `new()` constructors to upstream types
+- Error handling: `thiserror` for library crates (`persona-core`, `persona-attestors`, `persona-grpc`), `anyhow` for binaries (`personad`, `persona`)
+- Async runtime: `tokio`
+- gRPC framework: `tonic`
+- Tests: `cargo test`, no external test harnesses
+- Platform-specific code behind `#[cfg]` feature flags, not runtime detection
+
+## Quality Gate (run before every commit)
+
+```bash
+cargo fmt --all
+cargo clippy --all-features -- -D warnings
+cargo test
+```
+
+All three must pass clean. If `cargo fmt` changes files, stage and include those changes in the commit.
+
+## Test Integrity
+
+**Never cheat on tests.** No exceptions.
+
+- Failing test -> fix the code, not the test
+- Never hardcode a value derived from running the code under test
+- Never mock an attestor or socket call just to make the test green unless the test is explicitly a unit test of a higher layer
+- If a fix is out of scope, escalate rather than papering over it
+
+**Auth rejection must be tested.** For every authorized path, there must be a test that an unattested or wrong-identity consumer is rejected.
+
+## Related Projects
+
+| Project | Location | Relationship |
+|---|---|---|
+| kith | `~/PROJECT/kith/` | First consumer of personad. kithd replaces Tailscale WhoIs with `FetchJWTSVID` on the persona socket. |
+| moot | `~/PROJECT/moot/` | Second JMAP Chat implementation (Python). Future personad consumer. |
+| jmap-chat-types | crates.io | Mark's crate. Shared JMAP Chat wire types. |
+| jmap-types | crates.io | Mark's crate. Base JMAP types. |
+| SPEC-HIA.md | `~/PROJECT/SPEC-HIA.md` | Authoritative design spec for personad. |
+
 ## Beads Issue Tracker
 
-This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.
-
-### Quick Reference
+This project uses **bd (beads)** for issue tracking. Run `bd prime` for full workflow context.
 
 ```bash
 bd ready              # Find available work
 bd show <id>          # View issue details
-bd update <id> --claim  # Claim work
+bd update <id> --claim  # Claim work atomically
 bd close <id>         # Complete work
+bd dolt push          # Push beads data to remote
 ```
 
-### Rules
+**Beads is the only task and planning tool.** Do NOT use:
+- TodoWrite / markdown TODO lists
+- Scratchpad or audit files (`audit-*.md`, `plan-scratch.md`, or any similar throwaway planning file)
+- MEMORY.md or any other markdown file as a knowledge store
 
-- Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
-- Run `bd prime` for detailed command reference and session close protocol
-- Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
-
-## Session Completion
-
-**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
-
-**MANDATORY WORKFLOW:**
-
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
-   ```bash
-   git pull --rebase
-   bd dolt push
-   git push
-   git status  # MUST show "up to date with origin"
-   ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
-
-**CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If push fails, resolve and retry until it succeeds
-<!-- END BEADS INTEGRATION -->
+The only permitted markdown planning artifact is a crate's `PLAN.md`, which is a permanent
+design document checked into the repo -- not a scratchpad. Use `bd remember` for persistent
+knowledge and `bd create` for all task tracking.

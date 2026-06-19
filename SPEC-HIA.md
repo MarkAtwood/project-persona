@@ -1,0 +1,825 @@
+# SPEC-HIA: Human Identity Agent (personad)
+
+**Status:** Draft
+**Date:** 2026-04-28
+
+---
+
+## Problem
+
+SPIFFE/SPIRE solves workload identity: a daemon on the host that attests "this process is service X running in context Y" and issues short-lived cryptographic credentials. Applications call the Workload API on a local socket and get an SVID. No passwords, no long-lived secrets, no out-of-band enrollment.
+
+There is no equivalent for human users.
+
+The question "who is the person operating this workstation, and how confident are we that they are physically present right now?" has no standard local API answer. Every application invents its own answer from whichever signals it happens to have access to — the OS login session, a browser cookie, a Tailscale node, a cached OIDC token — without a common format, provenance model, or consumer authentication discipline.
+
+**SPIFFE/SPIRE for humans** is the missing piece: a user-session daemon that federates heterogeneous human-identity sources behind the existing SPIFFE Workload API socket. Apps stop caring whether the user's identity comes from Tailscale, Windows Hello, a work IdP, a DID, or a PIV smartcard. They call `FetchJWTSVID` on the local socket, they get a verifiable credential, and they can reason about provenance and assurance without knowing anything about the source.
+
+### Why SPIFFE is the right shape (not just an analogy)
+
+Every SPIFFE component maps directly to something the human-identity problem already needs:
+
+| SPIFFE concept | Human identity meaning |
+|---|---|
+| Trust domain | Identity source (tailnet, work IdP, personal DID, ...) |
+| SPIFFE ID URI | Structured, provenance-carrying identifier |
+| Workload API socket | Single local socket for all consumers |
+| X.509-SVID | mTLS identity (walk into a service mesh) |
+| JWT-SVID | HTTP bearer (OIDC-shaped, works with any RP) |
+| Workload attestation | App attestation: who is asking, and what is it allowed to see |
+| Trust bundle distribution | How federated trust roots are published |
+| SVID rotation | Short-lived assertions, automatic refresh |
+
+Nothing in this design requires changes to the SPIFFE spec. The SPIFFE Workload API is implemented as-is; only the attestor plugins are new.
+
+This is a deliberate strategic choice. By presenting the standard SPIFFE Workload API — a CNCF standard with gRPC proto definitions, client libraries in Go/Java/Python/Rust, and production deployment in every major service mesh — `personad` inherits the entire SPIFFE ecosystem. Any SPIFFE-aware consumer works unmodified. Any objection to the API is an objection to a CNCF standard, not to this project. Any platform that wants a different answer can implement the same API themselves.
+
+---
+
+## Daemon: `personad`
+
+**CLI:** `persona`
+**Socket (Linux/macOS):** `/run/user/{uid}/persona/workload.sock` (gRPC, SPIFFE Workload API)
+**Socket (Windows):** Named pipe `\\.\pipe\persona-workload-{sid}`
+**Localhost HTTP gateway:** `127.0.0.1:2443` (for browser native-messaging bridge)
+**User systemd unit (Linux):** `persona.service`
+**LaunchAgent (macOS):** `personal.atwood.persona`
+**Windows user-mode service:** `PersonaIdentityAgent`
+
+Storage: nothing persistent that isn't already persistent in the underlying source. `personad` is a normaliser, not a vault. Any data it caches is wiped on session end.
+
+---
+
+## SPIFFE ID Schema for Human Identity
+
+### Provenance in the URI
+
+SPIFFE IDs encode the identity source in the path, making provenance explicit and machine-readable:
+
+```
+spiffe://{trust-domain}/user/{sub}/via/{source}
+```
+
+Examples:
+```
+spiffe://example.com/user/mark/via/google-workspace
+spiffe://tailscale/user/mark@example.com/node/heft
+spiffe://personal.atwood/identity/mark/attested-by/onlykey
+spiffe://example.com/user/mark/via/piv-smartcard
+```
+
+A consumer that accepts `spiffe://example.com/**` is trusting the example.com trust domain (backed by example.com's Google Workspace). A consumer that additionally accepts `spiffe://tailscale/**` is widening its trust to include Tailscale-network identity. Each trust domain is independent.
+
+### Pseudonymous IDs (per-audience)
+
+The default SPIFFE ID exposed to a consumer is **not** the root identity. It is a stable opaque pseudonym derived deterministically from the (consumer-app-identity, root-identity) pair:
+
+```
+spiffe://{trust-domain}/pseudonym/{hkdf-derived-opaque-id}/for/{consumer-app-id}
+```
+
+The consumer gets a stable identifier that it can correlate across sessions with this user, but cannot correlate with any other consumer's identifier. Linkability across consumers requires explicit user consent. This is Apple's Sign-In-with-Apple model lifted into the SPIFFE ID path.
+
+The pseudonym is derived via HKDF:
+```
+pseudonym = HKDF-SHA256(
+    ikm = root_identity_key,
+    salt = trust_domain,
+    info = consumer_app_id
+)
+```
+
+A consumer that presents a specific audience claim in `FetchJWTSVID` triggers derivation of its pseudonym. A consumer with elevated scope (granted by the user at enrollment) can request the full-provenance ID.
+
+---
+
+## Trust Domain Model
+
+Each identity source on the desktop publishes into a different trust domain. `personad` maintains a trust bundle for each:
+
+| Trust domain | Backing authority | Verification |
+|---|---|---|
+| `tailscale` | Tailscale coordination server | Tailscale LocalAPI `Status`; node keypair |
+| `{org}.com` | Org's OIDC/SAML IdP | OIDC ID token; JWKS from IdP |
+| `personal.{user}` | User's DID document | `did:key`, `did:ipfs`, or `did:web` resolution |
+| `piv.{issuer}` | PIV/CAC certificate chain | Certificate path validation to issuing CA |
+| `ssh.local` | SSH agent (locally trusted) | Agent-signed challenge; weak assurance |
+| `pgp.local` | GPG key | Signed challenge; assurance depends on key custody |
+
+SPIFFE Federation handles cross-domain trust bundle distribution for any of these that need to be accepted by remote relying parties.
+
+---
+
+## Sources (Attestor Plugins)
+
+Each source implements a plugin interface: `enumerate()`, `prove(claim, challenge)`, `freshness(claim)`. Sources are loaded at startup based on what is available on the platform.
+
+### Day-One Sources
+
+**tailscale**
+- Method: LocalAPI on `/var/run/tailscale/tailscaled.sock`
+- Returns: `UserProfile.LoginName` (email), display name, node name, tailnet
+- Assurance: `iaa2` — verified by Tailscale's IdP (Google/GitHub/OIDC)
+- Presence: none (network identity, not physical presence)
+- Notes: tailscaled must be running; automatic re-attest on `tailscale status` change
+
+**windows-hello** (Windows)
+- Method: `Windows.Security.Credentials.KeyCredentialManager`
+- Returns: TPM-backed attestation that the user authenticated with Hello (PIN or biometric) and when
+- Assurance: `iaa3`, presence: `hardware`
+- Notes: presence expires on configurable TTL; re-challenge triggers Hello prompt
+
+**secure-enclave** (macOS)
+- Method: `LocalAuthentication` + `CryptoTokenKit`; TouchID or Face ID as platform FIDO2 authenticator
+- Returns: Secure Enclave-backed assertion with timestamp
+- Assurance: `iaa3`, presence: `hardware`
+
+**fido2** (Linux, cross-platform)
+- Method: `libfido2`; USB/NFC hardware authenticator
+- Returns: authenticator data including UP bit, timestamp
+- Assurance: `iaa3`, presence: `hardware`
+- Notes: UP bit proves physical touch; UV bit (biometric on the key itself) optionally required
+
+**piv-smartcard** (cross-platform)
+- Method: PKCS#11 via standard slot; PIV/CAC/YubiKey PIV application
+- Returns: X.509 certificate (may include UPN, email, DOD EDIPI); signed challenge
+- Assurance: `iaa3` if card is hardware-bound and PIN is required; presence depends on PIN mode
+
+**gnome-online-accounts** (Linux/GNOME)
+- Method: DBus `org.gnome.OnlineAccounts`
+- Returns: Google/Microsoft/Nextcloud OIDC tokens for the primary GNOME account
+- Assurance: `iaa2`; presence: `session` (token may be stale)
+
+**oidc-cached**
+- Method: OIDC ID token from OS keychain (stored by prior browser login, `gcloud`, `az`, etc.)
+- Returns: `sub`, `email`, `iss`, `exp` from cached token
+- Assurance: `iaa2` if token is non-expired; `iaa1` if expired (identity only, unverified freshness)
+- Notes: staleness is explicit in the claim; the token is not refreshed on behalf of the consumer
+
+**ssh-agent**
+- Method: SSH agent protocol via `SSH_AUTH_SOCK`; sign a challenge with each key in the agent
+- Returns: public key fingerprint; signed challenge
+- Assurance: `iaa1` (self-asserted; key custody is assumed)
+- Notes: useful for developer tooling that trusts SSH keys
+
+**gpg**
+- Method: `gpg-agent` via its socket; sign a challenge with the primary key
+- Returns: fingerprint, UID(s), signed challenge
+- Assurance: `iaa1` (self-asserted)
+
+**did-self** (`did:key`, `did:ipfs`, `did:web`)
+- Method: resolve DID document; sign challenge with controlled key
+- Returns: DID, verification method, signed assertion
+- Assurance: `iaa1` for `did:key` (self-issued); `iaa2` for `did:web` if the DID document is hosted under a domain the user controls
+
+### Day-Two Sources
+
+**aws-sso** — active `aws sso login` session in `~/.aws/sso/cache`
+**gcloud** — `gcloud auth print-identity-token` for the active account
+**az** — `az account get-access-token` for the active subscription
+**bitwarden** — unlocked Bitwarden vault's identity item (requires Bitwarden CLI unlock)
+**kerberos** — valid TGT from `klist`; Kerberos principal as identity claim
+
+### Explicitly Out of Scope (v1)
+
+Browser cookie jars — per-origin OIDC session extraction from a live browser. High privacy sensitivity; enumeration model is not well-defined. Deferred to v2; bridge via native messaging instead.
+
+---
+
+## Consumer Authentication (App Attestation)
+
+**This is the security-critical decision.** If any process in the user session can call the socket without identification, then malware can enumerate the user's identities. The solution is per-consumer pseudonymity keyed off verified app identity.
+
+On each `FetchJWTSVID` or `FetchX509SVID` call, `personad` attests the calling process and derives the pseudonym for that consumer. The user never sees a global identifier leave the daemon; each consumer gets its own.
+
+| Platform | Attestation mechanism | Consumer ID |
+|---|---|---|
+| Linux | `SO_PEERCRED` (uid/pid) → `/proc/{pid}/exe` → binary hash → AppArmor/SELinux label → Flatpak/Snap app ID | Binary hash or app ID |
+| macOS | `LOCAL_PEERCRED` → audit token → `SecCodeCopyGuestWithAttributes` → signing identity | Bundle ID + Team ID |
+| Windows | `GetNamedPipeClientProcessId` → EXE signing certificate → MSIX Package Family Name | Package Family Name or EXE signer |
+| Browser (native messaging) | Chrome/Firefox native messaging — origin-bound; the declaring manifest extension specifies allowed origins | Extension ID + origin |
+
+The SPIFFE selector model (`unix:uid`, `unix:path`, `unix:sha256`, `k8s:ns`, ...) is extended with desktop selectors:
+
+```
+binary_sha256:abc123...
+macos:bundle_id:com.notion.Notion
+macos:team_id:ABCD1234
+flatpak:app:com.obsidian.Obsidian
+snap:name:obsidian
+msix:publisher:CN=Notion...
+chrome_extension:id:abc123...
+```
+
+These selectors drive the SPIFFE Server-style workload registration. The user runs `persona enroll app` to interactively authorize a new consumer app.
+
+---
+
+## Browser Bridge
+
+Browsers cannot connect to a Unix socket from JavaScript. Three strategies, in deployment order:
+
+**1. Native messaging host (ship first)**
+A small native binary registered with Chrome/Firefox as a native messaging host. The extension (or a manifest-declared web origin) communicates with the binary via stdin/stdout; the binary forwards to the `personad` socket. The native messaging host is the consumer from `personad`'s perspective; the extension/origin is the consumer from the pseudonymity perspective (mapped via `chrome_extension:id` selector).
+
+**2. Localhost HTTPS gateway (127.0.0.1:2443)**
+`personad` binds a localhost HTTPS server with a self-signed cert installed in the user trust store at first run. Consumers are identified by the `Origin` header, which is verified against an allowlist managed by `persona enroll origin`. This works without a browser extension but requires the user to approve the cert once.
+
+**3. FedCM IdP registration (future)**
+Register `personad` as a FedCM identity provider. The browser handles the trust UI; web pages call the FedCM API without a custom extension. Timeline: months to years, depending on FedCM standardisation velocity.
+
+---
+
+## API
+
+`personad` implements the SPIFFE Workload API (gRPC, proto definitions from `github.com/spiffe/spiffe/proto/spiffe/workload`):
+
+- `FetchX509SVIDs` — streaming; returns X.509-SVIDs, refreshes before expiry
+- `FetchX509Bundles` — trust bundles for all active trust domains
+- `FetchJWTSVID` — returns JWT-SVID for a given audience; triggers presence challenge if `require_presence` is set in the audience claim
+- `FetchJWTBundles` — JWKS endpoints for all trust domains
+- `ValidateJWTSVID` — validates a JWT-SVID against the trust bundle
+
+No new wire protocol is invented. Any SPIFFE-aware consumer (envoy, ghostunnel, spiffe-helper, go-spiffe, rust-spiffe, java-spiffe) works against `personad` out of the box.
+
+### Presence extension
+
+The `audience` string in `FetchJWTSVID` carries optional structured extensions:
+
+```
+audience = "https://example.com?persona_require_presence=hardware&persona_max_age=300"
+```
+
+If presence requirements are not met, `personad` triggers a presence challenge (FIDO2 touch prompt, Hello dialog, etc.) before issuing the SVID. If the challenge cannot be satisfied within the timeout, the RPC returns `UNAUTHENTICATED`.
+
+### CLI (persona)
+
+```
+persona whoami                           # print current identity summary
+persona enumerate                        # list all available claims with source and assurance
+persona disclose --audience X            # show which claims would be disclosed to audience X
+persona fetch-jwt --audience X           # fetch JWT-SVID for audience X (calls FetchJWTSVID)
+persona fetch-x509                       # fetch X.509-SVID bundle (calls FetchX509SVIDs)
+persona prove --audience X --challenge N # produce signed assertion for nonce N
+persona watch                            # stream claim add/remove/refresh events
+persona enroll app                       # authorize a new consumer app
+persona enroll origin URL                # authorize a browser origin
+persona log                              # view audit log of disclosures and prove calls
+persona trust-bundle add spiffe://x/     # import a remote trust bundle
+```
+
+---
+
+## HVID Extension (Human Verifiable Identity Document)
+
+The JWT-SVID payload carries standard SPIFFE claims plus a `persona` extension object:
+
+```json
+{
+  "sub": "spiffe://example.com/pseudonym/3f1a7b.../for/com.notion.Notion",
+  "aud": ["https://example.com"],
+  "exp": 1746000000,
+  "iat": 1745999700,
+  "spiffe_id": "spiffe://example.com/pseudonym/3f1a7b.../for/com.notion.Notion",
+  "persona": {
+    "root_trust_domain": "example.com",
+    "sources": ["tailscale", "piv-smartcard"],
+    "identity_assurance": "iaa3",
+    "presence": {
+      "present": true,
+      "attested_by": "fido2_up",
+      "attested_at": "2026-04-28T14:31:48Z",
+      "present_until": "2026-04-28T14:36:48Z"
+    },
+    "auth_methods": ["tailscale_oidc", "fido2_up"]
+  }
+}
+```
+
+The `persona` extension is non-standard but ignorable by consumers that do not understand it. The `sub`/`aud`/`exp`/`spiffe_id` fields are standard SPIFFE JWT-SVID fields.
+
+---
+
+## Assurance Levels
+
+### Identity assurance (`identity_assurance`)
+
+| Level | Meaning |
+|---|---|
+| `iaa1` | Self-asserted (SSH key, GPG key, did:key, local username) |
+| `iaa2` | IdP-verified (Tailscale OIDC, GNOME Online Accounts, cached OIDC token) |
+| `iaa3` | Hardware-bound + IdP-verified (Tailscale + FIDO2, PIV smartcard, Windows Hello) |
+
+### Presence assurance (`presence_level`)
+
+| Level | Meaning |
+|---|---|
+| `none` | No presence assertion |
+| `session` | Screen was unlocked by the user at session start; no recent confirmation |
+| `software` | Software authenticator (TOTP, password re-entry); weak recency |
+| `hardware` | FIDO2 UP, Windows Hello, TouchID/Face ID, PIV PIN — timestamped, hardware-backed |
+
+---
+
+## SPIFFE Community Proposal
+
+Before code, this design should be circulated to the SPIFFE TSC as a two-page discussion document: "Personal SVID — extending SPIFFE Workload API to human identity on the desktop." The SPIFFE community scoped the project to workloads as a deployable beachhead, not because they thought workloads were the only use case. The desktop agent is the natural completion.
+
+Sections of that proposal:
+1. Trust domain model for heterogeneous human identity sources
+2. Attestor plugin list (maps to existing SPIRE server attestor API)
+3. Per-RP pseudonymity via deterministic SPIFFE ID derivation
+4. App-attestation selectors per OS
+5. Browser bridge (native messaging, FedCM roadmap)
+
+Contacts: Evan Gilman (original SPIFFE/SPIRE author), SPIFFE Technical Steering Committee, CNCF TAG Security.
+
+---
+
+## Position in the Total ZT Desktop Stack
+
+`personad` is the **identity leaf** of a Zero Trust desktop framework — roughly 20–25% of the total system. It is the necessary foundation: every other component depends on having a standard local API that answers "who is this human and are they present." Without `personad`, each enforcement point invents its own identity answer at varying quality.
+
+The full ZT desktop stack has six distinct layers. `personad` owns one of them.
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  External Services                                               │
+│  (SaaS, 3P apps, external email — reached via password manager)  │
+└──────────────────────────────────────────────────────────────────┘
+                              ▲
+┌──────────────────────────────────────────────────────────────────┐
+│  Enforcement Points                                              │
+│                                                                  │
+│  ┌─────────────┐  ┌──────────────┐  ┌──────────┐  ┌──────────┐  │
+│  │ SSH Bouncer │  │ IMAP/SMTP GW │  │ API      │  │ ZT sudo  │  │
+│  │             │  │              │  │ Proxy    │  │ PAM      │  │
+│  └──────┬──────┘  └──────┬───────┘  └────┬─────┘  └────┬─────┘  │
+└─────────┼────────────────┼───────────────┼──────────────┼────────┘
+          │                │               │              │
+          └────────────────┴───────────────┴──────────────┘
+                                    │ validate grant / cert
+┌──────────────────────────────────────────────────────────────────┐
+│  ZT Control Plane                                                │
+│  (OPA policy engine + credential minting + audit log)            │
+│                                                                  │
+│  input: personad JWT-SVID + device posture                       │
+│  output: delegation grants, SSH certs, OAuth tokens, mTLS certs  │
+└──────────────────────────┬───────────────────────────────────────┘
+                           │ FetchJWTSVID
+┌──────────────────────────▼───────────────────────────────────────┐
+│  personad  (this spec)                                           │
+│  SPIFFE Workload API — human identity + presence                 │
+└──────────────────────────┬───────────────────────────────────────┘
+                           │ identity + presence sources
+         ┌─────────────────┼──────────────────────┐
+    Tailscale         FIDO2 / Hello           SSH agent
+    OIDC/IdP          TouchID / PIV           GPG / DID / GOA
+┌──────────────────────────────────────────────────────────────────┐
+│  Device Posture Agent                                            │
+│  (separate input to ZT control plane — not part of personad)     │
+│  disk encryption, patch level, MDM enrollment, binary integrity  │
+└──────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│  Desktop Login (PAM / Windows Credential Provider)               │
+│  NIST SP 800-63B r4 + FIDO2-rooted; personad starts at login     │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### Coverage Map
+
+| ZT Primitive | Who owns it | State |
+|---|---|---|
+| Human identity + presence | `personad` | **this spec** |
+| Workload identity | SPIFFE/SPIRE | exists |
+| Policy engine | OPA | exists |
+| Credential minting (SSH CA, delegation broker) | ZT control plane | **gap — to build** |
+| SSH bouncer | SSH enforcement point | **gap — to build; hardest piece** |
+| IMAP/SMTP gateway | Mail enforcement point | **gap — to build** |
+| API proxy (HTTP/gRPC) | Envoy + OPA ext-authz | mostly exists; integration needed |
+| ZT sudo | PAM module | **gap — to build** |
+| Device posture | partial (various MDM tools) | **gap — no clean open-source** |
+| Password manager (external sites) | Bitwarden (open source) | exists; ZT integration needed |
+| Desktop login (FIDO2-rooted) | PAM config + FIDO2 PAM module | mostly exists; policy config needed |
+
+---
+
+### Component 1: ZT Control Plane
+
+The policy decision point sitting above `personad`. It consumes the `personad` JWT-SVID plus a device posture report and evaluates them against OPA policy to determine what credentials the user may receive.
+
+**Inputs:**
+- `personad` JWT-SVID (identity + presence assurance + auth methods)
+- Device posture report (patch level, disk encryption state, MDM enrollment, binary integrity)
+- Resource request (what the user or delegated software is trying to access)
+
+**Outputs:**
+- Signed delegation grants (for IMAP, SMTP, database, API access)
+- Short-lived SSH certificates
+- Short-lived OAuth2 tokens (for internal applications)
+- Short-lived mTLS client certificates (for service mesh access)
+
+**What exists:** OPA is the policy engine and is production-grade. The gap is the credential-minting glue layer: a small service that accepts `(personad SVID + device posture + resource request)`, evaluates against OPA, and calls the appropriate CA or token issuer. This is the smallest of the missing components — probably 2–3 weeks of Rust work.
+
+**OPA policy example:**
+```rego
+allow_ssh_cert {
+    input.identity.presence_level == "hardware"
+    input.identity.identity_assurance == "iaa2"
+    input.device.disk_encrypted == true
+    input.device.patch_age_days < 30
+    input.resource.host_group == "engineering"
+}
+```
+
+---
+
+### Component 2: SSH Bouncer
+
+**This is the hardest and most important gap.** SSH is where Zero Trust either becomes real or collapses into theater. There is no open-source ZT SSH solution that is FIDO2-rooted, presence-enforced, ephemeral, policy-driven, auditable, and scalable.
+
+The architecture:
+```
+User workstation
+    ↓ SSH (with ephemeral cert signed by ZT CA)
+SSH Bouncer (policy enforcement point)
+    ↓ validates cert against ZT trust bundle
+    ↓ calls OPA: is this cert + user + target + time allowed?
+    ↓ enforces command allowlist
+    ↓ records session
+Target host
+    ↓ accepts cert from ZT SSH CA only; direct SSH disabled
+```
+
+**What the bouncer must do:**
+- Terminate SSH (speak the SSH wire protocol as both client and server)
+- Validate the ephemeral cert against the ZT CA trust bundle
+- Call OPA per connection (not per network location)
+- Enforce scope from the cert: which principals, which hosts, which commands
+- Reject connections whose cert has expired (10-minute TTL means staleness is bounded)
+- Record sessions: keystrokes, commands, timing, identity binding
+- Refuse any SSH connection not carrying a valid ZT-issued cert
+
+**What FIDO2 presence buys specifically for SSH:** SSH is dangerous because it enables unattended lateral movement. A static SSH key can be used by malware silently. An ephemeral cert whose issuance required FIDO2 touch proves a human was at the keyboard at session initiation. Malware cannot touch a hardware key; it cannot get a cert; it cannot SSH. This is the difference between "developer access" and "malware with a private key."
+
+**Scope:**
+- Command-level enforcement: `persona delegate ssh --commands "git,make,kubectl"` produces a cert whose extensions encode the allowed command set. The bouncer enforces this, not just logs it.
+- `sudo` escalation on the target can require a new cert with elevated scope — another FIDO2 touch.
+- CI/CD service accounts use SPIFFE workload SVIDs (not `personad`) — separate identity, separate cert path, no FIDO2 required, but also no human-presence claim.
+
+**Build complexity:** similar to `personad`. A distinct Rust project, 4–6 weeks. The SSH wire protocol is the hardest part; `thrussh` or `russh` crate provides a base.
+
+---
+
+### Component 3: IMAP/SMTP Gateway
+
+Covered in detail in the Delegated Access section. The gateway speaks real IMAP and SMTP, validates `personad`-issued delegation grants (grant + client key + scope + TTL), and enforces send-as identity on SMTP.
+
+**Key constraint:** unmodified open-source IMAP/SMTP clients (`mutt`, `notmuch`, `isync`, `msmtp`) must work against the gateway without modification. The gateway is a transparent protocol proxy from the client's perspective.
+
+**Build complexity:** 3–4 weeks. Dovecot plugin path is the fastest; standalone Rust proxy is cleaner but more work.
+
+---
+
+### Component 4: ZT sudo PAM Module
+
+A PAM module that, instead of asking for a password on `sudo`, calls `personad` requiring `hardware` presence (`require_presence=hardware&max_age=60`). If presence is satisfied, `sudo` proceeds. If not, it triggers a FIDO2 touch challenge.
+
+Policy (from OPA, via the ZT control plane) determines which commands require hardware presence and which allow a stale session-level presence claim.
+
+```
+$ sudo systemctl restart nginx
+[persona] touch your security key... ✓
+[sudo] running as root: systemctl restart nginx
+```
+
+**Build complexity:** 1–2 weeks. The PAM module interface is small; the complexity is in wiring the async FIDO2 challenge into a synchronous PAM flow (blocking call with timeout).
+
+---
+
+### Component 5: Device Posture Agent
+
+A separate daemon (not `personad`) that reports device health to the ZT control plane:
+- Disk encryption state (LUKS/FileVault/BitLocker)
+- Patch currency (days since last security update)
+- MDM enrollment status
+- Running process integrity (optional)
+- Hardware security capability (TPM present, Secure Boot enabled)
+
+The ZT control plane combines the device posture report with the `personad` SVID when evaluating policy. A user with `iaa3` identity but an unpatched device may be denied high-privilege credentials.
+
+**What exists:** various MDM agents, Osquery. The gap is a clean open-source device posture agent that speaks a standard format to the ZT control plane and does not require a vendor MDM subscription. This is 2–3 weeks of Rust work but requires per-platform implementation (Linux, macOS, Windows each have different APIs for encryption state, patch level, etc.).
+
+---
+
+### Component 6: Password Manager Integration (External Sites)
+
+The policy requires that external site authentication uses the company-managed password manager (Bitwarden) integrated with the ZT framework. In practice this means:
+
+- Bitwarden CLI authenticates using `personad` (`persona fetch-jwt --audience bitwarden.example.com`) rather than a master password
+- Bitwarden populates credentials into the browser
+- External sites use Passkey > FIDO2 > TOTP > password (in that preference order)
+- The ZT control plane can see which external services are being accessed (via Bitwarden audit log integration) for policy enforcement
+
+Bitwarden is open source (AGPL); the integration is a Bitwarden CLI plugin / SDK extension, not a fork. The `personad` JWT-SVID acts as the Bitwarden vault unlock credential.
+
+**Build complexity:** 1–2 weeks for the Bitwarden CLI plugin. The main work is Bitwarden's SDK API for custom unlock mechanisms.
+
+---
+
+### Build Order
+
+`personad` is the right starting point because every other component depends on it. After that, priority by impact and dependency:
+
+1. **`personad`** (this spec) — 5–7 weeks — foundation; nothing else works without it
+2. **SSH Bouncer** — 4–6 weeks — highest security impact; the gap nobody else is filling; the "is this ZT real?" test
+3. **ZT Control Plane (minimal)** — 2–3 weeks — ties `personad` + OPA + SSH CA together; enables delegation grants
+4. **IMAP/SMTP Gateway** — 3–4 weeks — enables the delegated-access use case; unblocks engineers
+5. **ZT sudo PAM module** — 1–2 weeks — high visibility, low effort; engineers notice immediately
+6. **Device Posture Agent** — 2–3 weeks — required for full policy; can stub with static "posture ok" initially
+7. **Bitwarden integration** — 1–2 weeks — completes the external-site policy requirement
+
+Total: roughly 20–28 weeks of focused Rust work (one person). Parallelizable once `personad` and the ZT control plane are stable: SSH bouncer, IMAP gateway, and device posture can be developed concurrently.
+
+### What Does Not Need to Be Built
+
+**Policy engine** — OPA exists, is production-grade, and is the right choice. Write Rego policies, do not write a policy engine.
+
+**Workload identity** — SPIFFE/SPIRE exists. `personad` federates with it via SPIFFE trust bundles; no replacement needed.
+
+**API proxy** — Envoy with OPA ext-authz covers HTTP/gRPC enforcement. Write the OPA policy, not a new proxy.
+
+**Desktop login** — FIDO2 PAM modules exist (`pam-u2f`, `pam-fido2`). The work is configuration and policy, not new software. `personad` starts as a user session service launched at login, after FIDO2 PAM has already authenticated the desktop session.
+
+**Password manager** — Bitwarden exists and is open source. The work is integration, not replacement.
+
+---
+
+## Delegated Access
+
+The hardest integration case is software that the user has authorized to act on their behalf, but which cannot itself perform FIDO2 authentication — and must not require it for every operation. The canonical examples are IMAP/SMTP clients: `mutt`, `notmuch`, `offlineimap`, `isync`, `fetchmail`, `msmtp`.
+
+These tools need real protocol access (RFC-compliant IMAP and SMTP, not a webmail approximation), must send mail as the user's actual identity, and must work unattended in the background. They cannot be required to touch a FIDO2 key on every mail poll.
+
+This is not a special case to be exempted from ZT. It is the test case that determines whether a ZT framework is actually usable by engineers.
+
+### The Delegation Grant
+
+When the user authenticates to the ZT control plane (with FIDO2 hardware presence), they can create a **delegation grant** that authorizes a specific software instance to act on their behalf within a defined scope.
+
+A delegation grant is a signed, short-lived cryptographic object:
+
+```json
+{
+  "version": "1",
+  "grant_id": "dg-abc123",
+  "issued_at": "2026-04-28T14:00:00Z",
+  "expires_at": "2026-04-28T22:00:00Z",
+
+  "grantor": {
+    "spiffe_id": "spiffe://example.com/user/mark/via/tailscale",
+    "presence_at_issuance": "hardware",
+    "presence_attested_at": "2026-04-28T13:59:44Z"
+  },
+
+  "grantee": {
+    "kind": "software",
+    "software_id": "isync@alice-laptop",
+    "public_key": "ecdsa-p256:abc123..."
+  },
+
+  "scope": {
+    "protocol": "imap",
+    "mailbox": "mark@example.com",
+    "permissions": ["read", "flag", "expunge"],
+    "folders": ["INBOX", "Sent", "Drafts"],
+    "smtp_send_as": "mark@example.com",
+    "smtp_scope": "internal"
+  },
+
+  "issuer": "zt-control.example.com",
+  "signature": "..."
+}
+```
+
+**Key properties:**
+- The grant is bound to the grantee's **public key** — not a bearer token. Stealing the grant without the corresponding private key does nothing.
+- Scope is explicit: which protocol, which mailbox, which permissions, which folders, whether SMTP send-as is permitted and to what scope.
+- The grant carries the **presence level at issuance** — downstream systems can decide whether `hardware` presence at delegation time is sufficient for the operation.
+- TTL is hours (for mail access), not months. Re-issuance requires another FIDO2 touch.
+
+### Software Identity
+
+The delegated software generates its own keypair at enrollment time. The private key lives in the local filesystem (or SSH agent, or OS keychain) and never leaves the machine. The public key is bound into the delegation grant.
+
+From the software's perspective: "I have a keypair and a grant document. When I need to authenticate, I present both and sign a challenge with my private key."
+
+No passwords are embedded. No reusable tokens are stored. Stealing the config directory without the private key yields nothing.
+
+### ZT IMAP/SMTP Gateway
+
+The enforcement point is a protocol gateway that speaks real IMAP and SMTP but validates delegation grants rather than passwords.
+
+```
+mutt / isync
+     ↓ real IMAP (TLS)
+ZT IMAP/SMTP Gateway
+     ↓ validates: grant + client key + scope + TTL
+Mail server (Dovecot / Postfix)
+```
+
+On connection, the gateway receives a SASL exchange carrying:
+1. The delegation grant (signed by ZT control plane)
+2. A challenge response signed by the grantee's private key
+
+The gateway verifies both against the ZT trust bundle. If valid, it proxies the IMAP/SMTP session with scope enforcement applied.
+
+From the IMAP client's perspective, this is a normal IMAP server. No client modifications are required.
+
+### SMTP Send-As Enforcement
+
+The gateway enforces that SMTP `MAIL FROM` matches the delegated identity. It prohibits arbitrary `From:` header values. It optionally:
+- Applies DKIM signing per the human identity
+- Stamps internal headers with identity metadata
+- Rate-limits based on grant scope (`smtp_scope: internal` blocks external recipients)
+
+This prevents the classic failure mode where delegated software credentials leak and are used to send spam or impersonate others.
+
+### Presence Gates Delegation, Not Operations
+
+The user must be FIDO2-present to **mint or renew** a delegation grant. Individual IMAP polls and SMTP sends within the grant's TTL do not require re-presence.
+
+High-risk SMTP operations can require a fresh delegation grant with a narrower scope:
+```
+smtp_scope: external   # requires separate grant with explicit approval
+smtp_scope: bulk       # requires separate grant with rate-limit annotation
+```
+
+This mirrors the SSH cert pattern: presence at cert issuance, not presence per command.
+
+### The Same Pattern for SSH
+
+The SSH cert flow is identical in structure:
+
+```json
+{
+  "grantee": { "kind": "ssh-session", "public_key": "ed25519:..." },
+  "scope": {
+    "protocol": "ssh",
+    "principals": ["mark"],
+    "hosts": ["*.example.com"],
+    "commands": ["*"],   // or a restricted allowlist
+    "ttl_seconds": 600
+  },
+  "grantor": { "presence_at_issuance": "hardware", ... }
+}
+```
+
+The SSH bouncer validates this grant on connection, re-evaluates per OPA policy, and refuses any connection whose grant has expired or whose scope does not cover the requested target.
+
+FIDO2 touch at session initiation; the short-lived cert carries the presence claim forward; the bouncer enforces scope. No static SSH keys. No long-lived credentials.
+
+### `persona delegate` CLI
+
+```
+persona delegate imap \
+  --mailbox mark@example.com \
+  --grantee isync \
+  --permissions read,flag,expunge \
+  --folders INBOX,Sent \
+  --smtp-send-as mark@example.com \
+  --smtp-scope internal \
+  --ttl 8h
+```
+
+This triggers a FIDO2 touch prompt, then writes the signed delegation grant to the grantee's config path (or to a location `isync` is configured to read from).
+
+```
+persona delegate ssh \
+  --principals mark \
+  --hosts "*.example.com" \
+  --ttl 10m
+```
+
+```
+persona delegate list            # show active delegation grants
+persona delegate revoke dg-abc123  # immediately revoke a grant
+```
+
+---
+
+## Platform Support
+
+The consumer API is **identical on every platform** — the SPIFFE Workload API gRPC socket. An application calls `FetchJWTSVID`, gets back a signed identity document. It does not care whether that identity came from Tailscale WhoIs on Linux, Windows Hello on Windows, TouchID on macOS, or a ServiceAccount token in Kubernetes.
+
+The per-platform work is entirely in the attestor plugins — the "how do I discover identity on this OS" layer. The consumer-facing API, the pseudonymity model, the presence levels, the trust domain schema — all platform-independent.
+
+Implementation: a single Rust binary with `#[cfg]` feature flags per platform, compiling to a static binary on each target. The SPIFFE gRPC socket is the universal interface. Applications write to the socket API once and run everywhere.
+
+| Platform | Identity sources | Presence sources | Socket |
+|---|---|---|---|
+| Linux (systemd: Fedora, RHEL, Ubuntu, Debian) | Tailscale, GNOME Online Accounts, KDE Wallet, OIDC cached, SSH agent, GPG, DID, PIV, Kerberos | libfido2 (USB/NFC), PAM | `/run/user/{uid}/persona/workload.sock` (user systemd unit) |
+| Linux (non-systemd: Gentoo, Void, Alpine) | Same as above minus GNOME/KDE-specific sources | libfido2 | `/tmp/persona-{uid}/workload.sock` (started via init script or user session) |
+| macOS | Tailscale, Keychain, OIDC cached, SSH agent, GPG, DID, PIV | TouchID (CryptoTokenKit), libfido2 | `$TMPDIR/persona/workload.sock` (LaunchAgent) |
+| Windows | Tailscale, WAM (Web Account Manager), OIDC cached, SSH agent, PIV | Windows Hello, WebAuthn API, libfido2 | `\\.\pipe\persona-workload-{sid}` (user-mode service) |
+| FreeBSD / OpenBSD / NetBSD | SSH agent, GPG, Kerberos, PIV, DID | libfido2 | `/var/run/user/{uid}/persona/workload.sock` |
+| Kubernetes | ServiceAccount projected token, node attestation via kubelet | none (workload identity, not human) | Projected volume socket (SPIFFE CSI driver pattern) |
+| Container (Docker / Podman) | Host `personad` socket bind-mounted into container | Inherited from host | Bind-mount host socket to `/run/persona/workload.sock` |
+| WSL2 | Windows `personad` via `AF_UNIX` interop, or native Linux `personad` with Tailscale | Host Windows Hello via named-pipe bridge, or libfido2 native | `/run/user/{uid}/persona/workload.sock` (native) or bridged from Windows pipe |
+
+### Platform detection and graceful degradation
+
+`personad` probes available identity sources at startup and activates only those present on the current platform. A minimal deployment (SSH agent only) works everywhere; a rich deployment (Tailscale + FIDO2 + PIV + OIDC) uses whatever the platform offers. Missing sources are logged and skipped, never fatal.
+
+The startup probe order:
+1. Tailscale socket (`/var/run/tailscale/tailscaled.sock` or platform equivalent)
+2. FIDO2 devices (`libfido2` enumeration)
+3. PIV/smartcard slots (PKCS#11 enumeration)
+4. Platform keychain (Keychain / Credential Manager / Secret Service)
+5. OIDC token cache (`~/.config/gcloud/`, `~/.azure/`, OS keychain)
+6. SSH agent (`SSH_AUTH_SOCK`)
+7. GPG agent (gpgconf socket)
+8. Kerberos (`KRB5CCNAME` or default ccache)
+9. Platform-specific: GNOME Online Accounts (DBus), KDE Wallet (DBus), WAM (COM)
+
+---
+
+## Prior Art (and why nothing existing solves this)
+
+| System | What it does | What it doesn't do |
+|---|---|---|
+| **SPIRE Agent** | Workload identity via attestation + SVID issuance | Human identity. Explicitly scoped to "what process is this," not "what human is here." No presence, no FIDO2, no desktop identity sources. Go, no FIPS path. |
+| **Kerberos / GSSAPI** | Cryptographic proof of identity from a KDC | Single identity source only. No multi-source federation, no presence model, no per-audience pseudonyms, no hardware attestation. |
+| **macOS Keychain / Windows Credential Manager** | Platform-specific identity and credential store | No cross-platform API, no SPIFFE, no presence model, no pseudonymity. Applications must code to each platform separately. |
+| **pam-u2f / pam-fido2** | FIDO2 at the PAM authentication layer | Answers "is a human present" but not "who are they" beyond Unix UID. No daemon, no API for applications, no identity metadata. |
+| **Hashicorp Vault Agent** | Injects secrets and short-lived certs into workloads | Closer to SPIRE than personad. No human identity, no presence, no desktop integration. |
+| **ssh-agent** | Holds keys, signs challenges on demand via socket API | No identity metadata, no presence, no multi-source federation. But it is the closest UX analog — a daemon that applications talk to over a socket for cryptographic operations. |
+| **1Password / Bitwarden CLI** | Password storage and credential population | Password managers, not identity providers. No SPIFFE, no attestation model, no presence levels. |
+| **Platform SSO (Windows SSPI, macOS ASAuth)** | OS-level single sign-on for platform-native apps | Platform-locked. No cross-platform API. SSPI is Windows-only, ASAuth is macOS-only. No presence model beyond "session exists." |
+| **WebAuthn / Passkeys** | FIDO2-based authentication to web services | Browser-only. No local daemon API. No identity federation — each relying party gets an independent credential. |
+
+The gap: **nobody built "SPIRE but for the human at the keyboard."** The SPIFFE community scoped the project to workloads as a deployable beachhead, not because they thought workloads were the only use case. The desktop agent is the natural completion — same API, same trust model, different attestation sources.
+
+---
+
+## Relationship to SPEC-UIL
+
+`uild` (Unified Identity Layer) is a **server-side** auth normalization daemon. It normalizes incoming OAuth2/OIDC/SAML/WebAuthn requests from clients.
+
+`personad` is a **client-side** identity assertion daemon. It aggregates local identity sources into outgoing SPIFFE SVIDs.
+
+They are complementary:
+- A server running `uild` can accept HVIDs (JWT-SVIDs from `personad`) as one of its input token types
+- A `personad`-issued JWT-SVID carries `persona.presence` which maps to `uild`'s `auth_strength: hardware_key | biometric`
+- The SPIFFE trust bundle from `personad` acts as the JWKS endpoint that `uild` uses to verify the token
+
+Mapping from `personad` `identity_assurance` to `uild` `identity_assurance`:
+```
+iaa1 → iaa1
+iaa2 → iaa2
+iaa3 → iaa3
+```
+
+Mapping from `personad` `presence_level` to `uild` `auth_strength`:
+```
+none     → password
+session  → password
+software → mfa
+hardware → hardware_key | biometric
+```
+
+---
+
+## First Consumer: kith
+
+kith (Tailnet-native JMAP Chat) is the first application designed to consume `personad`. Today kith hardcodes Tailscale WhoIs as its sole identity source. With `personad`:
+
+1. kithd replaces `tailscale.LocalClient.WhoIs(ctx, remoteAddr)` with `FetchJWTSVID` on the persona socket
+2. The JWT-SVID's `spiffe_id` becomes the `Identity.user_id`
+3. The `persona.presence` claim enables presence-gated features (e.g., broadcast mentions could require `hardware` presence)
+4. kith's pluggable identity provider trait (`kith-core::IdentityProvider`) implements the persona socket as its canonical backend, with Tailscale WhoIs as a fallback when `personad` is absent
+5. Federation between kith instances across different trust domains uses SPIFFE trust bundle federation — no custom trust negotiation needed
+
+This also means kith works without Tailscale: on a machine with `personad` and any identity source (OIDC, PIV, Kerberos), kith can authenticate peers via the persona socket over any transport (DNS+mTLS, Tor, local network).
+
+---
+
+## Open Questions
+
+1. **Pseudonymity model**: HKDF-derived pseudonyms give per-audience isolation. But what if the user wants to link their identity across two specific apps (e.g., their password manager and their SSH client)? Need an explicit user-consent flow for cross-consumer linkage.
+
+2. **Multi-user workstations**: one `personad` per login session (scoped to the session's Unix UID) is the v1 answer. Fast-user-switching requires each session's daemon to hold separate key material. Verify that the socket path scheme enforces this.
+
+3. **Daemon privilege for FIDO2**: USB FIDO2 access on Linux requires either `udev` rules (60-fido.rules) or a privileged helper. The daemon should run as the user and rely on `udev` rules for hardware access. Installation should set up the rules.
+
+4. **Presence challenge UX**: when a consumer requests `hardware` presence and none is available, who owns the prompt? A `personad`-owned tray notification or polkit dialog is cleanest — it avoids requiring every consumer to build its own FIDO2 touch UI.
+
+5. **Presence decay**: `present_until` should be a fixed TTL from the last hardware attestation, not extended by keyboard/mouse activity. Soft presence signals (input activity) are not hardware-backed and should not extend hardware-presence claims.
+
+6. **Cross-machine presence propagation**: if Alice's `kithd` sends a message, can Bob's `kithd` verify that Alice was hardware-present at send time? Options: (a) include a signed HVID attachment in the message envelope; (b) Alice's `personad` issues a per-message presence assertion. The SPIFFE JWT-SVID shape already handles this — the JWT is the signed assertion, the audience is the message ID.
+
+7. **Trust bundle sync**: the user's `personad` on their laptop and `personad` on their server need to share trust bundles if the server is running SPIFFE-aware services. SPIFFE Federation handles this; the question is what the bootstrap looks like for a personal deployment (probably: tailscale + a well-known path under the user's `did:web`).
+
+8. **SASL mechanism for delegation grants**: the IMAP/SMTP gateway needs a SASL mechanism that accepts (delegation-grant, challenge-signature). Options: (a) a custom `GSSAPI`-shaped mechanism registered with IANA; (b) repurpose `OAUTHBEARER` with a non-bearer signed credential; (c) use the existing `EXTERNAL` mechanism with mTLS where the client cert is derived from the delegation grant. Option (c) requires the gateway to issue a short-lived client cert from the grant, which Dovecot/Postfix can validate via `ssl_cert_verifier`. This is the path of least resistance for compatibility with unmodified IMAP clients.
+
+9. **Delegation grant revocation propagation**: if the user revokes a delegation grant (`persona delegate revoke`), gateways that have cached the grant must be notified. Options: (a) short TTL makes revocation eventual (gaps up to TTL); (b) gateway polls a revocation endpoint; (c) push notification via SPIFFE-authenticated webhook. A 15-minute TTL on delegation grants makes option (a) acceptable for most cases; SSH certs should use ≤10 minute TTL for the same reason.
