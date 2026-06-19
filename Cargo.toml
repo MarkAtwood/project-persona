@@ -1,0 +1,27 @@
+[workspace]
+members = [
+    "persona-core",
+    "persona-attestors",
+    "persona-grpc",
+    "personad",
+    "persona",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+version  = "0.1.0"
+
+[workspace.dependencies]
+persona-core     = { path = "persona-core" }
+persona-attestors = { path = "persona-attestors" }
+persona-grpc     = { path = "persona-grpc" }
+
+thiserror          = "2"
+anyhow             = "1"
+tokio              = { version = "1", features = ["full"] }
+tonic              = "0.12"
+prost              = "0.13"
+tracing            = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+serde              = { version = "1", features = ["derive"] }

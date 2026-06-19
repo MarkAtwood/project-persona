@@ -1,0 +1,10 @@
+[package]
+name    = "persona-attestors"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+persona-core.workspace = true
+thiserror.workspace    = true
+tokio.workspace        = true
+tracing.workspace      = true

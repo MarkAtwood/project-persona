@@ -1,0 +1,13 @@
+[package]
+name    = "persona-grpc"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+persona-core.workspace     = true
+persona-attestors.workspace = true
+thiserror.workspace        = true
+tokio.workspace            = true
+tonic.workspace            = true
+prost.workspace            = true
+tracing.workspace          = true

@@ -1,0 +1,17 @@
+[package]
+name    = "personad"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "personad"
+path = "src/main.rs"
+
+[dependencies]
+persona-core.workspace     = true
+persona-attestors.workspace = true
+persona-grpc.workspace     = true
+anyhow.workspace           = true
+tokio.workspace            = true
+tracing.workspace          = true
+tracing-subscriber.workspace = true

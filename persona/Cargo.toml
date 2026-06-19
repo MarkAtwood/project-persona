@@ -1,0 +1,15 @@
+[package]
+name    = "persona"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "persona"
+path = "src/main.rs"
+
+[dependencies]
+persona-core.workspace = true
+persona-grpc.workspace = true
+anyhow.workspace       = true
+tokio.workspace        = true
+tracing.workspace      = true
