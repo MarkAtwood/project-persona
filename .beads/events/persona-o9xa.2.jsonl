@@ -1,3 +1,4 @@
 {"id":"01a09d2b-e8ab-75cf-b47c-611c34da7a1c","issue_id":"persona-o9xa.2","event_type":"created","actor":"agent","old_value":"","new_value":"","created_at":"2026-09-13T23:48:15.659381768Z"}
 {"id":"01a09d2b-e8af-7504-af69-1cccf4686138","issue_id":"persona-o9xa.2","event_type":"label_added","actor":"agent","comment":"Added label: dependency","created_at":"2026-09-13T23:48:15.663330625Z"}
 {"id":"01a09d2b-e8b3-741d-93b7-a1db735ad459","issue_id":"persona-o9xa.2","event_type":"label_added","actor":"agent","comment":"Added label: upgrade","created_at":"2026-09-13T23:48:15.667270687Z"}
+{"id":"01a09d32-213f-737d-8dad-ba3a80e1cd55","issue_id":"persona-o9xa.2","event_type":"closed","actor":"agent","old_value":"","new_value":"Upgraded and verified: base64 0.23.1, tower 0.5.3, jsonwebtoken 11.0.0 with rust_crypto. Tests 37/37 unchanged, cargo audit exit 0. Commit d0c9b1f.","created_at":"2026-09-13T23:55:03.359229766Z"}

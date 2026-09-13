@@ -2,13 +2,15 @@
   "id": "persona-o9xa.2",
   "title": "Upgrade tower 0.4 -\u003e 0.5",
   "description": "Declared in the workspace but check it is actually load-bearing; persona-5s4b.104 notes some deps are declared and unused. If unused, delete rather than upgrade.",
-  "status": "open",
+  "status": "closed",
   "priority": 2,
   "issue_type": "task",
   "owner": "mark@reviewcommit.com",
   "created_at": "2026-09-13T23:48:15.655386776Z",
   "created_by": "agent",
-  "updated_at": "2026-09-13T23:48:15.655386776Z",
+  "updated_at": "2026-09-13T23:55:03.354194549Z",
+  "closed_at": "2026-09-13T23:55:03.354194549Z",
+  "close_reason": "Upgraded and verified: base64 0.23.1, tower 0.5.3, jsonwebtoken 11.0.0 with rust_crypto. Tests 37/37 unchanged, cargo audit exit 0. Commit d0c9b1f.",
   "labels": [
     "dependency",
     "upgrade"
