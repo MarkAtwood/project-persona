@@ -1,0 +1,30 @@
+{
+  "id": "persona-5s4b.63",
+  "title": "AudienceExtensions cannot express an unrecognised presence requirement; it silently becomes None",
+  "description": "persona-core/src/audience.rs:61: `require_presence = PresenceLevel::from_str(val).unwrap_or(PresenceLevel::None)`.\n\nThe parse error is discarded and the field collapses to the weakest possible value. The `AudienceExtensions` type has no way to represent \"a presence requirement was stated but not understood\", so no caller can implement fail-closed handling even if it wants to. The one consumer, persona-grpc/src/service.rs:146, compares `ext.require_presence \u003e claim.presence` — with `None` on the left that check always passes, so an audience string of `?persona_require_presence=biometric` (a level this crate does not know yet) is served as if no presence had been requested at all. audience.rs:121-126 tests and locks in exactly this behaviour.\n\n`PresenceLevel` is `#[non_exhaustive]` (assurance.rs:65) precisely because more levels are expected, which guarantees a version skew where a newer relying party asks for a level an older daemon silently ignores.\n\nNote the inconsistency within the same function: the sibling parameter `persona_max_age` does the opposite and returns `AudienceParseError::InvalidMaxAge` on a bad value (audience.rs:65). One malformed persona parameter is a hard error, the other is a silent downgrade.\n\nFix: return `AudienceParseError::UnknownPresenceLevel(String)` (the enum is already non_exhaustive so adding the variant is free), or keep the raw string in the struct so the caller decides. Either way the API should make fail-closed expressible.",
+  "status": "closed",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:59:18.032123378Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:05:20.314443669Z",
+  "closed_at": "2026-09-13T21:05:20.314443669Z",
+  "close_reason": "Duplicate of persona-5s4b.71 (same defect, filed by a second review agent from a different angle). Merged during review triage; reopen if the angle in this issue is not covered there.",
+  "labels": [
+    "risk",
+    "api-contract",
+    "defensive",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.63",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:59:18.0649462Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

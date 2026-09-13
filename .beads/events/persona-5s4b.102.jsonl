@@ -1,0 +1,4 @@
+{"id":"01a09c93-76d6-799d-b849-3647c3ba0c4a","issue_id":"persona-5s4b.102","event_type":"created","actor":"agent","old_value":"","new_value":"","created_at":"2026-09-13T21:01:45.046630865Z"}
+{"id":"01a09c93-76db-7850-84a5-ee76df0c15a7","issue_id":"persona-5s4b.102","event_type":"label_added","actor":"agent","comment":"Added label: risk","created_at":"2026-09-13T21:01:45.05154554Z"}
+{"id":"01a09c93-76e0-71f6-874b-71c969ffc076","issue_id":"persona-5s4b.102","event_type":"label_added","actor":"agent","comment":"Added label: maintainer-burden","created_at":"2026-09-13T21:01:45.056129036Z"}
+{"id":"01a09c93-76e4-7975-bda8-f77f8ce18d8a","issue_id":"persona-5s4b.102","event_type":"label_added","actor":"agent","comment":"Added label: review","created_at":"2026-09-13T21:01:45.060620289Z"}

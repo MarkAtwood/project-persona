@@ -1,0 +1,27 @@
+{
+  "id": "persona-5s4b.103",
+  "title": "persona enroll reports authorization it never performs; no enrollment state exists anywhere",
+  "description": "persona/src/main.rs:361-398. Both enroll subcommands print success and store nothing:\n\n  • `persona enroll origin \u003curl\u003e` (main.rs:365-376) prints \"origin {url} authorized (in-memory)\" and then returns. There is no in-memory store -- no state is written to any structure, the CLI process exits immediately after, and personad is never contacted (connect_to_daemon() is not called on this path).\n  • `persona enroll app` (main.rs:386-398) prints \"Enrolled: {name} (pid=..., uid=...)\" followed by \"Note: enrollment is stored in-memory only in this version\". Same: nothing is stored, nothing is sent to the daemon.\n\nThe word \"authorized\" is the problem. Enrollment is the mechanism DESIGN.md/SPEC-HIA.md:92 and :223 use for granting a consumer scope and mapping it to a pseudonym, so a user who runs `persona enroll origin https://app.example` reasonably concludes they have granted that origin access -- and, by implication, that origins they have not enrolled lack it. Neither half is true. Combined with the fact that no consumer attestation runs at all on the issuance path (filed separately), the security property the command implies is exactly inverted: every same-user process already has full access, enrolled or not.\n\nWhy this generates issue reports and worse: it is a security control that reports success and does nothing. Someone will build a deployment story on \"we enroll only the origins we trust\", and the first person to check will find the enrollment list does not exist. The \"(in-memory)\" parenthetical reads as an implementation detail about persistence, not as \"this call had no effect\".\n\nFix direction: until enrollment is wired to the daemon, make both subcommands print an explicit not-implemented message and exit non-zero, the way `persona fetch-x509` (main.rs:354-358) and `trust-bundle add` (main.rs:420-422) already do -- those two are honest about their status, and enroll should match them.",
+  "status": "open",
+  "priority": 1,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T21:01:57.760838046Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:01:57.760838046Z",
+  "labels": [
+    "risk",
+    "maintainer-burden",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.103",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T21:01:57.789965634Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

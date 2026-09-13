@@ -1,0 +1,27 @@
+{
+  "id": "persona-5s4b.51",
+  "title": "PersonaClaims type is bypassed by ad-hoc json!, and the two shapes already disagree",
+  "description": "persona-core/src/hvid.rs defines `PersonaClaims` and `PresenceInfo` as the typed wire shape of the `persona` JWT extension — documented as \"Serialises to the exact JSON shape required by the spec\", re-exported from persona-core/src/lib.rs:15, and covered by two round-trip tests.\n\nNothing constructs them. The one place that emits the extension, persona-grpc/src/service.rs:162-173, hand-builds it with `serde_json::json!` instead, and the two shapes have already drifted apart:\n\n| field | PersonaClaims (hvid.rs) | service.rs json! |\n|---|---|---|\n| `presence.attested_at` | `String`, documented \"RFC 3339 timestamp\" (hvid.rs:14) | `now_secs`, a `u64` of Unix seconds (service.rs:169) |\n| `presence.present_until` | `String`, RFC 3339 (hvid.rs:16) | `u64` Unix seconds (service.rs:170) |\n| `identity_assurance` | `IdentityAssurance` enum, serialises `\"iaa2\"` | `claim.assurance.to_string()` — same text today, but by coincidence of two independent impls |\n| `sources` / `auth_methods` | `Vec\u003cString\u003e` | `[\u0026claim.source]` — always exactly one element |\n\nSo the tokens personad actually issues do not match the type that claims to define the format, and the compiler cannot see the mismatch. Any future field added to `PersonaClaims` silently will not appear in issued tokens; any consumer written against `PersonaClaims` will fail to deserialise a real token's `attested_at`.\n\nThe ponytail comment at service.rs:155 flags the seconds-vs-RFC-3339 choice as deliberate, but the resolution belongs in `PresenceInfo` (change the field types, or make them a typed timestamp), not in a parallel untyped literal.\n\nFix: build `PersonaClaims` in service.rs and `serde_json::to_value` it. That makes the divergence a compile error and deletes the hand-written JSON.",
+  "status": "open",
+  "priority": 1,
+  "issue_type": "bug",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:58:49.25944893Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T20:58:49.25944893Z",
+  "labels": [
+    "rust",
+    "type-design",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.51",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:58:49.290720175Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

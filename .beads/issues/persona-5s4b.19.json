@@ -1,0 +1,26 @@
+{
+  "id": "persona-5s4b.19",
+  "title": "rust-version = 1.75 is declared in [workspace.package] but inherited by zero members",
+  "description": "Cargo.toml [workspace.package] sets rust-version = \"1.75\", but none of the six member manifests declare 'rust-version.workspace = true' — persona-core, persona-attestors, persona-grpc, personad, persona and persona-nmh each inherit only version and edition.\n\nEffect: the MSRV is inert. Cargo emits no 'requires rustc 1.75' diagnostic when built with an older toolchain, 'cargo msrv' and similar tooling read nothing, and the value in the root manifest documents an intent that no build enforces. Combined with the broken MSRV CI job (see the Cargo.lock v4 issue), nothing in the project actually checks 1.75.\n\nAdd 'rust-version.workspace = true' to each member's [package].",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:57:43.674017556Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T20:57:43.674017556Z",
+  "labels": [
+    "workspace",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.19",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:57:43.691246954Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

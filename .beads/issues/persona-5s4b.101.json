@@ -1,0 +1,30 @@
+{
+  "id": "persona-5s4b.101",
+  "title": "chrono_timestamp names a crate that is not a dependency and is not a timestamp",
+  "description": "persona/src/main.rs:475-486:\n\n    fn chrono_timestamp() -\u003e String {\n        let secs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();\n        let s = secs % 86400;\n        ...\n        format!(\"{h:02}:{m:02}:{sec:02}\")\n    }\n\nTwo things wrong with the name:\n1. `chrono` is not a dependency of this crate, or of any crate in the workspace — grep the Cargo.tomls. A reader seeing `chrono_` reasonably assumes the chrono crate is involved and goes looking for it. The prefix carries no meaning here.\n2. It does not return a timestamp. It returns UTC time-of-day as `HH:MM:SS`, with the date discarded by `secs % 86400`. Callers are `watch()` at lines 441, 445, 456, 459 and 463, which print `[{now}]` prefixes on a 30-second polling loop — so the output is fine for its purpose, but the name promises something it does not deliver.\n\nrust.md: \"Names of pure functions should usually be nouns that describe their return value.\"\n\nFix: `fn time_of_day() -\u003e String`, or `utc_hms()`. Worth noting in passing that the value is UTC, not local time, which is not obvious from any of the call sites.",
+  "status": "closed",
+  "priority": 3,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T21:01:39.041936451Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:02:53.127117311Z",
+  "closed_at": "2026-09-13T21:02:53.127117311Z",
+  "close_reason": "Duplicate of persona-5s4b.40 (filed first, equivalent detail).",
+  "labels": [
+    "rust",
+    "naming",
+    "opinion",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.101",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T21:01:39.074549313Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

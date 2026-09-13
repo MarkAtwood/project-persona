@@ -1,0 +1,6 @@
+{"id":"01a09c91-b15d-74bf-b296-82b740f4999b","issue_id":"persona-5s4b.76","event_type":"created","actor":"agent","old_value":"","new_value":"","created_at":"2026-09-13T20:59:48.957312514Z"}
+{"id":"01a09c91-b162-731b-ba8b-5b3c8aeab1c0","issue_id":"persona-5s4b.76","event_type":"label_added","actor":"agent","comment":"Added label: risk","created_at":"2026-09-13T20:59:48.962204355Z"}
+{"id":"01a09c91-b166-7de9-856d-69183cd68130","issue_id":"persona-5s4b.76","event_type":"label_added","actor":"agent","comment":"Added label: api-contract","created_at":"2026-09-13T20:59:48.966912364Z"}
+{"id":"01a09c91-b16b-7a63-9d37-6697eec94deb","issue_id":"persona-5s4b.76","event_type":"label_added","actor":"agent","comment":"Added label: leakage","created_at":"2026-09-13T20:59:48.971681884Z"}
+{"id":"01a09c91-b170-758e-bf47-9441ed2f8639","issue_id":"persona-5s4b.76","event_type":"label_added","actor":"agent","comment":"Added label: review","created_at":"2026-09-13T20:59:48.976365439Z"}
+{"id":"01a09c96-c1f5-7e72-ab27-ee553cd69c57","issue_id":"persona-5s4b.76","event_type":"closed","actor":"agent","old_value":"","new_value":"Duplicate of persona-5s4b.35 (same defect, filed by a second review agent from a different angle). Merged during review triage; reopen if the angle in this issue is not covered there.","created_at":"2026-09-13T21:05:20.885947328Z"}

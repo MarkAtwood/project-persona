@@ -1,0 +1,7 @@
+{
+  "id": "1789333839279235656-1",
+  "issue_id": "persona-5s4b",
+  "author": "agent",
+  "text": "TRIAGE CORRECTION — priority re-ranked.\n\nOriginal P0 count was 14. That was an artifact, not a judgment: review-common.md encodes the priority in the section header ('## Section: Correctness (--type bug --priority 0 --label correctness)'), so every correctness finding was born P0 regardless of severity. In a daemon whose entire subject is identity assurance, 'this is a security finding' does not discriminate — everything here is one. P0 was therefore acting as a topic label, not a severity.\n\nRe-ranked on impact:\n  P0 = daemon emits a credential asserting something never established, or discloses identity it promised not to. No attacker sophistication required.\n  P1 = verification absent or bypassable, but the system is not itself fabricating the claim.\n  P2 = hardening: local DoS, availability, races needing unusual preconditions.\n  P3 = hygiene, docs, conformance.\n\nP0 (5): .30 .49 .47 .71 .41\nP1 (+5): .82 .60 .96 .79 .87\nP2 (+3): .45 .6 .90\nP3 (+1): .22\n\nWorst single miscalibration: .22 sat at P0 tied with credential forgery. Three of its four unsafe sites are libc::getuid() — no arguments, cannot fail, no preconditions, unsafe only as an FFI call, so there is no soundness invariant to document. Only the getsockopt site has real invariants.\n\nNote the P1 band is now 27 and is doing the work P0 was doing badly; it has not been re-ranked internally and likely contains a similar spread.",
+  "created_at": "2026-09-13T21:10:39.279235656Z"
+}

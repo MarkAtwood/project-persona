@@ -1,0 +1,26 @@
+{
+  "id": "persona-5s4b.41",
+  "title": "Consumer attestation and per-consumer pseudonymity are never invoked; every caller receives the root identity",
+  "description": "service.rs:175 returns claim.spiffe_id.uri() -- the raw, full-provenance root identity -- to whoever called the RPC. Nothing on the request path attests the peer or derives a pseudonym.\n\nSPEC-HIA.md:191-193 makes this the central security control: \"This is the security-critical decision. If any process in the user session can call the socket without identification, then malware can enumerate the user's identities... On each FetchJWTSVID or FetchX509SVID call, personad attests the calling process and derives the pseudonym for that consumer.\" SPEC-HIA.md:75-92 specifies the ID as spiffe://{td}/pseudonym/{hkdf}/for/{consumer-app-id}.\n\nTrigger: any process running as the user opens /run/user/{uid}/persona/workload.sock and calls FetchJWTSVID with any audience.\n\nWhat goes wrong: it receives a signed JWT-SVID carrying the users real identity (spiffe://tailscale/user/mark@example.com/node/..., the source name, and the assurance level) with no attestation of what it is and no pseudonymous blinding. The threat the spec names -- malware enumerating the users identities -- is exactly what happens. There is no ponytail: marker anywhere on this path, so it does not read as a tracked deferral.\n\nCompounding this, persona-grpc/src/consumer_attest.rs:24-27 documents a guarantee that does not exist:\n    \"## Security\n     uid is verified against the daemon own uid. Connections from other uids are rejected.\"\nattest_peer() (consumer_attest.rs:16) has zero call sites -- server.rs:397-401 hands the raw UnixListenerStream to tonic and never touches it. No uid check runs on any connection. A reader auditing this file will conclude callers are authenticated when none are.\n\nLocations: persona-grpc/src/service.rs:139-204 (issuance path, no attestation, no derivation), persona-grpc/src/server.rs:397-401 (listener wired straight to tonic), persona-grpc/src/consumer_attest.rs:16-45 (uncalled, with a false security doc comment), persona-core/src/pseudonym.rs:13 and persona-core/src/spiffe_id.rs:106 (uncalled derivation helpers).\n\nRelated: persona-5s4b.9 catalogs the same items as unused public API at P3. This issue is the security consequence, not the dead-code cleanup: either wire attest_peer + derive_pseudonym into fetch_jwtsvid, or delete the false doc comment and state plainly in README/DESIGN that this build hands the root identity to any same-user process.",
+  "status": "open",
+  "priority": 0,
+  "issue_type": "bug",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:58:29.151366063Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:10:28.687313618Z",
+  "labels": [
+    "correctness",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.41",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:58:29.174580438Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

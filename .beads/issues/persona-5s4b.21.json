@@ -1,0 +1,28 @@
+{
+  "id": "persona-5s4b.21",
+  "title": "Socket path and UDS gRPC connector duplicated across all three binaries",
+  "description": "The workload socket path convention `/run/user/{uid}/persona/workload.sock` is constructed independently in three places:\n- personad/src/main.rs:53-54  (the daemon that BINDS it)\n- persona/src/main.rs:55-59   socket_path()\n- persona-nmh/src/main.rs:61-64  socket_path()\n\nThe tonic-over-Unix-socket channel setup (Endpoint::try_from(\"http://[::]:50051\") + connect_with_connector + service_fn + TokioIo) is duplicated in two:\n- persona/src/main.rs:62-90   connect_to_daemon()\n- persona-nmh/src/main.rs:109-131  inside fetch_jwt()\n\nWhat goes wrong: the daemon and its clients agree on the socket path only by coincidence of three identical format! strings. Change the convention in one (add an env override, move to XDG_RUNTIME_DIR, add a per-trust-domain suffix) and the clients silently look in the wrong place — the failure is 'personad socket not found', pointing the user at the daemon rather than at the mismatch. The dummy URI and the connector closure are pure copy-paste with no variation between the two copies.\n\nRewrite: move both into persona-core (or persona-grpc, which both clients already depend on) as two small functions — `pub fn workload_socket_path() -\u003e PathBuf` and `pub async fn connect(path: \u0026Path) -\u003e Result\u003cChannel\u003e`. Three call sites collapse to one line each; this is net deletion of ~35 duplicated lines, not a new abstraction layer.\n\nKeep persona/src/main.rs:69-74's friendly 'Is personad running?' bail at the CLI, since persona-nmh must not write that to stdout.",
+  "status": "closed",
+  "priority": 3,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:57:48.38416175Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:05:21.128403765Z",
+  "closed_at": "2026-09-13T21:05:21.128403765Z",
+  "close_reason": "Duplicate of persona-5s4b.12 (same defect, filed by a second review agent from a different angle). Merged during review triage; reopen if the angle in this issue is not covered there.",
+  "labels": [
+    "elegance",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.21",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:57:48.40641642Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

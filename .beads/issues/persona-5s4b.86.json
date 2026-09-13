@@ -1,0 +1,28 @@
+{
+  "id": "persona-5s4b.86",
+  "title": "allow(dead_code)/allow(unreachable_code) used where #[cfg(target_os)] belongs",
+  "description": "persona/src/main.rs uses lint suppressions to work around platform-conditional code that `#[cfg]` expresses directly.\n\nSite 1, line 8-9:\n    #[allow(dead_code)] // used only on macOS via #[cfg(target_os = \"macos\")]\n    const LAUNCHD_PLIST: \u0026str = \"...\";\n\nThe comment states the intent exactly, and `#[cfg(target_os = \"macos\")]` is the attribute that means it. As written, the 1.2 KiB plist string is compiled into every Linux and Windows `persona` binary, and the `allow` suppresses dead-code detection permanently — if the macOS branch is ever deleted or renamed, nothing will report that the constant is now unreferenced on all platforms.\n\nSite 2, lines 495-517, `install_service()`:\n    #[cfg(target_os = \"macos\")]\n    { ...; return Ok(()); }\n    #[allow(unreachable_code)]\n    { // Linux / systemd path ... }\n\nThe systemd branch is guarded by `#[allow(unreachable_code)]` rather than `#[cfg(not(target_os = \"macos\"))]`. On macOS the whole systemd block is still type-checked and codegen'd behind an early `return`, and the `allow` blanket-suppresses unreachable-code warnings for the entire block — including any genuinely unreachable statement introduced later inside it.\n\nFix: `#[cfg(target_os = \"macos\")]` on the constant, and split `install_service` into two `#[cfg]`-gated bodies (or two functions) so neither `allow` is needed. Both suppressions then disappear.",
+  "status": "closed",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T21:00:19.023168623Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:02:53.072782751Z",
+  "closed_at": "2026-09-13T21:02:53.072782751Z",
+  "close_reason": "Duplicate of persona-5s4b.26 (filed first, equivalent detail).",
+  "labels": [
+    "rust",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.86",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T21:00:19.045950888Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

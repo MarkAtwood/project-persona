@@ -1,0 +1,27 @@
+{
+  "id": "persona-5s4b.95",
+  "title": "Hex encoding hand-rolled four times in three different idioms",
+  "description": "The same byte-slice-to-lowercase-hex conversion appears four times, written three different ways:\n\n- persona-core/src/pseudonym.rs:18-22 — `okm.iter().fold(String::with_capacity(64), |mut s, b| { use std::fmt::Write as _; write!(s, \"{b:02x}\").unwrap(); s })`\n- persona-core/src/consumer.rs:50-54 — byte-for-byte the same fold, inlined inside a match arm\n- persona-attestors/src/did_key.rs:39 — `hash[..8].iter().map(|b| format!(\"{b:02x}\")).collect()`\n- persona-attestors/src/fido2.rs:52 — same `map(format!).collect()`\n\nThree problems:\n1. The `fold` variants use `write!` into a `String` and `.unwrap()` the `fmt::Result` — a `Result` unwrap in non-test code for an operation that cannot fail, and the noise of a mid-expression `use` statement.\n2. The `map(|b| format!(...)).collect()` variants allocate a separate `String` per byte — 8 allocations to produce 16 characters.\n3. Four copies means four places to check when the encoding matters, and it does matter: these strings go into SPIFFE ID paths (`did/{short}`, `fido2/{path_hash}`) and HKDF selector keys, where a casing or width change is a silent identity change.\n\nFix: one `fn hex(bytes: \u0026[u8]) -\u003e String` in persona-core, used by all four. Simplest correct body is the `with_capacity` + `for` loop pushing two chars, no `fmt` machinery and no per-byte allocation. Adding the `hex` crate would also do it, but a six-line function avoids the dependency.",
+  "status": "open",
+  "priority": 3,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T21:01:00.540182785Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:01:00.540182785Z",
+  "labels": [
+    "rust",
+    "iterators",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.95",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T21:01:00.567128916Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

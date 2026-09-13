@@ -1,0 +1,26 @@
+{
+  "id": "persona-5s4b.92",
+  "title": "Workload API socket is created world-accessible and chmod 0600 only after bind",
+  "description": "HYGIENE / narrow race. Not exploitable under a normal umask.\n\npersona-grpc/src/server.rs:23-33:\n    if let Some(parent) = socket_path.parent() { std::fs::create_dir_all(parent)?; }\n    let listener = UnixListener::bind(socket_path)?;\n    std::fs::set_permissions(socket_path, Permissions::from_mode(0o600))?;\n\nTwo ordering problems:\n1. The socket exists with mode 0777 \u0026 ~umask from bind() until set_permissions() runs. Under the usual umask 022 that is 0755 - no write bit for others, and connect(2) on a Unix socket requires write, so nobody else can connect. Under umask 000 (a daemon started from a supervisor that clears its umask, or any parent that set it) the window is 0777 and any local user can connect and be served during it.\n2. create_dir_all() creates /run/user/{uid}/persona (personad/src/main.rs:53) with 0777 \u0026 ~umask and it is never tightened. Directory permissions persist after the process exits.\n\nCONSEQUENCE during the window: a connecting process reaches fetch_jwtsvid, which does not identify its peer at all (see persona-5s4b.46 - attest_peer is never called), so it receives a JWT-SVID for the users identity. The window is microseconds and requires an unusual umask, hence P2 rather than P0.\n\nNote this is the only thing enforcing the same-uid boundary in practice: the uid check in consumer_attest.rs:20-26 is in dead code. That makes the socket mode load-bearing and worth making unconditional.\n\nFix direction: the constraint, not the mechanism - set umask to 0077 around bind (or bind inside a directory created 0700 with fs::set_permissions before bind), so the socket is never briefly permissive rather than being fixed up afterwards.",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T21:00:51.964282039Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:00:51.964282039Z",
+  "labels": [
+    "crypto",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.92",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T21:00:51.985686596Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

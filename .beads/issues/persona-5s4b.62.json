@@ -1,0 +1,29 @@
+{
+  "id": "persona-5s4b.62",
+  "title": "Unrecognised persona_require_presence silently fails open to None",
+  "description": "persona-core/src/audience.rs:60-66:\n\n    if let Some(val) = param.strip_prefix(\"persona_require_presence=\") {\n        require_presence = PresenceLevel::from_str(val).unwrap_or(PresenceLevel::None);\n    } else if let Some(val) = param.strip_prefix(\"persona_max_age=\") {\n        max_age_secs = Some(val.parse::\u003cu64\u003e().map_err(...)?);\n\nThe two extension parameters are handled inconsistently, and the security-relevant one is the lenient one. `persona_max_age=notanumber` returns `InvalidMaxAge`; `persona_require_presence=hardwar` (typo), `=Hardware` (wrong case), or `=biometric` (level this build does not know) silently becomes `PresenceLevel::None`.\n\n`PresenceLevel::None` is the weakest level, and persona-grpc/src/service.rs:146 gates issuance on `ext.require_presence \u003e claim.presence`. With `None` that comparison can never fail, so a relying party that typos its audience string gets a token issued against no presence requirement at all and has no way to tell — the request succeeds, the token looks normal.\n\n`PresenceLevel::from_str` already returns `AssuranceError::UnknownPresence`; the value is being thrown away. The test at audience.rs:120-126 pins the current behaviour as intended, so this needs a deliberate decision, not just a code change.\n\nFix: add an `UnknownPresenceLevel` variant to `AudienceParseError`, propagate with `?`, and update that test. A relying party asking for a presence level this daemon does not implement should get `invalid_argument`, not a downgrade.",
+  "status": "closed",
+  "priority": 1,
+  "issue_type": "bug",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:59:16.609330498Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:05:20.266526061Z",
+  "closed_at": "2026-09-13T21:05:20.266526061Z",
+  "close_reason": "Duplicate of persona-5s4b.71 (same defect, filed by a second review agent from a different angle). Merged during review triage; reopen if the angle in this issue is not covered there.",
+  "labels": [
+    "rust",
+    "error-handling",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.62",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:59:16.635698303Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

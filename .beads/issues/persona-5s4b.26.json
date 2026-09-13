@@ -1,0 +1,26 @@
+{
+  "id": "persona-5s4b.26",
+  "title": "install_service() fights the compiler with two lint suppressions instead of cfg-gating the Linux branch",
+  "description": "persona/src/main.rs:495-517 — install_service() gates the macOS branch with #[cfg(target_os = \"macos\")] and ends it with `return Ok(())`, then guards the Linux branch with #[allow(unreachable_code)] because on macOS the compiler correctly sees it as unreachable. That in turn forces #[allow(dead_code)] on LAUNCHD_PLIST at persona/src/main.rs:8 on non-macOS builds.\n\nWhat goes wrong: two lint suppressions exist purely to paper over a missing cfg, and #[allow(unreachable_code)] on a block is a blunt instrument — it will also silence a genuinely unreachable statement someone adds inside that block later. The `return` in the middle of a function whose other arm falls through is also a re-read: control flow depends on a cfg attribute several lines up.\n\nRewrite: put the matching negative cfg on the second block and drop everything else.\n\n    #[cfg(target_os = \"macos\")]\n    { ...; println!(...); Ok(()) }\n\n    #[cfg(not(target_os = \"macos\"))]\n    { ...; Ok(()) }\n\nand change persona/src/main.rs:8-9 from #[allow(dead_code)] to #[cfg(target_os = \"macos\")] on LAUNCHD_PLIST. Same for SYSTEMD_UNIT with #[cfg(not(target_os = \"macos\"))]. Net effect: two #[allow]s and one `return` deleted, and each platform compiles only its own constant.",
+  "status": "open",
+  "priority": 3,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:57:56.20066122Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T20:57:56.20066122Z",
+  "labels": [
+    "elegance",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.26",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:57:56.221624821Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

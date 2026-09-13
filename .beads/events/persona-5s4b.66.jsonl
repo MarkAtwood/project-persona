@@ -1,0 +1,5 @@
+{"id":"01a09c91-4334-7de0-9a12-62d0231e2e2d","issue_id":"persona-5s4b.66","event_type":"created","actor":"agent","old_value":"","new_value":"","created_at":"2026-09-13T20:59:20.756910263Z"}
+{"id":"01a09c91-4339-78c2-a9c3-f992f7a0739a","issue_id":"persona-5s4b.66","event_type":"label_added","actor":"agent","comment":"Added label: crypto","created_at":"2026-09-13T20:59:20.76157433Z"}
+{"id":"01a09c91-433e-728c-9094-8ea644a6b57e","issue_id":"persona-5s4b.66","event_type":"label_added","actor":"agent","comment":"Added label: untrusted-input","created_at":"2026-09-13T20:59:20.766167507Z"}
+{"id":"01a09c91-4342-7b99-a47a-bbd75b2c422a","issue_id":"persona-5s4b.66","event_type":"label_added","actor":"agent","comment":"Added label: review","created_at":"2026-09-13T20:59:20.770760892Z"}
+{"id":"01a09c96-c021-770d-88bd-be9d65e64bf4","issue_id":"persona-5s4b.66","event_type":"closed","actor":"agent","old_value":"","new_value":"Duplicate of persona-5s4b.45 (same defect, filed by a second review agent from a different angle). Merged during review triage; reopen if the angle in this issue is not covered there.","created_at":"2026-09-13T21:05:20.41746326Z"}

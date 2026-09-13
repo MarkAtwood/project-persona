@@ -1,0 +1,26 @@
+{
+  "id": "persona-5s4b.31",
+  "title": "No dependency vulnerability audit in CI or Makefile for a credential-issuing daemon",
+  "description": ".github/workflows/ci.yml runs fmt, clippy, build, test and an MSRV build. The Makefile's 'ci' target runs fmt-check, lint, test. Neither runs cargo-audit or cargo-deny, and there is no .cargo/audit.toml or deny.toml in the repo.\n\nThis project mints and signs identity credentials: Cargo.lock pulls ring 0.17, rustls 0.23, jsonwebtoken 9, x509-cert 0.2, and (under --all-features) ctap-hid-fido2 -\u003e x509-parser. RUSTSEC advisories against exactly this set of crates are routine, and nothing here would surface one. 226 locked packages, none monitored.\n\nAdd a 'cargo audit' (or 'cargo deny check advisories bans licenses') job. It also gives the license-compliance answer that the missing package metadata does not.",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:58:08.572961602Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T20:58:08.572961602Z",
+  "labels": [
+    "workspace",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.31",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:58:08.592394027Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

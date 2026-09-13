@@ -1,0 +1,29 @@
+{
+  "id": "persona-5s4b.100",
+  "title": "probe_sources doc lists 6 sources; the code probes 8",
+  "description": "persona-attestors/src/registry.rs:7-18, the doc comment on `probe_sources`:\n\n    /// Probe order (matches SPEC-HIA.md §Platform Detection):\n    /// 1. Tailscale socket\n    /// 2. SSH agent (SSH_AUTH_SOCK)\n    /// 3. OIDC cached tokens\n    /// 4. DID keys (PERSONA_DID_KEYS)\n    /// 5. GPG keyring\n    /// 6. FIDO2 hardware keys\n\nThe body probes eight, in this order: Tailscale (line 23), SSH agent (32), OIDC (40), DID keys (45), GPG (54), FIDO2 (62), GNOME Online Accounts (70), PIV/smartcard (80). The last two are missing from the list, and the in-body step comments run `// 7.` and `// 8.` past the end of what the doc claims.\n\nThe doc also asserts the order \"matches SPEC-HIA.md §Platform Detection\", so a reader checking the implementation against the spec will compare against a six-item list and conclude GOA and PIV are unspecified additions.\n\nSecond inaccuracy in the same comment: \"Each source is probed with a lightweight availability check before inclusion.\" OIDC is not — line 40-43 pushes `OidcCachedAttestor` unconditionally, with its own inline comment explaining that it scans lazily instead. The doc contradicts the code eight lines below it.\n\nFix: add items 7 and 8, and note the OIDC exception in the sentence that currently claims it applies to every source.",
+  "status": "closed",
+  "priority": 3,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T21:01:32.107731166Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:02:53.174208594Z",
+  "closed_at": "2026-09-13T21:02:53.174208594Z",
+  "close_reason": "Duplicate of persona-5s4b.50 (filed first, equivalent detail).",
+  "labels": [
+    "rust",
+    "docs",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.100",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T21:01:32.135710086Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "id": "persona-5s4b.8",
+  "title": "No registration path for third-party attestors; availability probe is not part of the Attestor trait",
+  "description": "persona-attestors/src/registry.rs:19-93 — `probe_sources()` returns `Vec\u003cArc\u003cdyn Attestor\u003e\u003e` built from a hardcoded list of the eight in-tree attestors. There is no `register()`, no builder, no `Registry` type, and the returned Vec is the only public entry point. A downstream crate that implements `Attestor` has no supported way to get it into the set the daemon uses; it must reimplement probe_sources and every consumer of it.\n\nSecond half of the same problem: the availability check `is_available()` is not a method on the `Attestor` trait (persona-attestors/src/lib.rs:108-136). It exists only as an inherent function on each concrete type, and its signature is not even consistent between them: `TailscaleAttestor::is_available(\u0026self)` (tailscale.rs:28) takes self, while ssh.rs:32, did_key.rs:23, fido2.rs:32, goa.rs:27, gpg.rs:22, piv.rs:25 are all associated functions with no receiver. Because the check lives outside the trait, `Arc\u003cdyn Attestor\u003e` cannot be probed at all, which is why registry.rs must know each concrete type.\n\nConcretely for a caller: you cannot write `fn add_attestor(a: Arc\u003cdyn Attestor\u003e)` against this crate and have it participate in startup probing or in the \"skip unavailable sources, never fatal\" behaviour the README promises.\n\nFix before 1.0: put `async fn is_available(\u0026self) -\u003e bool` (or fold it into `enumerate()` returning empty) on the trait, and make probe_sources take/return a registry that accepts externally supplied `Arc\u003cdyn Attestor\u003e`.",
+  "status": "open",
+  "priority": 1,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:57:08.814882531Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T20:57:08.814882531Z",
+  "labels": [
+    "risk",
+    "api-contract",
+    "immutability",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.8",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:57:08.846044347Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

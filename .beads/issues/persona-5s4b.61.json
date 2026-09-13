@@ -1,0 +1,26 @@
+{
+  "id": "persona-5s4b.61",
+  "title": "e2e test synchronises on a 100ms sleep and leaks its socket on failure",
+  "description": "persona-grpc/tests/e2e.rs:98-99:\n\n    // Give the server a moment to bind.\n    sleep(Duration::from_millis(100)).await;\n\nWhat goes wrong: the test's correctness depends on an unwritten timing assumption — that serve() finishes create_dir_all + bind + set_permissions (persona-grpc/src/server.rs:18-33) within 100ms. On a loaded CI runner or under a debug-build cold start that is not guaranteed, and the failure surfaces as 'client connect failed' at e2e.rs:113, which points at the client rather than at the race. There is no retry, so it is a straight flake.\n\nThe readiness condition is observable rather than guessable: the socket file's existence is exactly what the client needs. Rewrite as a bounded poll:\n\n    for _ in 0..100 {\n        if std::path::Path::new(\u0026socket_path).exists() { break; }\n        sleep(Duration::from_millis(10)).await;\n    }\n\nThat is faster in the common case (single-digit ms instead of a flat 100) and does not flake under load.\n\nSecond, smaller point in the same test: teardown at e2e.rs:180-181 (server_handle.abort() + remove_file) only runs when every preceding assertion passed. Any panic leaves the socket behind in /tmp, and tmp_socket_path() (e2e.rs:59-66) names it from `subsec_nanos()` alone — no pid, no process-unique component — so accumulated leftovers are a live collision surface for repeat runs, not just clutter. Deriving the name from std::process::id() as well makes each run's file unambiguous.",
+  "status": "open",
+  "priority": 3,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:59:14.984596374Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T20:59:14.984596374Z",
+  "labels": [
+    "elegance",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.61",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:59:15.004811304Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

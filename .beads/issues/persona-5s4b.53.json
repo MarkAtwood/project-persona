@@ -1,0 +1,28 @@
+{
+  "id": "persona-5s4b.53",
+  "title": "derive_pseudonym takes two bare \u0026str arguments that silently swap",
+  "description": "persona-core/src/pseudonym.rs:13: `pub fn derive_pseudonym(ikm: \u0026[u8], trust_domain: \u0026str, consumer_app_id: \u0026str) -\u003e String`.\n\nThe two `\u0026str` parameters are adjacent, interchangeable to the compiler, and semantically opposite (HKDF salt vs HKDF info). Calling `derive_pseudonym(ikm, consumer_app_id, trust_domain)` compiles, never errors, and returns a well-formed 64-char hex pseudonym that is simply wrong and stable-wrong — the failure is undetectable at every layer above, since the only property anything checks is determinism. The crate own tests (pseudonym.rs:95-99) demonstrate that swapping the arguments changes the output without any signal.\n\nNewtypes (`TrustDomainSalt`, `ConsumerAppId`) or taking `\u0026TrustDomain` and `\u0026ConsumerIdentity` directly — both types already exist in this crate — makes the mistake a type error. Taking `\u0026ConsumerIdentity` also removes the current unenforced coupling where the caller is expected, but never required, to pass `ConsumerIdentity::selector_key()` as the third argument.\n\nSecondary: the return type is a hex `String`. A caller that needs the raw 32 bytes (to feed another KDF, or to compare in constant time) must hex-decode output the function just hex-encoded. Returning `[u8; 32]` with a separate `to_hex()` serves both without allocating.",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:58:51.023310763Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T20:58:51.023310763Z",
+  "labels": [
+    "risk",
+    "api-contract",
+    "defensive",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.53",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:58:51.05389839Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

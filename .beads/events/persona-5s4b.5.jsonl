@@ -1,0 +1,5 @@
+{"id":"01a09c8f-0af4-70c3-a47b-78da26d4041a","issue_id":"persona-5s4b.5","event_type":"created","actor":"agent","old_value":"","new_value":"","created_at":"2026-09-13T20:56:55.28405058Z"}
+{"id":"01a09c8f-0af8-794e-8301-320cc7e55c44","issue_id":"persona-5s4b.5","event_type":"label_added","actor":"agent","comment":"Added label: risk","created_at":"2026-09-13T20:56:55.28861027Z"}
+{"id":"01a09c8f-0afc-7b86-98cc-42ab96f4eb8c","issue_id":"persona-5s4b.5","event_type":"label_added","actor":"agent","comment":"Added label: api-contract","created_at":"2026-09-13T20:56:55.29275573Z"}
+{"id":"01a09c8f-0b00-7cde-9791-891b01a09db1","issue_id":"persona-5s4b.5","event_type":"label_added","actor":"agent","comment":"Added label: immutability","created_at":"2026-09-13T20:56:55.29684385Z"}
+{"id":"01a09c8f-0b05-70cb-ae96-1070e2078056","issue_id":"persona-5s4b.5","event_type":"label_added","actor":"agent","comment":"Added label: review","created_at":"2026-09-13T20:56:55.301052438Z"}

@@ -1,0 +1,29 @@
+{
+  "id": "persona-5s4b.106",
+  "title": "serve() documents a 0600 socket but creates it with the process umask and chmods afterwards, leaving a connectable window",
+  "description": "persona-grpc/src/server.rs:370-393. The doc comment promises \"Creates parent directories if needed. Sets socket permissions to 0600.\" The implementation binds first and fixes permissions second:\n\n    let listener = UnixListener::bind(socket_path)?;        // line 387\n    ...\n    std::fs::set_permissions(socket_path, Permissions::from_mode(0o600))?;   // line 392\n\nbind() creates the socket inode with 0777 \u0026 ~umask, so between line 387 and line 392 the mode is whatever the daemon umask yields. Connecting to a Unix socket requires write permission, so the exposure depends on umask:\n  • umask 022 (systemd default) -\u003e 0755: others cannot connect. Not exploitable.\n  • umask 002 (common on distros using per-user groups, and on many developer shells) -\u003e 0775: any member of the users primary group can connect during the window.\n  • umask 000 -\u003e 0777: any local user can connect.\n\nGiven that no consumer attestation runs on the issuance path (filed separately), a connection that lands inside that window gets a full JWT-SVID for the users identity.\n\nThe same ordering issue applies to the parent directory: create_dir_all at server.rs:383-385 creates /run/user/{uid}/persona with 0777 \u0026 ~umask rather than 0700. On the default personad path this is contained, because systemd creates /run/user/{uid} itself as 0700 -- but serve() is a public function taking an arbitrary path, and it is already called with a /tmp path by persona-grpc/tests/e2e.rs:236, where no such containment exists.\n\nWhy this belongs in the tree rather than being ignored: the function states a guarantee it does not provide, and the guarantee is the only thing standing between an unauthenticated local caller and the users identity. A contributor reading the doc comment will not re-derive the umask interaction. Note also that the ordering at server.rs:378-385 removes a stale socket before ensuring the parent directory exists, which is harmless but backwards.\n\nFix direction: set umask to 0177 around the bind and restore it, or bind into a directory created 0700 first and rely on directory permissions; either way make the doc comment describe what is actually enforced.",
+  "status": "closed",
+  "priority": 1,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T21:02:25.470093043Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:05:20.560488255Z",
+  "closed_at": "2026-09-13T21:05:20.560488255Z",
+  "close_reason": "Duplicate of persona-5s4b.92 (same defect, filed by a second review agent from a different angle). Merged during review triage; reopen if the angle in this issue is not covered there.",
+  "labels": [
+    "risk",
+    "maintainer-burden",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.106",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T21:02:25.498795783Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

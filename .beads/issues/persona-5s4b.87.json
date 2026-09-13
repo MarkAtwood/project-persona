@@ -1,0 +1,26 @@
+{
+  "id": "persona-5s4b.87",
+  "title": "FetchJWTSVID ignores JWTSVIDRequest.spiffe_id and returns a single highest-assurance SVID, contradicting the vendored proto",
+  "description": "proto/spiffe/workload/workload.proto:116-123 defines:\n\n    message JWTSVIDRequest {\n        repeated string audience = 1;\n        // Optional. The requested SPIFFE ID for the JWT-SVID. If unset, all\n        // JWT-SVIDs to which the workload is entitled are requested.\n        string spiffe_id = 2;\n    }\n\npersona-grpc/src/service.rs:99-205 never reads req.spiffe_id. It ignores the field and, at service.rs:120-137, scans every attestor and keeps whichever single claim has the highest assurance, returning exactly one SVID (service.rs:198-204).\n\nBoth halves of the documented contract are violated:\n\n(1) spiffe_id set. Trigger: a workload holding several identities (say a Tailscale IAA2 claim and an ssh-agent IAA1 claim) asks specifically for spiffe://ssh.local/key/\u003cfp\u003e. It silently receives the Tailscale identity instead, with status OK. The caller has no signal that its selector was discarded -- it must re-read the returned spiffe_id and compare. A caller that trusts the response and forwards the token authenticates as the wrong identity to the relying party.\n\n(2) spiffe_id unset. The proto says \"all JWT-SVIDs to which the workload is entitled\". The service returns one. A conformant client that enumerates the returned svids list to choose an identity sees only the daemon highest-assurance pick and cannot discover the others. persona/src/main.rs:150-157 (whoami) and e2e.rs:272-275 both loop over svids as if more than one can appear, so the intent to return several is already assumed by callers in this repo.\n\nNote the \"highest assurance wins\" tiebreak is itself unspecified and non-deterministic when two claims share an assurance level: the comparison at service.rs:126-128 is strictly greater-than over an unordered iteration of self.attestors, so the winner among equal-assurance claims depends on attestor registration order (registry.rs:155-229) and, within an attestor, on enumeration order.\n\nFix direction: honour req.spiffe_id as a filter and return NOT_FOUND when no claim matches it; when unset, return every entitled claim rather than one. If returning one is a deliberate simplification, mark it with a ponytail: comment and document the selection rule.",
+  "status": "open",
+  "priority": 1,
+  "issue_type": "bug",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T21:00:28.433904202Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:10:28.918475827Z",
+  "labels": [
+    "correctness",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.87",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T21:00:28.455827643Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

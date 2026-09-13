@@ -1,0 +1,4 @@
+{"id":"01a09c90-e578-72bb-af60-4787bcae0552","issue_id":"persona-5s4b.56","event_type":"created","actor":"agent","old_value":"","new_value":"","created_at":"2026-09-13T20:58:56.760179699Z"}
+{"id":"01a09c90-e57c-7d38-b373-c3f401b34899","issue_id":"persona-5s4b.56","event_type":"label_added","actor":"agent","comment":"Added label: crypto","created_at":"2026-09-13T20:58:56.764866967Z"}
+{"id":"01a09c90-e581-7595-8f9d-7a6bab0ac047","issue_id":"persona-5s4b.56","event_type":"label_added","actor":"agent","comment":"Added label: review","created_at":"2026-09-13T20:58:56.769366807Z"}
+{"id":"01a09c96-be90-7a11-bf87-834b4780ead6","issue_id":"persona-5s4b.56","event_type":"closed","actor":"agent","old_value":"","new_value":"Duplicate of persona-5s4b.82 (same defect, filed by a second review agent from a different angle). Merged during review triage; reopen if the angle in this issue is not covered there.","created_at":"2026-09-13T21:05:20.016660495Z"}

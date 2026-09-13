@@ -1,0 +1,29 @@
+{
+  "id": "persona-5s4b.91",
+  "title": "Pseudonym derivation pipeline is fully built and never wired up",
+  "description": "Three public APIs form a complete per-consumer pseudonym pipeline, each with tests, and no caller anywhere in the workspace:\n\n- persona-core/src/pseudonym.rs:13 `derive_pseudonym(ikm, trust_domain, consumer_app_id)` — 7 tests, three with proper pyca/cryptography HKDF oracles\n- persona-core/src/consumer.rs:47 `ConsumerIdentity::selector_key()` — documented as \"a stable string key suitable for use as HKDF `info`\", i.e. the second argument to the above; 7 tests\n- persona-core/src/spiffe_id.rs:106 `SpiffeId::pseudonymous(trust_domain, hkdf_id, consumer)` — builds the resulting `pseudonym/{hkdf_id}/for/{consumer}` ID\n\nGrep confirms the only references are the definitions, the `pub use` in persona-core/src/lib.rs:14-16, and their own tests. persona-grpc/src/service.rs issues SVIDs with `claim.spiffe_id.uri()` directly (line 175) — the real, non-pseudonymous ID — so no consumer ever receives a blinded identity.\n\nThe gap is structural, not a missing call: the pipeline needs a `ConsumerIdentity` to derive against, and that comes from `consumer_attest::attest_peer`, which is itself never called (filed separately). Both halves are complete and neither is connected.\n\nThis is worth an issue rather than deletion — the code is correct and tested, and per-consumer blinding is clearly an intended feature. But right now the crate exports a privacy feature that does nothing, and the tests give false confidence that it is in use.\n\nFix: either wire it up behind the peer attestation work, or add a note on `derive_pseudonym` stating it is not yet on the issuance path and naming the issue that will connect it.",
+  "status": "closed",
+  "priority": 3,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T21:00:51.603307106Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:05:19.860722113Z",
+  "closed_at": "2026-09-13T21:05:19.860722113Z",
+  "close_reason": "Duplicate of persona-5s4b.41 (same defect, filed by a second review agent from a different angle). Merged during review triage; reopen if the angle in this issue is not covered there.",
+  "labels": [
+    "rust",
+    "dead-code",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.91",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T21:00:51.632515152Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

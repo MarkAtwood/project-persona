@@ -1,0 +1,28 @@
+{
+  "id": "persona-5s4b.52",
+  "title": "Pseudonym derivation has no scheme version, so the HKDF inputs can never be changed",
+  "description": "persona-core/src/pseudonym.rs:13-23 and persona-core/src/consumer.rs:47-68.\n\n`derive_pseudonym(ikm, trust_domain, consumer_app_id)` feeds `consumer_app_id` directly as HKDF info and `trust_domain` directly as salt, with no version tag or protocol label anywhere in the input. Pseudonyms are the stable per-consumer identity a relying app keys its user records on (SpiffeId::pseudonymous, spiffe_id.rs:106-108). That makes the exact byte layout of these inputs a permanent wire commitment from the first release: any change — switching the info string, adding a field, moving to a different KDF — silently produces different pseudonyms and every downstream app sees all its users as new users, with no way to detect the change or to serve both schemes during a migration.\n\n`ConsumerIdentity::selector_key()` (consumer.rs:47) is the other half: its per-variant format is documented (consumer.rs:39-46) as an implementation detail of a helper, but it is in fact the HKDF info input, so those seven format strings are equally frozen. Nothing in the doc says so, and a future contributor reformatting `unattested:uid:{uid}:pid:{pid}` would look like a cosmetic change.\n\nCheap fix now, impossible later: prefix the HKDF info with a scheme label and version, e.g. `persona-pseudonym-v1:{selector_key}`, and document on both functions that the inputs are a stable wire format bumped only by incrementing the version. This is a constraint (one fixed label) rather than a mechanism (no negotiation, no config) and it is the difference between a possible migration and an impossible one.",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:58:50.938775511Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:16:47.182821884Z",
+  "labels": [
+    "risk",
+    "api-contract",
+    "versioning",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.52",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:58:50.973622794Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "id": "persona-5s4b.98",
+  "title": "persona-grpc exports types from tonic and sibling crates without re-exporting them",
+  "description": "rust.md: \"If crate `A`'s public API uses types that are defined in crate `B`, but does not re-export crate `B`, then `A` updating its dependency on `B` must be considered a semver-breaking change to `A`.\"\n\npersona-grpc's public API uses, and does not re-export:\n- `tonic::Status` and `tonic::Request`/`Response` — throughout persona-grpc/src/service.rs, and unavoidably in the generated `workload` module (lib.rs:8-10)\n- `persona_core::SvidSigner` and `persona_core::TrustBundleStore` — service.rs:17-18, in `WorkloadApiService`'s public fields and `new()` signature\n- `persona_attestors::Attestor` — service.rs:19, same\n\npersona-grpc/src/lib.rs:1-10 contains only `pub mod` declarations; there is no `pub use` of any dependency.\n\nThe tonic case is the one that bites. tonic is at 0.12, still pre-1.0, and bumps its public types on every minor release — it is not in the \"widely-used ecosystem staple you need not re-export\" category that rust.md carves out for tokio and serde. Downstream code today has to add its own `tonic = \"0.12\"` dependency and keep the version in lockstep by hand; when persona-grpc moves to tonic 0.13, every consumer breaks with a type mismatch on `Status` and no version bump of persona-grpc signals it.\n\npersona-core and persona-attestors are path dependencies inside this workspace, so they are lower risk, but re-exporting them (`pub use persona_core;`) removes the need for consumers to depend on them directly just to name `SvidSigner`.\n\nFix: `pub use tonic;` plus `pub use persona_attestors;` / `pub use persona_core;` in persona-grpc/src/lib.rs.",
+  "status": "open",
+  "priority": 3,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T21:01:22.221223602Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:01:22.221223602Z",
+  "labels": [
+    "rust",
+    "re-exports",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.98",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T21:01:22.251302537Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

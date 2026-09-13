@@ -1,0 +1,28 @@
+{
+  "id": "persona-5s4b.48",
+  "title": "validate_jwtsvid comment claims it uses the trust bundle; it uses the signer's own key",
+  "description": "persona-grpc/src/service.rs:219-221:\n\n    // Get the local trust bundle's public key for verification.\n    let pub_key_der = self.signer.public_key_der();\n    let decoding_key = DecodingKey::from_ec_der(pub_key_der);\n\nThe comment says trust bundle. The code reads the public key straight off `self.signer` — the process's own ephemeral keypair (persona-core/src/signer.rs:55-61, 'never persisted, discarded when the process exits'). `self.bundles`, the actual TrustBundleStore, is not consulted, even though it is right there on the same struct (service.rs:18) and fetch_jwt_bundles() twelve lines up does read it.\n\nWhat goes wrong: the comment describes the behaviour someone would expect from a SPIFFE Workload API — validate against the configured trust bundles, which is what makes federation and validating another party's SVID possible. The code can only ever validate a token this exact process instance signed; after a restart it rejects its own previously issued tokens. A reviewer skimming for 'does validation use the trust bundle' reads the comment, sees the word 'bundle', and moves on.\n\nFix: if validating only self-issued tokens is the intended scope for now, say that — replace the comment with something like 'only self-issued SVIDs are validatable: the ephemeral signing key is the sole verification key until federated bundles are populated (persona-rbu)', and preferably make it a ponytail: comment naming the upgrade path, matching the convention used elsewhere in this file (service.rs:155, service.rs:187, service.rs:247). If validating against the bundle store is intended, that is a functional gap and needs an issue rather than a comment.",
+  "status": "closed",
+  "priority": 3,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:58:37.151371547Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:05:20.064432722Z",
+  "closed_at": "2026-09-13T21:05:20.064432722Z",
+  "close_reason": "Duplicate of persona-5s4b.82 (same defect, filed by a second review agent from a different angle). Merged during review triage; reopen if the angle in this issue is not covered there.",
+  "labels": [
+    "readability",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.48",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:58:37.175824948Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

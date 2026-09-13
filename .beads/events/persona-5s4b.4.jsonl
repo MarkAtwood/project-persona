@@ -1,0 +1,4 @@
+{"id":"01a09c8e-e461-7211-9dc9-dbd9737b4c22","issue_id":"persona-5s4b.4","event_type":"created","actor":"agent","old_value":"","new_value":"","created_at":"2026-09-13T20:56:45.409136343Z"}
+{"id":"01a09c8e-e465-75a0-9a2f-c4dbaaf55806","issue_id":"persona-5s4b.4","event_type":"label_added","actor":"agent","comment":"Added label: elegance","created_at":"2026-09-13T20:56:45.413369398Z"}
+{"id":"01a09c8e-e469-78d0-bc32-fa9292c7ea0b","issue_id":"persona-5s4b.4","event_type":"label_added","actor":"agent","comment":"Added label: review","created_at":"2026-09-13T20:56:45.417578551Z"}
+{"id":"01a09c96-c22b-741b-8d19-b32f95a8a87b","issue_id":"persona-5s4b.4","event_type":"closed","actor":"agent","old_value":"","new_value":"Duplicate of persona-5s4b.95 (same defect, filed by a second review agent from a different angle). Merged during review triage; reopen if the angle in this issue is not covered there.","created_at":"2026-09-13T21:05:20.939269766Z"}

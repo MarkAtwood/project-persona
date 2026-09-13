@@ -1,0 +1,28 @@
+{
+  "id": "persona-5s4b.4",
+  "title": "Four hand-rolled hex encoders, two of which allocate a String per byte",
+  "description": "Lowercase-hex encoding is open-coded in four places, in two different styles:\n\nFold-with-write! style (correct, one allocation):\n- persona-core/src/consumer.rs:50-54\n- persona-core/src/pseudonym.rs:18-22\n\nAllocate-per-byte style:\n- persona-attestors/src/did_key.rs:39   `hash[..8].iter().map(|b| format!(\"{b:02x}\")).collect()`\n- persona-attestors/src/fido2.rs:52     `hash[..8].iter().map(|b| format!(\"{b:02x}\")).collect()`\n\nWhat goes wrong: the did_key/fido2 form heap-allocates and drops 8 short Strings per call before building the result — pure waste for a fixed 16-char output. More importantly, four copies of the same primitive means the two styles have already drifted, and a fifth caller will pick whichever it copies from.\n\nRewrite (no new dependency — `hex` is not in the workspace and does not need to be): add one small pub fn to persona-core, e.g.\n\n    pub fn hex_lower(bytes: \u0026[u8]) -\u003e String\n\nwith the existing fold-with-write! body from pseudonym.rs, and have all four call sites use it. persona-attestors already depends on persona-core, so this deletes three implementations and adds none. This is net deletion, not a new abstraction layer.",
+  "status": "closed",
+  "priority": 3,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:56:45.404747923Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:05:20.935259395Z",
+  "closed_at": "2026-09-13T21:05:20.935259395Z",
+  "close_reason": "Duplicate of persona-5s4b.95 (same defect, filed by a second review agent from a different angle). Merged during review triage; reopen if the angle in this issue is not covered there.",
+  "labels": [
+    "elegance",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.4",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:56:45.422101654Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

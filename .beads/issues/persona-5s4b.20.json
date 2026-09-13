@@ -1,0 +1,28 @@
+{
+  "id": "persona-5s4b.20",
+  "title": "persona-core pins serde_json = \"1\" locally instead of inheriting from workspace.dependencies",
+  "description": "persona-core/Cargo.toml declares 'serde_json = \"1\"' as a plain version requirement. Every other member (persona-attestors, persona-grpc, personad, persona, persona-nmh) uses 'serde_json.workspace = true', and the root Cargo.toml [workspace.dependencies] already defines serde_json = \"1\".\n\nIt resolves to the same crate today, so nothing breaks now. The cost is that a future change to the workspace pin — a bump, a feature addition such as 'preserve_order' or 'arbitrary_precision', or default-features = false — silently skips persona-core. serde_json features are additive and unify across the graph, so a feature added at the workspace level would reach persona-core anyway while a *version floor* raise would not, which is exactly the confusing half-applied case.\n\nChange to 'serde_json.workspace = true'. This is the only member that opts out of workspace inheritance for any dependency.",
+  "status": "closed",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:57:43.738078827Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:05:21.228710721Z",
+  "closed_at": "2026-09-13T21:05:21.228710721Z",
+  "close_reason": "Duplicate of persona-5s4b.104 (same defect, filed by a second review agent from a different angle). Merged during review triage; reopen if the angle in this issue is not covered there.",
+  "labels": [
+    "workspace",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.20",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:57:43.755264905Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

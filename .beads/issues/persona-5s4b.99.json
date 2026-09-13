@@ -1,0 +1,28 @@
+{
+  "id": "persona-5s4b.99",
+  "title": "SSH agent client allocates an attacker-controlled length before reading, allowing a 4 GiB allocation from one 4-byte response",
+  "description": "persona-attestors/src/ssh.rs:289-294:\n\n    let mut len_buf = [0u8; 4];\n    stream.read_exact(\u0026mut len_buf).await?;\n    let resp_len = u32::from_be_bytes(len_buf) as usize;\n    let mut resp = vec![0u8; resp_len];\n    stream.read_exact(\u0026mut resp).await?;\n\nresp_len is taken straight from the wire with no upper bound and the buffer is allocated and zeroed before any of the body has arrived. A peer that writes the four bytes FF FF FF FF causes an immediate 4 GiB zeroed allocation.\n\nTrigger: SSH_AUTH_SOCK points at something that is not a well-behaved OpenSSH agent. This is an inherited environment variable that personad reads at enumerate() time (ssh.rs:317-318), and the socket it names is chosen by whatever launched the daemon -- an agent-forwarded session, a third-party agent implementation, or any same-user process that binds a socket at that path. is_available() (ssh.rs:262-267) only checks that the path exists; nothing verifies what is behind it.\n\nWhat goes wrong: personad aborts on allocation failure or is OOM-killed, taking down identity issuance for every consumer on the machine. Because enumerate() runs on every FetchJWTSVID (service.rs:121-122), the trigger is reachable on any request, not just at startup. A truncated or non-agent response also leaves read_exact blocking with no timeout.\n\nFor reference, the SSH agent protocol caps messages at 256 KiB and OpenSSH own client rejects anything larger, so a bound here costs nothing in compatibility.\n\nFix direction: reject resp_len above a fixed maximum (256 KiB) before allocating, and consider read-into-a-growing-buffer plus an overall timeout on agent_roundtrip.",
+  "status": "closed",
+  "priority": 0,
+  "issue_type": "bug",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T21:01:29.298568354Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:05:20.36385717Z",
+  "closed_at": "2026-09-13T21:05:20.36385717Z",
+  "close_reason": "Duplicate of persona-5s4b.45 (same defect, filed by a second review agent from a different angle). Merged during review triage; reopen if the angle in this issue is not covered there.",
+  "labels": [
+    "correctness",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.99",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T21:01:29.321129071Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

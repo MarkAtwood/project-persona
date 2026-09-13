@@ -1,0 +1,28 @@
+{
+  "id": "persona-5s4b.74",
+  "title": "Audience policy fails open: persona_max_age dropped and unknown presence levels downgrade to None",
+  "description": "Two fail-open paths in the same policy parser. Neither is directly attacker-triggerable beyond what a caller can already request, but both silently weaken a stated policy instead of erroring - the wrong direction for a security parameter.\n\n1. persona_max_age is parsed and then never used.\npersona-core/src/audience.rs:62-66 parses it into AudienceExtensions::max_age_secs (audience.rs:25). Nothing in persona-grpc/src/service.rs ever reads ext.max_age_secs (confirmed: the only references to max_age_secs in the tree are audience.rs and its tests). A caller requesting\n    https://rp.example?persona_max_age=60\ngets a token with no freshness bound whatsoever and no indication the constraint was ignored. Meanwhile the Attestor::freshness() method (persona-attestors/src/lib.rs) exists and is never called from the issuance path either. CONSEQUENCE: a relying party that believes it has pinned a 60-second attestation-freshness window has pinned nothing; service.rs:160 hands it present_until = now + 300 regardless.\n\n2. An unrecognised presence level silently becomes \"no requirement\".\npersona-core/src/audience.rs:60-61:\n    require_presence = PresenceLevel::from_str(val).unwrap_or(PresenceLevel::None);\nPresenceLevel::from_str in persona-core/src/assurance.rs correctly returns AssuranceError::UnknownPresence for anything it does not know; unwrap_or throws that away and substitutes the WEAKEST level. So persona_require_presence=biometric, or a typo, or any level added in a future version of the spec, means \"presence not required\" rather than an error. The unit test at audience.rs:120-126 (unknown_presence_level_defaults_to_none) locks this behaviour in.\n\nCONSEQUENCE for (2): version skew and typos silently disable the presence gate. A relying party publishes an audience string naming a level this build does not implement; an honest client passes it through verbatim; personad issues a token with presence.present=false (service.rs:167) that the RP believes carries the level it asked for. AudienceParseError already exists and is already returned for a bad persona_max_age (audience.rs:65) - a bad presence level should use the same path.\n\nFix direction: add AudienceParseError::UnknownPresence and propagate the from_str error; then either enforce max_age_secs against the attestors freshness() result or reject requests carrying it until it is implemented. Failing closed on an unimplemented policy parameter is the constraint that removes this whole class.",
+  "status": "closed",
+  "priority": 1,
+  "issue_type": "bug",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:59:47.396746237Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:05:20.217089982Z",
+  "closed_at": "2026-09-13T21:05:20.217089982Z",
+  "close_reason": "Duplicate of persona-5s4b.71 (same defect, filed by a second review agent from a different angle). Merged during review triage; reopen if the angle in this issue is not covered there.",
+  "labels": [
+    "crypto",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.74",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:59:47.418936341Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

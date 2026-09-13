@@ -1,0 +1,28 @@
+{
+  "id": "persona-5s4b.13",
+  "title": "SpiffeId::provenance() has a provably dead condition and matches any path segment ending in 'via'",
+  "description": "persona-core/src/spiffe_id.rs:95-102:\n\n    pub fn provenance(\u0026self) -\u003e Option\u003c\u0026str\u003e {\n        let (prefix, source) = self.path.rsplit_once('/')?;\n        if prefix.ends_with(\"via\") || prefix == \"via\" {\n            Some(source)\n        } else {\n            None\n        }\n    }\n\nTwo problems in one line:\n\n1. `|| prefix == \"via\"` is dead code. \"via\".ends_with(\"via\") is true, so the left operand already covers it. The clause can never change the result and reads as if it guards a case the author was unsure about — a maintainer will keep it forever because it looks load-bearing.\n\n2. `ends_with(\"via\")` is a substring test where a path-segment test is meant. The doc comment (spiffe_id.rs:91-94) says it extracts the source from a `via/{source}` tail, but a path like `user/trivia/alice` returns Some(\"alice\") — 'trivia' ends with 'via'. Same for any segment ending in those three characters.\n\nRewrite — one line, no dead branch, and it says what it means:\n\n    pub fn provenance(\u0026self) -\u003e Option\u003c\u0026str\u003e {\n        let (prefix, source) = self.path.rsplit_once('/')?;\n        (prefix == \"via\" || prefix.ends_with(\"/via\")).then_some(source)\n    }\n\nNote oidc.rs:89 is the only producer of `via/` paths today and provenance() has no caller yet (see the dead-surface issue), so this is free to fix now and expensive to find later.",
+  "status": "closed",
+  "priority": 3,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:57:27.143196963Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:05:20.79741733Z",
+  "closed_at": "2026-09-13T21:05:20.79741733Z",
+  "close_reason": "Duplicate of persona-5s4b.77 (same defect, filed by a second review agent from a different angle). Merged during review triage; reopen if the angle in this issue is not covered there.",
+  "labels": [
+    "elegance",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.13",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:57:27.164139843Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

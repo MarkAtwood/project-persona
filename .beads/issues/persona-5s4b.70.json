@@ -1,0 +1,29 @@
+{
+  "id": "persona-5s4b.70",
+  "title": "Error variants carry String instead of structured fields (AttestorError, SignerError)",
+  "description": "rust.md: \"Error variants must carry structured fields, not `String` messages. `Err(format!(\\\"expected {x}, got {y}\\\"))` loses the values.\"\n\npersona-attestors/src/lib.rs:88-97:\n    Unavailable(String)\n    ChallengeFailed(String)\n    Io(#[from] std::io::Error)\n\npersona-core/src/signer.rs:14-37:\n    KeyGen(String)\n    Sign(String)\n    Jwt(#[from] jsonwebtoken::errors::Error)\n    NotImplemented(String)\nplus two `From` impls that stringify structured errors on the way in:\n`From\u003cring::error::Unspecified\u003e -\u003e Sign(e.to_string())` and `From\u003cring::error::KeyRejected\u003e -\u003e KeyGen(e.to_string())`.\n\nWhat is lost, concretely:\n- ssh.rs:92 `AttestorError::Unavailable(format!(\"cannot connect to SSH agent: {e}\"))` throws away an `io::Error` whose `ErrorKind` distinguishes \"agent not running\" (ConnectionRefused, expected, skip the source) from \"permission denied\" (a real misconfiguration to report). Callers get one opaque string. Same shape at tailscale.rs:42 and :58, gpg.rs:103 and :115, oidc.rs:179.\n- `SignerError::NotImplemented(String)` is matched in the test at signer.rs:164 but the payload is never read; the only two possible values are compile-time constants, so this should be a fieldless variant or an enum of the unimplemented operations.\n- persona-grpc/src/service.rs:181-185 maps every `SignerError` to `Status::internal(e.to_string())`. With structured variants it could map `NotImplemented` to `Status::unimplemented` and keep `internal` for genuine failures.\n\nFix: give `Unavailable` and `ChallengeFailed` a `{ source_name: String, #[source] cause: ... }` shape (or dedicated variants per cause), keep the ring/jsonwebtoken errors as `#[source]` rather than `to_string()`, and make `NotImplemented` fieldless.\n\nAlso check the thiserror rule while editing: do not both interpolate a source error and mark it `#[source]`. `Io(#[from] std::io::Error)` with `#[error(\"IO error: {0}\")]` currently duplicates the io message when the chain is rendered — pick one.",
+  "status": "closed",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:59:31.370587803Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:05:21.079754252Z",
+  "closed_at": "2026-09-13T21:05:21.079754252Z",
+  "close_reason": "Duplicate of persona-5s4b.15 (same defect, filed by a second review agent from a different angle). Merged during review triage; reopen if the angle in this issue is not covered there.",
+  "labels": [
+    "rust",
+    "error-handling",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.70",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:59:31.398061656Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

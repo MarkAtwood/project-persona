@@ -1,0 +1,26 @@
+{
+  "id": "persona-5s4b.10",
+  "title": "Cargo.lock is v4; the MSRV 1.75 CI job cannot parse it",
+  "description": "Cargo.lock line 3 is 'version = 4'. Lockfile v4 was stabilized in Rust 1.78. The MSRV job in .github/workflows/ci.yml installs dtolnay/rust-toolchain@1.75 and runs 'cargo build'; Cargo 1.75 rejects a v4 lockfile outright ('lock file version 4 requires -Znext-lockfile-bump') before compiling anything.\n\nConsequence: the MSRV job either fails on every run or has never actually validated MSRV. The declared rust-version = 1.75 in the root Cargo.toml is unverified.\n\nEither downgrade the lockfile to v3 and keep 1.75, or raise the declared MSRV to \u003e= 1.78 and update the CI toolchain to match.",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "bug",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:57:22.510813754Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:16:46.853920034Z",
+  "labels": [
+    "workspace",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.10",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:57:22.530184711Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

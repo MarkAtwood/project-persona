@@ -1,0 +1,27 @@
+{
+  "id": "persona-5s4b.80",
+  "title": "Blocking std::fs I/O inside async fn without spawn_blocking",
+  "description": "Synchronous filesystem calls run directly on the tokio runtime inside `async fn` bodies, stalling the reactor thread for the duration of the syscall.\n\npersona-attestors/src/oidc.rs — `scan_token_caches()` (line 96) is a plain sync fn doing `std::fs::read_to_string` on up to three files (lines 106, 119) plus JSON parsing of each. It is called from three async trait methods: `enumerate()` (line 163), `prove()` (line 173), and `freshness()` (line 190). An Azure MSAL cache is routinely a few hundred KiB and lives on whatever the user's $HOME is mounted on — an NFS or autofs home hangs the whole runtime, not just this task. `prove()` and `freshness()` re-scan from disk on every call, so this is on the hot path.\n\npersona-grpc/src/server.rs:18-32 — `async fn serve` calls `std::fs::remove_file`, `std::fs::create_dir_all`, and `std::fs::set_permissions`. One-shot at startup, so low impact, but `tokio::fs` is a drop-in here.\n\nThe rest of the crate already does this correctly: fido2.rs:64 wraps the blocking device enumeration in `spawn_blocking`, and gpg.rs:105 uses `tokio::process::Command`. oidc.rs is the outlier.\n\nFix: wrap `scan_token_caches()` in `tokio::task::spawn_blocking` at its three call sites (or make it async over `tokio::fs`), and switch server.rs to `tokio::fs`. Cheap `Path::exists()` probes (ssh.rs:35, tailscale.rs:29) are a single stat and can stay.",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:59:51.33436608Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T20:59:51.33436608Z",
+  "labels": [
+    "rust",
+    "async",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.80",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:59:51.361524887Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

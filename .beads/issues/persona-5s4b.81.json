@@ -1,0 +1,29 @@
+{
+  "id": "persona-5s4b.81",
+  "title": "unwrap_or_default ships an empty JWKS bundle instead of failing",
+  "description": "persona-grpc/src/service.rs:87-92, in `fetch_jwt_bundles`:\n\n    let jwks_bytes = serde_json::to_vec(\u0026b.jwt_authorities).unwrap_or_default();\n    (b.trust_domain.to_string(), jwks_bytes)\n\nOn a serialisation failure the trust domain is still returned, paired with a zero-length byte string. A client receiving that sees a trust domain that exists but has no verification keys — indistinguishable from a trust domain legitimately configured with no JWT authorities. It will then reject every valid SVID from that domain and have no error to report.\n\n`jwt_authorities` is a `serde_json::Value` (trust_bundle.rs:13), so `to_vec` fails only on a non-string map key or a float NaN/Inf reaching the store. Rare, but the failure mode is silent and the diagnosis (\"why does verification suddenly fail for this domain\") is expensive.\n\nFix: collect into `Result\u003cVec\u003c_\u003e, _\u003e` and map a failure to `Status::internal`. A trust bundle the daemon cannot serialise is an internal error, not an empty bundle.\n\nRelated, same file: service.rs:156-158 uses `.unwrap_or_default()` on `SystemTime::duration_since(UNIX_EPOCH)`, silently stamping `attested_at: 0` and `present_until: 300` (i.e. Jan 1 1970) into the token if the clock is pre-epoch. persona-core/src/signer.rs:98-100 handles the identical call with `.expect(\"system clock before epoch\")`. Pick one treatment for the same invariant; the signer's is the right one.",
+  "status": "closed",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:59:59.219809561Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:05:20.168053967Z",
+  "closed_at": "2026-09-13T21:05:20.168053967Z",
+  "close_reason": "Duplicate of persona-5s4b.60 (same defect, filed by a second review agent from a different angle). Merged during review triage; reopen if the angle in this issue is not covered there.",
+  "labels": [
+    "rust",
+    "error-handling",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.81",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:59:59.247915682Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

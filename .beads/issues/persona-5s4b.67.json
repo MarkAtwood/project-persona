@@ -1,0 +1,29 @@
+{
+  "id": "persona-5s4b.67",
+  "title": "Ephemeral CA private key held in a plain Vec\u003cu8\u003e with no zeroization",
+  "description": "HYGIENE / DEFENCE IN DEPTH - no remote trigger. Raises the payoff of any memory-disclosure or crash-dump incident.\n\npersona-core/src/signer.rs:59-60 stores the full PKCS#8 DER private key as an unprotected heap buffer:\n    /// PKCS#8 DER bytes kept for jsonwebtoken ES256 signing.\n    pkcs8_der: Vec\u003cu8\u003e,\npopulated at signer.rs:68 (pkcs8.as_ref().to_vec()). No zeroize, secrecy or subtle dependency exists anywhere in the workspace (confirmed: grep for zeroize/subtle/secrecy across all Cargo.toml returns nothing).\n\nSpecific problems:\n1. No zeroization on drop. When SvidSigner is dropped the P-256 private scalar stays in freed heap memory. Same for the temporary returned by EcdsaKeyPair::generate_pkcs8 at signer.rs:67, which is copied and then dropped at line 68.\n2. A fresh copy per signature. signer.rs:110 runs EncodingKey::from_ec_der(\u0026self.pkcs8_der) on every sign_jwt_svid call rather than once at construction, so each issuance clones the private key into another un-zeroized allocation that is dropped immediately. Under load the key is smeared across many freed heap regions.\n3. No core-dump suppression. personad is a long-lived daemon holding a signing key; nothing sets RLIMIT_CORE to 0 or PR_SET_DUMPABLE to 0, so any panic or SIGSEGV can write the private key to disk.\n\nCONSEQUENCE: an attacker who obtains a core file, a swap image, a hibernation image, or an arbitrary-read primitive recovers the CA private key and can mint JWT-SVIDs for any identity in the trust domain for as long as that key is published in the bundle. Ephemerality limits the window to one process lifetime but does not reduce the impact within it.\n\nFix direction: wrap pkcs8_der in zeroize::Zeroizing\u003cVec\u003cu8\u003e\u003e, build the EncodingKey once in new() and store it, and set RLIMIT_CORE=0 in personad. Note SvidSigner correctly does not derive Debug/Serialize/Clone and never logs key bytes - that part is already right.",
+  "status": "closed",
+  "priority": 1,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:59:20.826425843Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:05:20.606905481Z",
+  "closed_at": "2026-09-13T21:05:20.606905481Z",
+  "close_reason": "Duplicate of persona-5s4b.39 (same defect, filed by a second review agent from a different angle). Merged during review triage; reopen if the angle in this issue is not covered there.",
+  "labels": [
+    "crypto",
+    "key-lifecycle",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.67",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:59:20.849874066Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

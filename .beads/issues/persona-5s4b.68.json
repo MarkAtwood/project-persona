@@ -1,0 +1,28 @@
+{
+  "id": "persona-5s4b.68",
+  "title": "Only audience[0] is checked for persona_ requirements, but the token is minted for every requested audience",
+  "description": "persona-grpc/src/service.rs:112-117 parses persona_ extension parameters from req.audience[0] only:\n\n    let ext = AudienceExtensions::parse(\u0026req.audience[0])?;\n\nThe presence check at service.rs:146 is then made against that single parsed value. But service.rs:176-180 signs the token with the entire list:\n\n    let audiences: Vec\u003c\u0026str\u003e = req.audience.iter().map(String::as_str).collect();\n    self.signer.sign_jwt_svid(\u0026spiffe_id_str, \u0026audiences, persona_ext)\n\nTrigger: a caller sends audience = [\"https://harmless.example\", \"https://bank.example?persona_require_presence=hardware\"].\n\nWhat goes wrong: only element 0 is parsed, so require_presence resolves to None and the check at line 146 passes trivially. The issued JWT carries aud = both strings. The relying party at bank.example -- which encoded its requirement in its own audience string exactly as SPEC-HIA.md:250 instructs -- receives a token whose aud contains its expected value, validates it (ValidateJWTSVID at service.rs:224 checks only that aud contains the requesting audience), and accepts a credential whose presence requirement was never evaluated. The persona claim in that same token asserts \"present\": true whenever any enumerated claim reports non-None presence.\n\nThe audit log makes this hard to spot after the fact: service.rs:195 logs only audience = %req.audience[0], so the audience that actually mattered never appears in the svid_issued event.\n\nFix direction: parse every element of req.audience and enforce the strictest requirement across all of them (or reject a request whose elements carry conflicting persona_ parameters). Log the full audience list, not just the first element.",
+  "status": "closed",
+  "priority": 0,
+  "issue_type": "bug",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:59:21.267823794Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:05:19.958775679Z",
+  "closed_at": "2026-09-13T21:05:19.958775679Z",
+  "close_reason": "Duplicate of persona-5s4b.47 (same defect, filed by a second review agent from a different angle). Merged during review triage; reopen if the angle in this issue is not covered there.",
+  "labels": [
+    "correctness",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.68",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:59:21.291024806Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

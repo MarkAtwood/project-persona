@@ -1,0 +1,29 @@
+{
+  "id": "persona-5s4b.78",
+  "title": "Every public item has two stable paths, and missing_docs is not enforced",
+  "description": "persona-core/src/lib.rs:3-19 and persona-attestors/src/lib.rs:3-22 both declare every module `pub mod` and then flat-re-export its contents with `pub use`. That commits the crate to two permanent paths for each item — `persona_core::assurance::IdentityAssurance` and `persona_core::IdentityAssurance` — so the module layout can never be reorganised, and rustdoc lists everything twice. Callers in-tree already use both styles. Pick one: keep the flat re-exports and make the modules private (`mod assurance;`), or keep the modules public and drop the duplicate `pub use`.\n\nSecond, neither crate sets `#![warn(missing_docs)]` or `#![deny(missing_docs)]`, so undocumented public API is not caught. Current gaps, all reachable from the crate root: persona-core/src/trust_bundle.rs has no `//!` module header (the only module in the crate without one) and no docs on `TrustBundle.trust_domain` (:9) or `TrustBundleStore::new` (:41); persona-core/src/signer.rs:16 `SignerError` and all four of its variants (:17-24) are undocumented, as is `persona-attestors/src/lib.rs:90 AttestorError` and its variants; persona-grpc/src/service.rs:16 `WorkloadApiService`, its three public fields and `new` (:23) have no docs, and neither does persona-grpc/src/consumer_attest.rs:86 `AttestError`. Every `pub fn new()` and `pub fn is_available()` on the eight attestors is undocumented except ssh.rs:31.\n\nFiled as one hygiene issue rather than one per item; the fix is the lint plus a pass.",
+  "status": "open",
+  "priority": 3,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:59:49.108003736Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T20:59:49.108003736Z",
+  "labels": [
+    "risk",
+    "api-contract",
+    "docs",
+    "opinion",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.78",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:59:49.140367007Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

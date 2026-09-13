@@ -1,0 +1,30 @@
+{
+  "id": "persona-5s4b.76",
+  "title": "serve() returns Box\u003cdyn Error\u003e, which is not Send and cannot be tokio::spawned or wrapped in anyhow",
+  "description": "persona-grpc/src/server.rs:14-17: `pub async fn serve(socket_path: \u0026Path, service: WorkloadApiService) -\u003e Result\u003c(), Box\u003cdyn std::error::Error\u003e\u003e`.\n\n`Box\u003cdyn Error\u003e` has no `Send + Sync` bound, so the returned future is not `Send`. A caller cannot `tokio::spawn(serve(path, svc))` — the standard way to run a server task alongside a shutdown signal or a second listener — and cannot use `?` on it inside any function returning `anyhow::Error` or `Box\u003cdyn Error + Send + Sync\u003e`, which is most async application code. The workaround at every call site is `.map_err(|e| anyhow!(e.to_string()))`, i.e. throwing the error away and keeping the string.\n\nThe error is also untyped, so a caller cannot distinguish the four distinct failures this function has — stale socket removal (server.rs:20), parent directory creation (server.rs:25), bind (server.rs:27, the one worth reporting specially since it means another daemon is running), chmod (server.rs:32) and transport failure (server.rs:41) — without matching on message text.\n\nMinimum fix: `Box\u003cdyn std::error::Error + Send + Sync\u003e`. Better at 0.1.0: a `#[non_exhaustive] ServeError` enum with those cases, since persona-grpc already depends on thiserror (persona-grpc/Cargo.toml) and every other crate in the workspace defines a local error enum.\n\nAlso undocumented on this public function: it never returns on success (it runs until the transport stops), and per its own doc comment it deletes any existing file at `socket_path` (server.rs:18-21) — a destructive side effect on a caller-supplied path that the signature does not hint at.",
+  "status": "closed",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:59:48.952235377Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:05:20.881816059Z",
+  "closed_at": "2026-09-13T21:05:20.881816059Z",
+  "close_reason": "Duplicate of persona-5s4b.35 (same defect, filed by a second review agent from a different angle). Merged during review triage; reopen if the angle in this issue is not covered there.",
+  "labels": [
+    "risk",
+    "api-contract",
+    "leakage",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.76",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:59:48.983232527Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

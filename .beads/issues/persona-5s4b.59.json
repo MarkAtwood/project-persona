@@ -1,0 +1,28 @@
+{
+  "id": "persona-5s4b.59",
+  "title": "SpiffeId::provenance has a dead clause and matches any segment ending in via",
+  "description": "persona-core/src/spiffe_id.rs:95-102:\n\n    pub fn provenance(\u0026self) -\u003e Option\u003c\u0026str\u003e {\n        let (prefix, source) = self.path.rsplit_once('/')?;\n        if prefix.ends_with(\"via\") || prefix == \"via\" {\n\nTwo problems in one line:\n\n1. `|| prefix == \"via\"` is dead. `\"via\".ends_with(\"via\")` is true, so the first clause already covers it. Dead code that reads as if it handles a case the first clause misses.\n2. `ends_with(\"via\")` is a substring test, not a path-segment test. `spiffe://tailscale/user/trivia/alice` returns `Some(\"alice\")`, as does any path whose second-to-last segment ends in those three letters (`nvidia` does not, but `via`, `trivia`, `Bolivia` do). The doc says \"Returns `Some(\"source\")` if the path ends with `via/{source}`\" — that is not what it does.\n\nThe function is the only accessor for claim provenance, so a wrong `Some` here means a caller attributes an identity to the wrong source. It is currently unused outside persona-core, which is why nothing has caught it.\n\nFix: `if prefix == \"via\" || prefix.ends_with(\"/via\")` — that is the correct segment test and the second clause stops being dead.",
+  "status": "closed",
+  "priority": 1,
+  "issue_type": "bug",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:59:08.680735504Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:02:53.023726233Z",
+  "closed_at": "2026-09-13T21:02:53.023726233Z",
+  "close_reason": "Duplicate of persona-5s4b.13 (filed first, equivalent detail).",
+  "labels": [
+    "rust",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.59",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:59:08.694685986Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

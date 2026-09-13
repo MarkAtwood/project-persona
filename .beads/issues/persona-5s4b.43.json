@@ -1,0 +1,27 @@
+{
+  "id": "persona-5s4b.43",
+  "title": "No package metadata or license on any crate; unit files point Documentation= at an unrelated third party",
+  "description": "None of the six member manifests declare license, description, repository, readme, keywords or categories, there is no LICENSE file at the repo root, and no crate sets 'publish = false'. The repo has no git remote.\n\nMost of that is fine for a private project and I am not filing it as a defect. Two parts are worth acting on:\n\n1. No license file at all. README.md, DESIGN.md, SPEC-HIA.md and PRFAQ.md read as material intended to be shared. Unlicensed source is all-rights-reserved by default, which is probably not the intent, and it is the one thing that is awkward to fix retroactively once other people have contributed. (Licensing choice is the maintainer's call — this is a note that the choice has not been recorded, not a recommendation of a particular license.)\n\n2. Concretely wrong, not just missing: systemd/personad.service and systemd/personad.socket both set\n       Documentation=https://github.com/persona-id/persona\n   github.com/persona-id is Persona Identities Inc., an unrelated company. Anyone running 'systemctl --user help personad' or reading the installed unit is sent to a third party's repository for support on this daemon. Point it at the real repo or drop the line.\n\nAdding 'publish = false' to the five non-library crates costs one line each and removes the accidental-publish question entirely.",
+  "status": "open",
+  "priority": 3,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:58:29.442234795Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T20:58:29.442234795Z",
+  "labels": [
+    "workspace",
+    "opinion",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.43",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:58:29.465592756Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

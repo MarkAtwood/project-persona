@@ -1,0 +1,28 @@
+{
+  "id": "persona-5s4b.46",
+  "title": "Per-consumer pseudonymity and consumer attestation are not wired into SVID issuance",
+  "description": "EXPLOITABLE NOW (privacy/linkability), and it is the exact failure SPEC-HIA calls out as security-critical.\n\npersona-grpc/src/service.rs:175 issues the credential with the raw root identity:\n    let spiffe_id_str = claim.spiffe_id.uri();\nThat string goes into sub, spiffe_id and the response (service.rs:198-204) verbatim, identically for every caller and every audience.\n\nThe pseudonymity machinery exists but has ZERO production callers:\n  - persona_core::derive_pseudonym (persona-core/src/pseudonym.rs:13) - only referenced by the pub use in persona-core/src/lib.rs:16 and by its own unit tests.\n  - SpiffeId::pseudonymous (persona-core/src/spiffe_id.rs:106) - never called.\n  - ConsumerIdentity::selector_key (persona-core/src/consumer.rs:47), documented as \"a stable string key suitable for use as HKDF info\" - never called.\n  - persona_grpc::consumer_attest::attest_peer (persona-grpc/src/consumer_attest.rs:16) - never called. persona-grpc/src/server.rs:37-41 hands the raw UnixListenerStream to tonic without attesting any peer, and service.rs:187-196 logs consumer_uid = \"unknown\".\n\nSPEC-HIA:75 - \"The default SPIFFE ID exposed to a consumer is **not** the root identity.\"\nSPEC-HIA:78  - spiffe://{trust-domain}/pseudonym/{hkdf-derived-opaque-id}/for/{consumer-app-id}\nSPEC-HIA:193 - \"On each FetchJWTSVID or FetchX509SVID call, personad attests the calling process and derives the pseudonym for that consumer.\"\nSPEC-HIA:191 - \"**This is the security-critical decision.** If any process in the user session can call the socket without identification, then malware can enumerate the user identities.\"\n\nCONSEQUENCE: (a) every consumer receives the same global identifier, so any two relying parties that collude link the user across audiences - the headline unlinkability property of the design is absent, not weakened; (b) no consumer is identified at all, so the daemon cannot distinguish a users password manager from malware running as the same uid, and cannot ever scope or revoke per consumer. The 0600 socket mode (server.rs:32) limits callers to the same uid, which is precisely the boundary SPEC-HIA:191 says is insufficient.\n\nThis is a wiring gap, not a design gap: the primitive is correct (see the pseudonym.rs vectors, independently confirmed against pyca cryptography HKDF) and just needs attest_peer -\u003e selector_key -\u003e derive_pseudonym -\u003e SpiffeId::pseudonymous plumbed into fetch_jwtsvid. Filing so the shipped-behaviour/spec divergence is tracked rather than implied by dead code.",
+  "status": "closed",
+  "priority": 0,
+  "issue_type": "bug",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:58:32.250834276Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:05:19.760262662Z",
+  "closed_at": "2026-09-13T21:05:19.760262662Z",
+  "close_reason": "Duplicate of persona-5s4b.41 (same defect, filed by a second review agent from a different angle). Merged during review triage; reopen if the angle in this issue is not covered there.",
+  "labels": [
+    "crypto",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.46",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:58:32.273039481Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

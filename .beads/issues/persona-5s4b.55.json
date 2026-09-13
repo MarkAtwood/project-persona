@@ -1,0 +1,35 @@
+{
+  "id": "persona-5s4b.55",
+  "title": "SpiffeId::uri() interpolates unvalidated trust domain and path, allowing authority injection",
+  "description": "EXPLOITABLE when combined with persona-5s4b.30 (unverified OIDC payload); hygiene otherwise.\n\npersona-core/src/spiffe_id.rs:87-89 builds the URI by raw interpolation with no validation, escaping, or percent-encoding of either component:\n    format!(\"spiffe://{}/{}\", self.trust_domain, self.path)\nSpiffeId::new (spiffe_id.rs:79-84) accepts any String for path, and TrustDomain::OrgOidc(String) (spiffe_id.rs:36) accepts any String as the URI authority.\n\nTRIGGER: persona-attestors/src/oidc.rs:87-90 feeds both from an unverified token payload:\n    SpiffeId::new(TrustDomain::OrgOidc(extract_domain(\u0026iss)), format!(\"user/{sub}/via/oidc-cached\"))\nextract_domain (oidc.rs:45-51) only strips the scheme and trailing slash; it does not reject path, query, fragment, userinfo or port content. So iss = \"https://good.example/x\" yields authority \"good.example/x\" and the URI spiffe://good.example/x/user/.../via/oidc-cached.\n\nCONSEQUENCE:\n1. Authority confusion. Any conformant parser - including this crates own SpiffeId::from_str (spiffe_id.rs:125), which splits at the FIRST slash - reads that ID as trust domain \"good.example\" with path \"x/user/...\". An attacker controlling iss injects arbitrary paths underneath a trust domain they do not own. A relying party whose rule is \"trust domain == good.example\" accepts it.\n2. Variant confusion on round trip. parse_trust_domain (spiffe_id.rs:143-157) reconstructs variants by string prefix, so OrgOidc(\"personal.evil\") parses back as PersonalDid(\"evil\") and OrgOidc(\"piv.evil\") as PivIssuer(\"evil\") - an attacker-supplied iss of https://piv.evil promotes itself into the smart-card issuer namespace.\n3. sub is equally unconstrained: sub = \"x/via/tailscale\" injects a fake provenance segment into the path that provenance() (spiffe_id.rs:95-101) parses structurally.\n\nFix direction: validate at construction per SPIFFE spec - trust domain restricted to lowercase DNS-name characters with no /, ?, #, @ or :, and path segments restricted and percent-encoded. Return a typed error instead of building a malformed URI. Rejecting bad input here also contains persona-5s4b.30 to a single trust domain.",
+  "status": "open",
+  "priority": 0,
+  "issue_type": "bug",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:58:56.673568769Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:16:46.761622295Z",
+  "labels": [
+    "crypto",
+    "untrusted-input",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.55",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:58:56.704451152Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    },
+    {
+      "issue_id": "persona-5s4b.55",
+      "depends_on_id": "persona-okek",
+      "type": "blocks",
+      "created_at": "2026-09-13T21:28:09.53907377Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

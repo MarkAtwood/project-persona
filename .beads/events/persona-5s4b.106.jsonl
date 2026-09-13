@@ -1,0 +1,5 @@
+{"id":"01a09c94-14c3-783a-bc5c-5d61515cafbf","issue_id":"persona-5s4b.106","event_type":"created","actor":"agent","old_value":"","new_value":"","created_at":"2026-09-13T21:02:25.47553973Z"}
+{"id":"01a09c94-14c8-73b2-a053-f6e2934bcbb0","issue_id":"persona-5s4b.106","event_type":"label_added","actor":"agent","comment":"Added label: risk","created_at":"2026-09-13T21:02:25.480243132Z"}
+{"id":"01a09c94-14cd-728c-b2b3-41492b19a42f","issue_id":"persona-5s4b.106","event_type":"label_added","actor":"agent","comment":"Added label: maintainer-burden","created_at":"2026-09-13T21:02:25.485167877Z"}
+{"id":"01a09c94-14d1-74ce-9145-7649d0dd57f1","issue_id":"persona-5s4b.106","event_type":"label_added","actor":"agent","comment":"Added label: review","created_at":"2026-09-13T21:02:25.489315644Z"}
+{"id":"01a09c96-c0b4-7af2-bd2e-ad190a181c29","issue_id":"persona-5s4b.106","event_type":"closed","actor":"agent","old_value":"","new_value":"Duplicate of persona-5s4b.92 (same defect, filed by a second review agent from a different angle). Merged during review triage; reopen if the angle in this issue is not covered there.","created_at":"2026-09-13T21:05:20.564722548Z"}

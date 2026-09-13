@@ -1,0 +1,7 @@
+{
+  "id": "1789334902164967739-1",
+  "issue_id": "persona-5s4b",
+  "author": "agent",
+  "text": "Structural follow-up filed: persona-okek (P0 epic) 'Assurance must be derived from evidence, not asserted'.\n\n.49, .30 and .55 now depend on it — the right fix for those three is the type change, not a local patch, so they should not be worked independently.\n\nDeliberately NOT linked, because the constraint does not cover them: .41 (issuance-path wiring), .47 (request handling), .71 (parsing), .105 (credential handling). Those four remain standalone S0s.",
+  "created_at": "2026-09-13T21:28:22.164967739Z"
+}

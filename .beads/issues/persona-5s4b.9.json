@@ -1,0 +1,28 @@
+{
+  "id": "persona-5s4b.9",
+  "title": "Complete public API surface built ahead of any caller: pseudonyms, consumer selectors, peer attestation",
+  "description": "Several fully-implemented, fully-tested public items have no production caller anywhere in the workspace (verified by grep across all 28 files — the only hits are their own definitions, their own unit tests, and the lib.rs re-exports):\n\n- persona-core/src/pseudonym.rs:13   derive_pseudonym() — 7 unit tests, never called\n- persona-core/src/spiffe_id.rs:106  SpiffeId::pseudonymous() — never called\n- persona-core/src/spiffe_id.rs:95   SpiffeId::provenance() — never called\n- persona-core/src/consumer.rs:47    ConsumerIdentity::selector_key() — 7 unit tests, never called; ConsumerIdentity itself is only ever constructed inside consumer_attest.rs\n- persona-grpc/src/consumer_attest.rs:16  attest_peer() — the whole module, never called\n- persona-core/src/hvid.rs:24        PersonaClaims — see the separate divergence issue\n\nThese are not the tracked ponytail stubs (prove(), the HTTP gateway); they are finished code with no consumer.\n\nWhat goes wrong, concretely: unused surface is unverified surface, and it has already rotted. hvid.rs's declared contract contradicts what service.rs actually emits, and nobody noticed because no code path connects them. The pseudonym pipeline is the clearest case — derive_pseudonym() produces the hex id, SpiffeId::pseudonymous() consumes one, ConsumerIdentity::selector_key() produces the HKDF info string those two would need, and attest_peer() produces the ConsumerIdentity — four pieces of one feature, all present, none wired together, so no test proves the pieces actually fit.\n\nservice.rs:187 documents why attest_peer() cannot be reached: 'consumer_uid via SO_PEERCRED not yet plumbed through tonic'. That is a real blocker, which means this code will sit unreachable for a while.\n\nPer the project's deletion-over-addition standard, decide per item: wire it up now, or delete it and re-add it with its caller. If it is deliberately staged ahead of the plumbing, say so in a ponytail: comment naming the blocking issue, the way the other stubs do — right now nothing marks these as pre-built.",
+  "status": "closed",
+  "priority": 3,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:57:17.362968299Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:05:19.908772351Z",
+  "closed_at": "2026-09-13T21:05:19.908772351Z",
+  "close_reason": "Duplicate of persona-5s4b.41 (same defect, filed by a second review agent from a different angle). Merged during review triage; reopen if the angle in this issue is not covered there.",
+  "labels": [
+    "elegance",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.9",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:57:17.384184964Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

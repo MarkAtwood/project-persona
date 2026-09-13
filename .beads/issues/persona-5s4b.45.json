@@ -1,0 +1,27 @@
+{
+  "id": "persona-5s4b.45",
+  "title": "Untrusted length prefix used directly as allocation size (2 sites)",
+  "description": "A length field read from an external peer is used verbatim as a `vec![0u8; n]` size, with no upper bound. CLAUDE.md security defaults: \"always treat input as untrusted at system boundaries.\"\n\n- persona-nmh/src/main.rs:42-43 — `let len = u32::from_le_bytes(len_buf) as usize; let mut buf = vec![0u8; len];` on the Native Messaging frame from browser stdin. The Chrome Native Messaging protocol caps extension-to-host messages at 1 MiB; a compromised or buggy extension sending `0xFFFFFFFF` makes the host attempt a 4 GiB allocation and abort. `write_message` (line 48-54) likewise does not enforce the host-to-extension cap.\n- persona-attestors/src/ssh.rs:61-62 — `let resp_len = u32::from_be_bytes(len_buf) as usize; let mut resp = vec![0u8; resp_len];` on the SSH agent reply. `SSH_AUTH_SOCK` is an env-supplied path; anything the user can point it at can return a 4 GiB length and OOM personad.\n\nBoth then `read_exact` into the buffer, so a bogus length also hangs until the peer disconnects.\n\nFix: reject lengths above a protocol-appropriate constant before allocating — 1 MiB for Native Messaging (the spec's own limit), 256 KiB is generous for an SSH agent identities answer. Return the existing error types (`anyhow` / `AttestorError::Unavailable`) rather than allocating.",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "bug",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:58:32.203649131Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:10:28.960813725Z",
+  "labels": [
+    "rust",
+    "input-validation",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.45",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:58:32.232427205Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

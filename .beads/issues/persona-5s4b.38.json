@@ -1,0 +1,28 @@
+{
+  "id": "persona-5s4b.38",
+  "title": "TrustBundleStore is keyed by TrustDomain::to_string and panics on a poisoned lock",
+  "description": "persona-core/src/trust_bundle.rs:36-71.\n\nKey type leak: `upsert()` derives the map key internally with `bundle.trust_domain.to_string()` (trust_bundle.rs:47) but `get()` takes `\u0026str` (trust_bundle.rs:65). A caller must reproduce the `Display` impl of `TrustDomain` (spiffe_id.rs:51-62) exactly to look anything up — including knowing that `PersonalDid(x)` is keyed `personal.{x}` and `PivIssuer(x)` is keyed `piv.{x}`. There is no public parse in the other direction (see the TrustDomain injectivity issue), so the map is effectively write-only for external callers unless they hand-format keys. `get()` should take `\u0026TrustDomain`.\n\nUndocumented panics: all three public methods `unwrap` the RwLock with `.expect(\"trust bundle lock poisoned\")` (trust_bundle.rs:50, 57, 68). Nothing in the doc comments mentions this. The store is explicitly designed for concurrent use (\"Thread-safe store\", trust_bundle.rs:31) and is shared as `Arc\u003cTrustBundleStore\u003e` across gRPC handlers (persona-grpc/src/service.rs:18); one panic anywhere under the write lock turns every subsequent FetchJWTBundles/FetchX509Bundles call into a daemon panic rather than a Status error. Either document the panic on each method or hold the lock in a way that cannot poison (the guarded section does no user code, so `.unwrap_or_else(|e| e.into_inner())` is correct and removes the failure mode entirely).\n\nMinor, same file: `TrustBundle` is `#[non_exhaustive]` (trust_bundle.rs:6) yet `new()` (trust_bundle.rs:18) takes all three fields positionally, so adding the fourth field that non_exhaustive was added to allow still breaks every caller. `TrustBundle.trust_domain` (trust_bundle.rs:9) and `TrustBundleStore::new` (trust_bundle.rs:41) have no doc comment, and the module has no `//!` header unlike every other module in the crate.",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:58:18.501890347Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:16:47.094187467Z",
+  "labels": [
+    "risk",
+    "api-contract",
+    "leakage",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.38",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:58:18.527833228Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "id": "persona-5s4b.56",
+  "title": "ValidateJWTSVID ignores the trust bundle and verifies only against the local ephemeral key",
+  "description": "NOT a verification bypass - it is fail-closed - but the validation path is wrong and the code comment misdescribes it.\n\npersona-grpc/src/service.rs:219-221:\n    // Get the local trust bundle public key for verification.\n    let pub_key_der = self.signer.public_key_der();\n    let decoding_key = DecodingKey::from_ec_der(pub_key_der);\nself.bundles (the TrustBundleStore, service.rs:18) is never consulted. The only accepted issuer is this processs own ephemeral keypair.\n\nCONSEQUENCE:\n1. Federation does not work. Any SVID from a peer trust domain present in the bundle store is rejected with \"JWT validation failed\", even though the whole point of TrustBundleStore is to hold those authorities. Callers get a signature error rather than a trust error, which will send integrators down the wrong path.\n2. Every SVID is rejected after a personad restart, because the CA key is ephemeral (persona-core/src/signer.rs:53-54, personad/src/main.rs:31) and the new process cannot verify tokens the old one signed. No error distinguishes \"key rotated\" from \"forged\".\n3. No trust-domain binding is checked. The verified tokens spiffe_id claim is read at service.rs:230-235 and returned, but nothing asserts that its trust domain corresponds to the bundle/key that verified it. Once more than one key is in play, a key valid for trust domain A will happily validate an ID claiming trust domain B.\n\nPositives, so they are not re-reviewed: Validation::new(Algorithm::ES256) (service.rs:223) pins the algorithm, so jsonwebtoken 9 rejects alg:none and HS256 header substitution; set_audience (service.rs:224) with validate_aud on by default; validate_exp on by default. The algorithm-confusion class is genuinely closed here.\n\nFix direction: select the verification key from self.bundles by the tokens trust domain (JWKS by kid), and assert the resulting trust domain matches the bundle that verified it.",
+  "status": "closed",
+  "priority": 1,
+  "issue_type": "bug",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:58:56.755393163Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:05:20.012076281Z",
+  "closed_at": "2026-09-13T21:05:20.012076281Z",
+  "close_reason": "Duplicate of persona-5s4b.82 (same defect, filed by a second review agent from a different angle). Merged during review triage; reopen if the angle in this issue is not covered there.",
+  "labels": [
+    "crypto",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.56",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:58:56.7754429Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

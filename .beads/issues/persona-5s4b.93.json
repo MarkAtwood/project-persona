@@ -1,0 +1,26 @@
+{
+  "id": "persona-5s4b.93",
+  "title": "did:key and GPG identities are issued under the ssh.local trust domain",
+  "description": "Trust-domain namespace collision across three attestors of differing provenance.\n\npersona-attestors/src/did_key.rs:70 and persona-attestors/src/gpg.rs:89 both hard-code TrustDomain::SshLocal:\n    SpiffeId::new(TrustDomain::SshLocal, format!(\"did/{short}\"))\n    SpiffeId::new(TrustDomain::SshLocal, format!(\"gpg/{short_fp}\"))\npersona-attestors/src/ssh.rs issues under the same domain. Meanwhile TrustDomain::PgpLocal and TrustDomain::PersonalDid(String) (persona-core/src/spiffe_id.rs:39,48) exist for exactly these two cases and have no construction site anywhere outside spiffe_id.rs and its tests. SPEC-HIA documents personal.{did} and pgp.local as distinct domains.\n\nCONSEQUENCE: the trust domain is the coarse-grained authorization handle - a relying party writing \"trust spiffe://ssh.local/*\" intends to trust locally enrolled SSH keys and instead also trusts anything in the GPG keyring and anything named in the PERSONA_DID_KEYS environment variable. The last of those is the weakest possible source: did_key.rs:50-52 reads PERSONA_DID_KEYS from the environment and performs no verification that the user controls the corresponding private key, so setting one env var mints an identity in the SSH trust domain. Separating the domains lets an RP decline did:key without declining SSH.\n\nNot exploitable as a bypass on its own - the path prefixes (did/, gpg/, and the ssh attestors own prefix) do differ, so an RP matching full paths is unaffected. It matters for RPs matching on trust domain, which is the intended granularity.\n\nFix direction: use TrustDomain::PersonalDid(did) in did_key.rs and TrustDomain::PgpLocal in gpg.rs.",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "bug",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T21:00:52.034016844Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:00:52.034016844Z",
+  "labels": [
+    "crypto",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.93",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T21:00:52.053468417Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

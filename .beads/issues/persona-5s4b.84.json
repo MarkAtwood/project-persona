@@ -1,0 +1,28 @@
+{
+  "id": "persona-5s4b.84",
+  "title": "Published trust bundle is unusable: empty JWKS and a raw EC point presented as an X.509 CA cert",
+  "description": "No relying party outside this process can verify any issued JWT-SVID.\n\npersonad/src/main.rs:36-41 seeds the only trust bundle the daemon ever publishes:\n    let local_bundle = TrustBundle::new(\n        TrustDomain::SshLocal,\n        vec![signer.public_key_der().to_vec()],   // x509_authorities\n        serde_json::json!({ \"keys\": [] }),        // jwt_authorities\n    );\npersona-grpc/tests/e2e.rs:77-81 constructs the identical thing.\n\nTwo defects:\n1. jwt_authorities is a literally empty JWKS. FetchJWTBundles (persona-grpc/src/service.rs:80-96) serialises and returns {\"keys\":[]} for the trust domain. A consumer following the SPIFFE Workload API - fetch the bundle, verify the SVID against it - has no key to verify with and MUST reject every SVID personad issues. The only thing that can validate an SVID today is personads own ValidateJWTSVID, which short-circuits the bundle entirely (see persona-5s4b.56). So the credential is unverifiable by design as shipped.\n2. x509_authorities is populated with the wrong kind of bytes. SvidSigner::public_key_der() (persona-core/src/signer.rs:81-83) returns ring EcdsaKeyPair::public_key().as_ref() - the uncompressed SEC1 point, 0x04 || X || Y, 65 bytes. It is neither a DER SPKI nor an X.509 certificate, despite the field being documented as \"DER-encoded X.509 CA certificates\" (persona-core/src/trust_bundle.rs:10-11) and the accessor being named _der. FetchX509Bundles (service.rs:64-70) concatenates these into a blob it labels CA certs; any consumer running them through an X.509 parser gets a parse error.\n\nContributing: issued tokens carry no kid header (persona-core/src/signer.rs:111 uses a bare Header::new(Algorithm::ES256)), so even once the JWKS is populated a verifier cannot select a key, and the ephemeral-key rotation on every restart cannot be expressed.\n\nCONSEQUENCE: the daemon issues correctly signed credentials that no third party can check. Exploitability is nil - it fails closed - but it means the crypto is currently unexercised end to end outside this process, which is why persona-5s4b.76 (no negative test coverage) matters.\n\nFix direction: publish the P-256 public key as a proper JWK (kty EC, crv P-256, x/y base64url) in jwt_authorities with a kid, emit that kid in the JWT header, and either populate x509_authorities with a real self-signed CA certificate or leave it empty until persona-4qm lands.",
+  "status": "closed",
+  "priority": 1,
+  "issue_type": "bug",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T21:00:16.859814153Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:05:20.11555067Z",
+  "closed_at": "2026-09-13T21:05:20.11555067Z",
+  "close_reason": "Duplicate of persona-5s4b.60 (same defect, filed by a second review agent from a different angle). Merged during review triage; reopen if the angle in this issue is not covered there.",
+  "labels": [
+    "crypto",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.84",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T21:00:16.882249225Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

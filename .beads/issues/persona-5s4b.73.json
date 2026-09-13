@@ -1,0 +1,29 @@
+{
+  "id": "persona-5s4b.73",
+  "title": "is_available is an informal convention off the Attestor trait, with inconsistent receiver",
+  "description": "Every attestor exposes an availability probe, but it is not on the `Attestor` trait (persona-attestors/src/lib.rs:108-136), so nothing enforces it:\n\n- `SshAgentAttestor::is_available()` — associated fn (ssh.rs:32)\n- `DidKeyAttestor::is_available()` — associated fn (did_key.rs:23)\n- `GpgAttestor::is_available()` — associated fn (gpg.rs:22)\n- `Fido2Attestor::is_available()` — associated fn (fido2.rs:32)\n- `GoaAttestor::is_available()` — associated fn (goa.rs:27)\n- `PivAttestor::is_available()` — associated fn (piv.rs:25)\n- `TailscaleAttestor::is_available(\u0026self)` — takes `\u0026self` (tailscale.rs:28), because it reads `self.socket_path`\n- `OidcCachedAttestor` — has none at all\n\nConsequences today, all visible in registry.rs:19-93:\n1. The probe list is hand-maintained. `probe_sources` must special-case Tailscale (`let ts = ...; if ts.is_available()`) against everything else (`if Foo::is_available()`), and special-case OIDC with a comment explaining why it is pushed unconditionally. A ninth attestor added tomorrow compiles fine and is silently never probed.\n2. `freshness()` re-implements the same check in six attestors (ssh.rs:152, did_key.rs:90, gpg.rs:138, goa.rs:70, and inverted in tailscale.rs:113) as `if Self::is_available() { Fresh } else { Unavailable }` — five copies of one line that could be a default method.\n3. `is_available` cannot be called through `dyn Attestor`, so the registry is the only place it can ever be used.\n\nFix: add `fn is_available(\u0026self) -\u003e bool` to the `Attestor` trait (a `\u0026self` method works for all eight; the stateless ones ignore it), and give `freshness` a default impl in terms of it. `probe_sources` then becomes a filter over a list of constructed attestors.",
+  "status": "closed",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:59:40.847121399Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:05:21.030594719Z",
+  "closed_at": "2026-09-13T21:05:21.030594719Z",
+  "close_reason": "Duplicate of persona-5s4b.8 (same defect, filed by a second review agent from a different angle). Merged during review triage; reopen if the angle in this issue is not covered there.",
+  "labels": [
+    "rust",
+    "traits",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.73",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:59:40.873106402Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "id": "persona-5s4b.85",
+  "title": "e2e crypto test has no negative cases and cannot detect signature verification being disabled",
+  "description": "TEST INTEGRITY. The suite would pass unchanged if JWT signature verification were removed entirely.\n\npersona-grpc/tests/e2e.rs:70-181 (fetch_and_validate_jwt_svid) is the only end-to-end crypto test. It issues an SVID and feeds it straight back into ValidateJWTSVID in the same process against the same signer (e2e.rs:164-177), asserting only that the call succeeds and the SPIFFE ID matches. Every assertion is a positive round trip. There is no test that any of these are REJECTED:\n  - a token with a flipped byte in the signature segment\n  - a token re-signed with a different keypair\n  - a token whose header alg was changed to none, or to HS256 with the public key as the MAC secret\n  - an expired token (exp in the past)\n  - a token presented with the wrong audience\n  - a structurally malformed token\n\nBecause the only oracle is \"the same code path that signed it accepts it\", the test has zero power over the security property it appears to cover. Delete the signature check inside jsonwebtoken and this test still goes green. Checks 1-4 (e2e.rs:134-162) are weaker still: they only base64-decode the payload and assert that claims exist.\n\nTo be fair to what IS sound, so it does not get churned:\n  - persona-core/src/pseudonym.rs:29-68 uses a genuinely independent oracle (pyca/cryptography HKDF). I recomputed all three vectors against pyca and they match exactly. No change needed.\n  - persona-core/src/signer.rs:213-225 (sign_raw_verifies_with_ring) signs with the private key and verifies with the public key through rings verifier. That is an asymmetric pair, not a self-oracle, and is legitimate.\n\nCONSEQUENCE: the one component whose entire job is to reject bad credentials has no test that exercises rejection. Combined with persona-5s4b.56 (validation ignores the trust bundle) and persona-5s4b.77 (empty published JWKS), nothing in CI would notice if verification stopped working.\n\nFix direction: add negative cases to e2e.rs asserting Status::invalid_argument for each bullet above. The alg:none and HS256-substitution cases are cheap and worth having explicitly even though jsonwebtoken 9 with Validation::new(Algorithm::ES256) currently blocks both - they are the regression guard for that pinning.",
+  "status": "closed",
+  "priority": 1,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T21:00:16.931602868Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:05:20.464129802Z",
+  "closed_at": "2026-09-13T21:05:20.464129802Z",
+  "close_reason": "Duplicate of persona-5s4b.96 (same defect, filed by a second review agent from a different angle). Merged during review triage; reopen if the angle in this issue is not covered there.",
+  "labels": [
+    "crypto",
+    "testing",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.85",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T21:00:16.953513682Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "id": "persona-5s4b.32",
+  "title": "make ci and GitHub CI check different things; green locally does not mean green in CI",
+  "description": "The Makefile and .github/workflows/ci.yml diverge on every shared step:\n\n- Makefile 'lint': 'cargo clippy --all-features -- -D warnings' — no --all-targets and no --workspace, so tests, benches, examples and non-default members' targets are not linted. CI uses 'cargo clippy --all-targets --all-features -- -D warnings'.\n- Makefile 'ci' (fmt-check lint test) never runs 'cargo build'. CI does.\n- Makefile has no MSRV target, so the 1.75 constraint is unreachable locally.\n- Makefile 'check' uses --workspace while 'lint' does not — inconsistent within the file itself.\n\nA contributor who runs 'make ci' and sees it pass can still fail CI on clippy warnings in test code. That is the whole point of having a local ci target, and it does not hold.\n\nSeparately, both CI 'cargo test --all-targets' and Makefile 'cargo test --workspace' miss doctests: --all-targets explicitly excludes them (2 doc code fences exist in the tree). Run 'cargo test --workspace' and 'cargo test --workspace --doc', or drop --all-targets.\n\nMake the Makefile targets the single definition and have CI invoke them, or delete the Makefile.",
+  "status": "open",
+  "priority": 3,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:58:08.637127804Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:16:47.389909816Z",
+  "labels": [
+    "workspace",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.32",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:58:08.654879368Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+{"id":"01a09c90-98e4-79c8-8276-d7be87ee8434","issue_id":"persona-5s4b.48","event_type":"created","actor":"agent","old_value":"","new_value":"","created_at":"2026-09-13T20:58:37.156642342Z"}
+{"id":"01a09c90-98ea-7241-88dd-4979522d558b","issue_id":"persona-5s4b.48","event_type":"label_added","actor":"agent","comment":"Added label: readability","created_at":"2026-09-13T20:58:37.16214862Z"}
+{"id":"01a09c90-98ef-77f5-9e1b-657a5c8b015a","issue_id":"persona-5s4b.48","event_type":"label_added","actor":"agent","comment":"Added label: review","created_at":"2026-09-13T20:58:37.167522393Z"}
+{"id":"01a09c96-bec4-7b3c-8298-87811b11187a","issue_id":"persona-5s4b.48","event_type":"closed","actor":"agent","old_value":"","new_value":"Duplicate of persona-5s4b.82 (same defect, filed by a second review agent from a different angle). Merged during review triage; reopen if the angle in this issue is not covered there.","created_at":"2026-09-13T21:05:20.068737165Z"}

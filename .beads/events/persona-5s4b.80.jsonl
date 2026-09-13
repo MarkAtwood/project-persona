@@ -1,0 +1,4 @@
+{"id":"01a09c91-baab-749f-8834-a1cbad18b7be","issue_id":"persona-5s4b.80","event_type":"created","actor":"agent","old_value":"","new_value":"","created_at":"2026-09-13T20:59:51.3393042Z"}
+{"id":"01a09c91-bab0-7290-8a49-c5aca8d4b108","issue_id":"persona-5s4b.80","event_type":"label_added","actor":"agent","comment":"Added label: rust","created_at":"2026-09-13T20:59:51.344180953Z"}
+{"id":"01a09c91-bab4-7a3b-b7b2-6cd90fcb3e96","issue_id":"persona-5s4b.80","event_type":"label_added","actor":"agent","comment":"Added label: async","created_at":"2026-09-13T20:59:51.348671922Z"}
+{"id":"01a09c91-bab9-7424-84d9-b025d557b264","issue_id":"persona-5s4b.80","event_type":"label_added","actor":"agent","comment":"Added label: review","created_at":"2026-09-13T20:59:51.353272522Z"}

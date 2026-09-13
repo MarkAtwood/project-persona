@@ -1,0 +1,28 @@
+{
+  "id": "persona-5s4b.16",
+  "title": "GPG, DID and FIDO2 claims all masquerade as TrustDomain::SshLocal",
+  "description": "TrustDomain (persona-core/src/spiffe_id.rs:31-49) models six distinct domains, including a PgpLocal variant. Three attestors ignore it and stuff unrelated identity types into SshLocal:\n\n- persona-attestors/src/gpg.rs:90       SpiffeId::new(TrustDomain::SshLocal, format!(\"gpg/{short_fp}\"))  — despite TrustDomain::PgpLocal existing at spiffe_id.rs:48 and rendering as \"pgp.local\"\n- persona-attestors/src/did_key.rs:70   SpiffeId::new(TrustDomain::SshLocal, format!(\"did/{short}\"))    — despite TrustDomain::PersonalDid existing at spiffe_id.rs:38\n- persona-attestors/src/fido2.rs:88     SpiffeId::new(TrustDomain::SshLocal, format!(\"fido2/{path_hash}\"))\n\nWhat goes wrong: the trust domain is the authority component of the SPIFFE URI and is the key the trust bundle store is indexed by (trust_bundle.rs:37, keyed on trust_domain.to_string()). Collapsing four unrelated key types into \"ssh.local\" means:\n- an Iaa3 hardware FIDO2 identity and an Iaa1 self-asserted SSH key are issued under the same authority, so a relying party cannot distinguish them by trust domain and must string-match the path prefix instead;\n- all four share one trust bundle entry, so they cannot ever be federated or revoked independently;\n- the enum documents an intent the code contradicts, which is the kind of thing a contributor copies into the next attestor.\n\nRewrite: gpg.rs:90 → TrustDomain::PgpLocal; did_key.rs:70 → TrustDomain::PersonalDid(\u003cthe did\u003e). FIDO2 has no matching variant — either add one or write a ponytail: comment at fido2.rs:88 stating that SshLocal is a deliberate placeholder and what it becomes. Right now nothing distinguishes 'deliberate' from 'nearest variant to hand'.",
+  "status": "closed",
+  "priority": 3,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:57:37.080328621Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:05:20.983094404Z",
+  "closed_at": "2026-09-13T21:05:20.983094404Z",
+  "close_reason": "Duplicate of persona-5s4b.93 (same defect, filed by a second review agent from a different angle). Merged during review triage; reopen if the angle in this issue is not covered there.",
+  "labels": [
+    "elegance",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.16",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:57:37.101595128Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

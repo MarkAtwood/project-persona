@@ -1,0 +1,26 @@
+{
+  "id": "persona-5s4b.29",
+  "title": "OIDC freshness() smuggles token expiry through the assurance level",
+  "description": "persona-attestors/src/oidc.rs — claim_from_jwt() at line 75-79 encodes 'is the token expired' into the assurance level:\n\n    let assurance = if exp \u003e now_unix() { Iaa2 } else { Iaa1 };\n\nand freshness() at line 197 then decodes it back out:\n\n    if c.assurance \u003e= IdentityAssurance::Iaa2 { Fresh } else { Stale(None) }\n\nWhat goes wrong: `exp`, the actual value being tested, is read at line 66 and immediately discarded, so the staleness check is performed against a lossy proxy. The coupling is invisible from either end — a reader at line 197 sees an assurance comparison and has no reason to know it means 'not expired', and anyone who later adds a third assurance tier, or makes an unexpired token Iaa1 for some other reason (a token from a weaker issuer, say), silently breaks the freshness check with no compiler error and no failing test. The mapping is also asserted nowhere.\n\nRewrite: keep the value instead of re-deriving it. Have the scan carry `exp` alongside the claim — scan_token_caches() already returns a tuple (oidc.rs:96, `Vec\u003c(Claim, String)\u003e`), so make it `Vec\u003c(Claim, String, u64)\u003e` or a small named struct — and have freshness() compare `exp \u003e now_unix()` directly. The assurance level then means only what its name says.",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:58:06.286580181Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:16:47.557081356Z",
+  "labels": [
+    "elegance",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.29",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:58:06.306789948Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

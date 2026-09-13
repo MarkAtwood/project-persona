@@ -1,0 +1,27 @@
+{
+  "id": "persona-5s4b.39",
+  "title": "SvidSigner private key material is never zeroized",
+  "description": "persona-core/src/signer.rs:55-61:\n\n    pub struct SvidSigner {\n        key_pair: EcdsaKeyPair,\n        rng: SystemRandom,\n        public_key_der: Vec\u003cu8\u003e,\n        /// PKCS#8 DER bytes kept for jsonwebtoken ES256 signing.\n        pkcs8_der: Vec\u003cu8\u003e,\n    }\n\n`pkcs8_der` is the full PKCS#8 DER of the P-256 private key, held in a plain `Vec\u003cu8\u003e` with no `Drop` impl and no `Zeroizing` wrapper. When `SvidSigner` is dropped the allocation is freed with the private scalar still in it. The doc comment on the struct says \"The keypair is never persisted; it is discarded when the process exits\" — \"discarded\" is not what `Vec::drop` does.\n\nConcretely: the key survives in freed heap memory and can reach a core dump, a swap page, or a later heap allocation in the same process. Two copies exist (`pkcs8_der` plus whatever `EcdsaKeyPair` holds internally), and `SvidSigner::new()` at line 67-70 creates a third short-lived one — the `pkcs8` `Document` returned by `generate_pkcs8`, which is `.to_vec()`'d and then dropped un-zeroized at end of scope.\n\nThis is a daemon whose entire security argument rests on the ephemeral CA key not escaping the process, so the gap is worth closing even though ring's own `Document` handling is outside our control.\n\nFix: add `zeroize` and hold the field as `Zeroizing\u003cVec\u003cu8\u003e\u003e`, or store the `EncodingKey` built once at construction and drop the DER immediately. Note `EncodingKey::from_ec_der` is called on every `sign_jwt_svid` (line 110) — building it once in `new()` removes the need to keep the DER around at all, which is the better fix.",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:58:24.308285969Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:16:47.136953647Z",
+  "labels": [
+    "rust",
+    "crypto",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.39",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:58:24.335400603Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

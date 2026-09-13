@@ -1,0 +1,5 @@
+{"id":"01a09c92-081e-746e-9d3f-cc05b9b029c2","issue_id":"persona-5s4b.83","event_type":"created","actor":"agent","old_value":"","new_value":"","created_at":"2026-09-13T21:00:11.166290927Z"}
+{"id":"01a09c92-0823-71d8-a7c8-15361caf2b68","issue_id":"persona-5s4b.83","event_type":"label_added","actor":"agent","comment":"Added label: rust","created_at":"2026-09-13T21:00:11.171121859Z"}
+{"id":"01a09c92-0827-7c4b-8c00-ad935cf6c9fe","issue_id":"persona-5s4b.83","event_type":"label_added","actor":"agent","comment":"Added label: cargo","created_at":"2026-09-13T21:00:11.175806302Z"}
+{"id":"01a09c92-082c-73d0-8519-213672c6cb10","issue_id":"persona-5s4b.83","event_type":"label_added","actor":"agent","comment":"Added label: review","created_at":"2026-09-13T21:00:11.18025065Z"}
+{"id":"01a09c96-c31e-72b9-95ed-9deb54a9aae7","issue_id":"persona-5s4b.83","event_type":"closed","actor":"agent","old_value":"","new_value":"Duplicate of persona-5s4b.19 (same defect, filed by a second review agent from a different angle). Merged during review triage; reopen if the angle in this issue is not covered there.","created_at":"2026-09-13T21:05:21.182179106Z"}

@@ -1,0 +1,29 @@
+{
+  "id": "persona-5s4b.66",
+  "title": "Unbounded allocation from SSH agent length prefix can OOM the daemon",
+  "description": "EXPLOITABLE NOW as a denial of service against personad.\n\npersona-attestors/src/ssh.rs:59-64 in agent_roundtrip():\n    let mut len_buf = [0u8; 4];\n    stream.read_exact(\u0026mut len_buf).await?;\n    let resp_len = u32::from_be_bytes(len_buf) as usize;\n    let mut resp = vec![0u8; resp_len];\n    stream.read_exact(\u0026mut resp).await?;\nThe length is taken from the peer and used directly to size an allocation with no upper bound. The SSH agent protocol caps messages at 256 KiB; nothing here enforces that.\n\nTRIGGER: personad connects to whatever $SSH_AUTH_SOCK points at (ssh.rs:32-37 and the connect site in enumerate). A hostile or compromised agent - or any process that can set SSH_AUTH_SOCK in the daemons environment, or bind a socket at that path - replies with the four bytes ff ff ff ff. The daemon immediately tries to zero-fill a 4 GiB Vec.\n\nCONSEQUENCE: allocation failure aborts the process (Rust allocation failure is not catchable), or the zero-fill drives the machine into swap/OOM-kill. Either way the identity daemon dies, and since the CA key is ephemeral (persona-core/src/signer.rs:53-54) every previously issued JWT-SVID becomes unverifiable on restart - so a cheap DoS also invalidates outstanding credentials.\n\nNote read_string() (ssh.rs:67-77) does bound-check correctly against the buffer it was handed; the defect is only at the framing read. Fix is one line: reject resp_len \u003e 256 * 1024 before allocating.",
+  "status": "closed",
+  "priority": 1,
+  "issue_type": "bug",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T20:59:20.751979605Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T21:05:20.41320286Z",
+  "closed_at": "2026-09-13T21:05:20.41320286Z",
+  "close_reason": "Duplicate of persona-5s4b.45 (same defect, filed by a second review agent from a different angle). Merged during review triage; reopen if the angle in this issue is not covered there.",
+  "labels": [
+    "crypto",
+    "untrusted-input",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.66",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-13T20:59:20.779176156Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}
