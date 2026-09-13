@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
 # SPEC-HIA: Human Identity Agent (personad)
 
 **Status:** Draft

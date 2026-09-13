@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
 # personad -- Human Identity Agent
 
 A user-session daemon that federates heterogeneous human-identity sources behind the standard SPIFFE Workload API socket. Applications call `FetchJWTSVID` on a local socket and receive a verifiable credential without caring whether identity came from Tailscale, FIDO2, PIV, OIDC, SSH agent, GPG, or DID. No new wire protocol -- just the CNCF-standard SPIFFE Workload API, extended to answer "who is the human at this keyboard, and are they present right now?"
@@ -97,3 +98,17 @@ TBD
 
 - [DESIGN.md](DESIGN.md) -- full technical design document
 - [PRFAQ.md](PRFAQ.md) -- press release and FAQ
+
+## License
+
+Two licenses apply, by file type:
+
+- **Code** — Apache-2.0. All Rust sources, `Cargo.toml` manifests, build scripts,
+  protobuf definitions, and service/config files. See [LICENSE](LICENSE).
+  Each crate carries `license = "Apache-2.0"` in its manifest.
+- **Documentation** — CC-BY-4.0. `SPEC-HIA.md`, `DESIGN.md`, `PRFAQ.md` and this
+  README. See [LICENSE-CC-BY-4.0](LICENSE-CC-BY-4.0). Each carries an SPDX
+  identifier on its first line.
+
+`AGENTS.md` and `CLAUDE.md` are agent tooling instructions and fall under Apache-2.0
+with the code.

@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
 # PRFAQ: personad — SPIFFE Identity for Humans
 
 ---
