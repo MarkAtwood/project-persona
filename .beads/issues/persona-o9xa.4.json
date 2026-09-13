@@ -2,13 +2,15 @@
   "id": "persona-o9xa.4",
   "title": "Upgrade sha2 0.10 -\u003e 0.11 and hkdf 0.12 -\u003e 0.13 (RustCrypto digest 0.11)",
   "description": "Coupled: both ride the digest 0.11 trait transition, so they move together or not at all.\n\nHighest-care item of the group. hkdf is the core of persona-core/src/pseudonym.rs, which the review singled out as the one piece of crypto that is correct and verified against externally computed pyca vectors (persona-5s4b.69). Those vectors are the oracle. After upgrading, the existing tests must still pass unchanged - if they need editing to pass, stop: that means the derivation changed and every already-issued pseudonym would break.",
-  "status": "open",
+  "status": "closed",
   "priority": 1,
   "issue_type": "task",
   "owner": "mark@reviewcommit.com",
   "created_at": "2026-09-13T23:48:15.791432242Z",
   "created_by": "agent",
-  "updated_at": "2026-09-13T23:48:15.791432242Z",
+  "updated_at": "2026-09-13T23:55:55.809730483Z",
+  "closed_at": "2026-09-13T23:55:55.809730483Z",
+  "close_reason": "sha2 0.11.0 + hkdf 0.13.0 upgraded. No source changes needed. All three pyca-derived known_vector tests pass unchanged, so the derivation is byte-identical. Tests 37/37.",
   "labels": [
     "dependency",
     "upgrade"

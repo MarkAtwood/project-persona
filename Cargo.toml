@@ -24,10 +24,11 @@ thiserror          = "2"
 anyhow             = "1"
 tokio              = { version = "1", features = ["full"] }
 tokio-stream       = { version = "0.1", features = ["net"] }
-tonic              = "0.12"
-tonic-build        = "0.12"
-prost              = "0.13"
-prost-types        = "0.13"
+tonic              = "0.14"
+tonic-prost        = "0.14"
+tonic-prost-build  = "0.14"
+prost              = "0.14"
+prost-types        = "0.14"
 tracing            = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 serde              = { version = "1", features = ["derive"] }

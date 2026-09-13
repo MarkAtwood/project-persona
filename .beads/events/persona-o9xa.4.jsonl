@@ -1,3 +1,4 @@
 {"id":"01a09d2b-e933-75b6-ac68-764a80c2779c","issue_id":"persona-o9xa.4","event_type":"created","actor":"agent","old_value":"","new_value":"","created_at":"2026-09-13T23:48:15.795386041Z"}
 {"id":"01a09d2b-e937-7335-a90b-c2cb62b815c2","issue_id":"persona-o9xa.4","event_type":"label_added","actor":"agent","comment":"Added label: dependency","created_at":"2026-09-13T23:48:15.799211099Z"}
 {"id":"01a09d2b-e93b-7189-8a23-cbde853ba300","issue_id":"persona-o9xa.4","event_type":"label_added","actor":"agent","comment":"Added label: upgrade","created_at":"2026-09-13T23:48:15.803101237Z"}
+{"id":"01a09d32-ee27-7047-af3d-494b73b02441","issue_id":"persona-o9xa.4","event_type":"closed","actor":"agent","old_value":"","new_value":"sha2 0.11.0 + hkdf 0.13.0 upgraded. No source changes needed. All three pyca-derived known_vector tests pass unchanged, so the derivation is byte-identical. Tests 37/37.","created_at":"2026-09-13T23:55:55.81501906Z"}
