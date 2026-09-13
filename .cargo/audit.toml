@@ -1,0 +1,21 @@
+# cargo-audit configuration.
+#
+# RUSTSEC-2023-0071 — Marvin Attack, timing sidechannel in `rsa` 0.9.x.
+# No fixed version exists upstream.
+#
+# Reachability: not reachable in this workspace. `rsa` is linked only because
+# jsonwebtoken 11's `rust_crypto` feature declares `dep:rsa` unconditionally,
+# with no per-algorithm opt-out (see its [features] table). persona never
+# performs an RSA operation — the only algorithm used is ES256, at exactly two
+# call sites:
+#   persona-core/src/signer.rs:111   Header::new(Algorithm::ES256)
+#   persona-grpc/src/service.rs:223  Validation::new(Algorithm::ES256)
+# The Marvin attack requires observing timing of RSA private-key operations,
+# which this code never invokes.
+#
+# Re-verify this justification if either call site gains a non-ES256 algorithm,
+# or if jsonwebtoken gains a feature that excludes rsa. The rsa-free
+# alternative is jsonwebtoken's `aws_lc_rs` backend (measured: audit clean,
+# 21 fewer deps, but adds cmake + a C compiler to build requirements).
+[advisories]
+ignore = ["RUSTSEC-2023-0071"]

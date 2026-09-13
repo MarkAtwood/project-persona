@@ -1,0 +1,16 @@
+{
+  "id": "persona-o9xa",
+  "title": "Major dependency upgrades blocked by caret bounds",
+  "description": "cargo update clears everything inside the declared semver ranges (done, aaa70a0). Eleven crates sit behind a major bound that only a Cargo.toml edit can cross. Tracked as separate issues because each is an independent migration with its own breakage surface; a big-bang upgrade would make failures impossible to attribute.\n\nBaseline at filing: tests 37/37 green, cargo audit exit 0, clippy exit 101 (two pre-existing errors, persona-5s4b.27).",
+  "status": "open",
+  "priority": 1,
+  "issue_type": "epic",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-13T23:48:15.522066106Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-13T23:48:15.522066106Z",
+  "labels": [
+    "dependency",
+    "upgrade"
+  ]
+}
