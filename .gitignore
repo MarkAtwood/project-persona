@@ -8,3 +8,10 @@
 
 # Beads / Dolt files (added by bd init)
 .beads/proxieddb/
+
+# Beads runtime state — upstream lists these in cmd/bd/doctor/tracked_runtime.go
+# but the flatfile build's .beads/.gitignore template omits them, and bd
+# overwrites .beads/.gitignore wholesale on init/migrate, so they live here.
+.beads/last-touched
+.beads/.local_version
+.beads/**/*.lock
