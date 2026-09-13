@@ -2,13 +2,15 @@
   "id": "persona-o9xa.5",
   "title": "Upgrade tonic 0.12 -\u003e 0.14 and prost 0.13 -\u003e 0.14",
   "description": "Coupled: tonic, tonic-build and prost/prost-types must move together or codegen breaks.\n\nLargest surface. Regenerates the SPIFFE Workload API bindings from proto/spiffe/workload/workload.proto via persona-grpc/build.rs. Note persona-5s4b.17 (build.rs emits no rerun-if-changed) means stale generated code may mask or confuse results - force a clean rebuild. Also watch persona-5s4b.35: serve() returns a non-Send Box\u003cdyn Error\u003e that may change shape across the tonic major.",
-  "status": "open",
+  "status": "closed",
   "priority": 1,
   "issue_type": "task",
   "owner": "mark@reviewcommit.com",
   "created_at": "2026-09-13T23:48:15.861460116Z",
   "created_by": "agent",
-  "updated_at": "2026-09-13T23:48:15.861460116Z",
+  "updated_at": "2026-09-13T23:57:37.597903374Z",
+  "closed_at": "2026-09-13T23:57:37.597903374Z",
+  "close_reason": "tonic 0.14.6 + prost 0.14.4 upgraded. Required migrating build.rs to tonic-prost-build (prost codegen split out of tonic-build in 0.14) and adding tonic-prost. Dropped now-unused tonic-build. Tests 37/37 including e2e. Also collapsed the duplicate tower 0.4.",
   "labels": [
     "dependency",
     "upgrade"

@@ -2,13 +2,14 @@
   "id": "persona-o9xa.3",
   "title": "Upgrade x509-cert 0.2 -\u003e 0.3",
   "description": "Used for the SVID certificate path. Coupled to the RustCrypto release train, so may need to move together with sha2/hkdf.",
+  "notes": "Bumped 0.2.5 -\u003e 0.3.0 and it builds, but the real finding is that x509-cert has ZERO use statements anywhere in the workspace. persona-core declares it; no code imports it. The X.509 signer is a documented stub (persona-core/src/signer.rs:117-120, blocked on ring \u003c-\u003e RustCrypto interop, refs persona-4qm).\n\nRecommendation: delete the dependency rather than carry it. When the X.509 signer is actually implemented, re-add at whatever version is current then, which is strictly better than maintaining a stale unused pin. Left in place at 0.3.0 pending Mark's call, since removing a declared dependency is a scope decision rather than an upgrade.",
   "status": "open",
   "priority": 2,
   "issue_type": "task",
   "owner": "mark@reviewcommit.com",
   "created_at": "2026-09-13T23:48:15.722627193Z",
   "created_by": "agent",
-  "updated_at": "2026-09-13T23:48:15.722627193Z",
+  "updated_at": "2026-09-13T23:57:37.649662176Z",
   "labels": [
     "dependency",
     "upgrade"
