@@ -2,13 +2,15 @@
   "id": "persona-5s4b.47",
   "title": "Presence policy enforced only on audience[0] while all audiences are signed into the SVID",
   "description": "EXPLOITABLE NOW. Presence-requirement bypass by audience ordering.\n\npersona-grpc/src/service.rs:113 parses persona_ extensions from the FIRST audience only:\n    let ext = AudienceExtensions::parse(\u0026req.audience[0])?;\nservice.rs:146-153 checks ext.require_presence against the claim. But service.rs:176 signs the token for EVERY audience the caller supplied:\n    let audiences: Vec\u003c\u0026str\u003e = req.audience.iter().map(String::as_str).collect();\n\nTRIGGER: call FetchJWTSVID with\n    audience = [\"https://harmless.example\",\n                \"https://bank.example?persona_require_presence=hardware\"]\nElement [0] parses to require_presence = None, so the check at service.rs:146 passes with a PresenceLevel::None claim. The issued token carries both strings in aud.\n\nCONSEQUENCE: the relying party at bank.example receives a validly signed JWT-SVID whose aud matches the exact audience string it published, including its own persona_require_presence=hardware policy marker, for a subject whose presence was never attested at hardware level (or at all). ValidateJWTSVID (service.rs:224) matches aud by string equality, so it accepts it too. The attacker gets a credential for a presence-gated audience without satisfying the gate.\n\nSecond, related defect at the same site: ext.audience - the bare URL with persona_ params stripped (persona-core/src/audience.rs:73-77) - is computed and then discarded. The raw, unstripped strings are what get signed, so the aud claim carries policy parameters rather than the audience identifier, and a relying party matching on the bare URL will reject its own tokens.\n\nFix direction: parse every element of req.audience, require the STRONGEST presence level across all of them, and sign ext.audience (the stripped form) rather than the raw request strings.",
-  "status": "open",
+  "status": "closed",
   "priority": 0,
   "issue_type": "bug",
   "owner": "mark@reviewcommit.com",
   "created_at": "2026-09-13T20:58:32.316893652Z",
   "created_by": "agent",
-  "updated_at": "2026-09-13T21:10:28.596167411Z",
+  "updated_at": "2026-09-14T05:04:07.466543456Z",
+  "closed_at": "2026-09-14T05:04:07.466543456Z",
+  "close_reason": "Fixed in 56ca5e5. Presence is now the fold of every audience's requirement, and the persona_ namespace is closed so unknown requirements are refused rather than defaulted to None. The .47 bypass was demonstrated failing against the old code before the fix. Also closed the unprefixed require_presence spelling, which the specs themselves recommended and which gated nothing.",
   "labels": [
     "crypto",
     "review"
