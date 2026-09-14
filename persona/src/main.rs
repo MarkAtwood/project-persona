@@ -12,7 +12,7 @@ const LAUNCHD_PLIST: &str = "\
 <plist version=\"1.0\">
 <dict>
     <key>Label</key>
-    <string>personal.atwood.persona</string>
+    <string>personad</string>
     <key>ProgramArguments</key>
     <array>
         <string>/usr/local/bin/personad</string>
@@ -491,10 +491,10 @@ async fn install_service() -> Result<()> {
         let home = std::env::var("HOME").context("HOME not set")?;
         let dir = std::path::PathBuf::from(&home).join("Library/LaunchAgents");
         std::fs::create_dir_all(&dir)?;
-        let dest = dir.join("personal.atwood.persona.plist");
+        let dest = dir.join("personad.plist");
         std::fs::write(&dest, LAUNCHD_PLIST)?;
-        println!("installed personal.atwood.persona.plist");
-        println!("run: launchctl load ~/Library/LaunchAgents/personal.atwood.persona.plist");
+        println!("installed personad.plist");
+        println!("run: launchctl load ~/Library/LaunchAgents/personad.plist");
         return Ok(());
     }
     #[allow(unreachable_code)]

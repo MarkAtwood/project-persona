@@ -45,7 +45,7 @@ This is a deliberate strategic choice. By presenting the standard SPIFFE Workloa
 **Socket (Windows):** Named pipe `\\.\pipe\persona-workload-{sid}`
 **Localhost HTTP gateway:** `127.0.0.1:2443` (for browser native-messaging bridge)
 **User systemd unit (Linux):** `personad.service`
-**LaunchAgent (macOS):** `personal.atwood.persona`
+**LaunchAgent (macOS):** `personad` (`~/Library/LaunchAgents/personad.plist`)
 **Windows user-mode service:** `PersonaIdentityAgent`
 
 Storage: nothing persistent that is not already persistent in the underlying source. `personad` is a normalizer, not a vault. Any data it caches is wiped on session end.
