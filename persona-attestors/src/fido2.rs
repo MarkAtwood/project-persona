@@ -61,7 +61,7 @@ impl Attestor for Fido2Attestor {
     async fn enumerate(&self) -> Result<Vec<Claim>, AttestorError> {
         #[cfg(feature = "fido2")]
         {
-            let devices = tokio::task::spawn_blocking(|| ctap_hid_fido2::get_fidokey_devices())
+            let devices = tokio::task::spawn_blocking(ctap_hid_fido2::get_fidokey_devices)
                 .await
                 .map_err(|e| AttestorError::Unavailable(format!("fido2 task error: {e}")))?;
 

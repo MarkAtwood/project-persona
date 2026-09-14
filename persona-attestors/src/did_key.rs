@@ -101,9 +101,7 @@ mod tests {
 
     #[test]
     fn parse_single_did_key() {
-        let dids = parse_did_keys_from(
-            "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK",
-        );
+        let dids = parse_did_keys_from("did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK");
         assert_eq!(dids.len(), 1);
         assert!(dids[0].starts_with("did:key:"));
     }

@@ -62,10 +62,8 @@ fn parse_gpg_colons(output: &str) -> Vec<Claim> {
             Some(&"fpr") => {
                 current_fp = fields.get(9).map(|s| s.to_string());
             }
-            Some(&"uid") => {
-                if current_uid.is_none() {
-                    current_uid = fields.get(9).map(|s| s.to_string());
-                }
+            Some(&"uid") if current_uid.is_none() => {
+                current_uid = fields.get(9).map(|s| s.to_string());
             }
             _ => {}
         }

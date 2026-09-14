@@ -122,10 +122,7 @@ impl SpiffeWorkloadApi for WorkloadApiService {
             match attestor.enumerate().await {
                 Ok(claims) => {
                     for claim in claims {
-                        if best
-                            .as_ref()
-                            .map_or(true, |b| claim.assurance > b.assurance)
-                        {
+                        if best.as_ref().is_none_or(|b| claim.assurance > b.assurance) {
                             best = Some(claim);
                         }
                     }
