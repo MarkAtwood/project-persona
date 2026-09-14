@@ -8,23 +8,31 @@ use tonic::transport::Channel;
 #[allow(dead_code)] // used only on macOS via #[cfg(target_os = "macos")]
 const LAUNCHD_PLIST: &str = "\
 <?xml version=\"1.0\" encoding=\"UTF-8\"?>
-<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
+<!--
+  Template. launchd expands nothing in this file: no ~, no $HOME, no systemd-style
+  specifiers, so every path must be absolute and literal. `persona install-service`
+  substitutes __HOME__ and writes the result to ~/Library/LaunchAgents/personad.plist.
+  Copying this file into place unedited will not work.
+
+  Output is not redirected. launchd routes it to the system log:
+      log stream --predicate 'process == \"personad\"'
+  To keep a file instead, add StandardOutPath and StandardErrorPath pointing somewhere
+  in your home directory, for example __HOME__/Library/Logs/personad.log. Do not point
+  them at /tmp: the daemon logs SPIFFE IDs, attestor sources and assurance levels, and
+  a predictable name in a world-writable directory can be pre-created by another user.
+-->
 <plist version=\"1.0\">
 <dict>
     <key>Label</key>
     <string>personad</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/local/bin/personad</string>
+        <string>__HOME__/.cargo/bin/personad</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <true/>
-    <key>StandardOutPath</key>
-    <string>/tmp/personad.log</string>
-    <key>StandardErrorPath</key>
-    <string>/tmp/personad.log</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>RUST_LOG</key>
@@ -492,8 +500,11 @@ async fn install_service() -> Result<()> {
         let dir = std::path::PathBuf::from(&home).join("Library/LaunchAgents");
         std::fs::create_dir_all(&dir)?;
         let dest = dir.join("personad.plist");
-        std::fs::write(&dest, LAUNCHD_PLIST)?;
+        // launchd expands nothing, so the absolute path is baked in here.
+        let plist = LAUNCHD_PLIST.replace("__HOME__", &home);
+        std::fs::write(&dest, plist)?;
         println!("installed personad.plist");
+        println!("logs: log stream --predicate 'process == \"personad\"'");
         println!("run: launchctl load ~/Library/LaunchAgents/personad.plist");
         return Ok(());
     }
@@ -507,5 +518,42 @@ async fn install_service() -> Result<()> {
         std::fs::write(&dest, SYSTEMD_UNIT).with_context(|| format!("write {}", dest.display()))?;
         println!("installed personad.service, run: systemctl --user enable --now personad");
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LAUNCHD_PLIST;
+
+    #[test]
+    fn launchd_plist_is_a_template_that_substitutes_cleanly() {
+        assert!(
+            LAUNCHD_PLIST.contains("__HOME__"),
+            "the plist must carry a placeholder: launchd expands neither ~ nor $HOME"
+        );
+        let filled = LAUNCHD_PLIST.replace("__HOME__", "/Users/example");
+        assert!(
+            !filled.contains("__HOME__"),
+            "every placeholder must be substituted"
+        );
+        assert!(filled.contains("<string>/Users/example/.cargo/bin/personad</string>"));
+        assert!(
+            !filled.contains("/usr/local/bin"),
+            "the daemon is a user-session service and must not need a root-owned path"
+        );
+    }
+
+    #[test]
+    fn launchd_plist_does_not_write_identity_logs_to_a_shared_directory() {
+        // The daemon logs SPIFFE IDs, attestor sources and assurance levels. A
+        // predictable name under /tmp can be pre-created by another local user.
+        let filled = LAUNCHD_PLIST.replace("__HOME__", "/Users/example");
+        for key in ["<key>StandardOutPath</key>", "<key>StandardErrorPath</key>"] {
+            assert!(
+                !filled.contains(key),
+                "{key} is set; output should go to the system log"
+            );
+        }
+        assert!(!filled.contains("/tmp/"), "no path under /tmp");
     }
 }

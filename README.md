@@ -127,7 +127,7 @@ Implementation is a single Rust binary with `#[cfg]` feature flags per platform.
 # Build and install
 cargo install --path personad
 
-# Install user systemd units
+# Install the user unit
 persona install-service
 
 # Enable and start
@@ -136,6 +136,34 @@ systemctl --user enable --now personad
 # Verify
 persona whoami
 ```
+
+Logs go to the journal: `journalctl --user -u personad -f`.
+
+### launchd (macOS)
+
+```bash
+cargo install --path personad
+persona install-service
+launchctl load ~/Library/LaunchAgents/personad.plist
+persona whoami
+```
+
+`launchd/personad.plist` in this repo is a template, not a working file. launchd
+expands nothing -- no `~`, no `$HOME`, no systemd-style specifiers -- so
+`persona install-service` substitutes your home directory and writes the result.
+Copying the template into place unedited will not work.
+
+Output is not redirected, so launchd routes it to the system log:
+
+```bash
+log stream --predicate 'process == "personad"'
+```
+
+To keep a file instead, add `StandardOutPath` and `StandardErrorPath` to the
+installed plist pointing somewhere in your home, such as
+`~/Library/Logs/personad.log`. Do not point them at `/tmp`: the daemon logs SPIFFE
+IDs, attestor sources and assurance levels, and a predictable name in a
+world-writable directory can be pre-created by another local user.
 
 ## Documents
 

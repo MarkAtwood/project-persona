@@ -1,21 +1,29 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Template. launchd expands nothing in this file: no ~, no $HOME, no systemd-style
+  specifiers, so every path must be absolute and literal. `persona install-service`
+  substitutes __HOME__ and writes the result to ~/Library/LaunchAgents/personad.plist.
+  Copying this file into place unedited will not work.
+
+  Output is not redirected. launchd routes it to the system log:
+      log stream --predicate 'process == "personad"'
+  To keep a file instead, add StandardOutPath and StandardErrorPath pointing somewhere
+  in your home directory, for example __HOME__/Library/Logs/personad.log. Do not point
+  them at /tmp: the daemon logs SPIFFE IDs, attestor sources and assurance levels, and
+  a predictable name in a world-writable directory can be pre-created by another user.
+-->
 <plist version="1.0">
 <dict>
     <key>Label</key>
     <string>personad</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/local/bin/personad</string>
+        <string>__HOME__/.cargo/bin/personad</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <true/>
-    <key>StandardOutPath</key>
-    <string>/tmp/personad.log</string>
-    <key>StandardErrorPath</key>
-    <string>/tmp/personad.log</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>RUST_LOG</key>
