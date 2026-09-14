@@ -4,6 +4,7 @@ use tokio::net::UnixListener;
 use tokio_stream::wrappers::UnixListenerStream;
 use tonic::transport::Server;
 
+use crate::consumer_attest::AttestedStream;
 use crate::service::WorkloadApiService;
 use crate::workload::spiffe_workload_api_server::SpiffeWorkloadApiServer;
 
@@ -34,7 +35,12 @@ pub async fn serve(
 
     tracing::info!(?socket_path, "SPIFFE Workload API listening");
 
-    let incoming = UnixListenerStream::new(listener);
+    // Attest at accept, so the consumer's identity is fixed before it sends a
+    // byte and is hashed once per connection rather than once per RPC. tonic
+    // requires `IO: AsyncRead + AsyncWrite + Connected + Unpin + Send + 'static`;
+    // AttestedStream satisfies all five.
+    use tokio_stream::StreamExt as _;
+    let incoming = UnixListenerStream::new(listener).map(|conn| conn.map(AttestedStream::accept));
     Server::builder()
         .add_service(SpiffeWorkloadApiServer::new(service))
         .serve_with_incoming(incoming)

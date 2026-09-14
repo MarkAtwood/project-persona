@@ -22,6 +22,41 @@ pub fn derive_pseudonym(ikm: &[u8], trust_domain: &str, consumer_app_id: &str) -
     })
 }
 
+use crate::consumer::ConsumerIdentity;
+use crate::spiffe_id::SpiffeId;
+
+/// The SPIFFE ID a given consumer sees for a given root identity.
+///
+/// `ikm` is the daemon's per-process pseudonym key. It is `&[u8; 32]` rather
+/// than `&[u8]` so that `ikm ‖ root_uri` is unambiguous by construction: a
+/// variable-length prefix would let two different (key, root) pairs produce the
+/// same material. Binding the root matters because one daemon can hold claims
+/// for more than one root identity, and without it a consumer would receive the
+/// same pseudonym for the user's SSH identity and their PIV identity.
+///
+/// Crate-private on purpose. The only public entry point is
+/// `SvidSigner::pseudonymous_id`, which supplies a secret `ikm`. A public
+/// function taking arbitrary key material would invite a caller to pass
+/// something public — the root URI, the trust domain — and HKDF over public
+/// inputs is not pseudonymity: any consumer could then recompute every other
+/// consumer's pseudonym offline.
+pub(crate) fn derive_pseudonymous_id(
+    ikm: &[u8; 32],
+    root: &SpiffeId,
+    consumer: &ConsumerIdentity,
+) -> SpiffeId {
+    let root_uri = root.uri();
+    let mut material = Vec::with_capacity(ikm.len() + root_uri.len());
+    material.extend_from_slice(ikm);
+    material.extend_from_slice(root_uri.as_bytes());
+    let hkdf_id = derive_pseudonym(
+        &material,
+        &root.trust_domain.to_string(),
+        &consumer.selector_key(),
+    );
+    SpiffeId::pseudonymous(root.trust_domain.clone(), &hkdf_id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -103,5 +138,97 @@ mod tests {
         let a = derive_pseudonym(b"ikm-alice", "example.com", "com.app");
         let b = derive_pseudonym(b"ikm-bob", "example.com", "com.app");
         assert_ne!(a, b);
+    }
+
+    use crate::consumer::ConsumerIdentity;
+    use crate::spiffe_id::{SpiffeId, TrustDomain};
+    use std::str::FromStr as _;
+
+    fn root() -> SpiffeId {
+        SpiffeId::new(TrustDomain::SshLocal, "user/testuser")
+    }
+
+    #[test]
+    fn distinct_consumers_get_distinct_pseudonymous_ids() {
+        let a = derive_pseudonymous_id(
+            &[7u8; 32],
+            &root(),
+            &ConsumerIdentity::BinarySha256([1u8; 32]),
+        );
+        let b = derive_pseudonymous_id(
+            &[7u8; 32],
+            &root(),
+            &ConsumerIdentity::BinarySha256([2u8; 32]),
+        );
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn the_same_consumer_gets_the_same_pseudonymous_id() {
+        let c = ConsumerIdentity::BinarySha256([3u8; 32]);
+        assert_eq!(
+            derive_pseudonymous_id(&[7u8; 32], &root(), &c),
+            derive_pseudonymous_id(&[7u8; 32], &root(), &c),
+        );
+    }
+
+    #[test]
+    fn a_different_key_yields_a_different_pseudonymous_id() {
+        // The privacy property: without the daemon's secret, the pseudonym is
+        // not computable from the root identity and consumer alone.
+        let c = ConsumerIdentity::BinarySha256([3u8; 32]);
+        assert_ne!(
+            derive_pseudonymous_id(&[7u8; 32], &root(), &c),
+            derive_pseudonymous_id(&[8u8; 32], &root(), &c),
+        );
+    }
+
+    #[test]
+    fn a_different_root_yields_a_different_pseudonymous_id() {
+        let c = ConsumerIdentity::BinarySha256([3u8; 32]);
+        let other = SpiffeId::new(TrustDomain::SshLocal, "user/someone-else");
+        assert_ne!(
+            derive_pseudonymous_id(&[7u8; 32], &root(), &c),
+            derive_pseudonymous_id(&[7u8; 32], &other, &c),
+        );
+    }
+
+    #[test]
+    fn the_pseudonymous_id_does_not_carry_the_root_path() {
+        let id = derive_pseudonymous_id(
+            &[7u8; 32],
+            &root(),
+            &ConsumerIdentity::BinarySha256([3u8; 32]),
+        );
+        assert!(
+            !id.uri().contains("user/testuser"),
+            "root leaked: {}",
+            id.uri()
+        );
+        assert_ne!(id, root());
+    }
+
+    #[test]
+    fn every_path_segment_is_a_legal_spiffe_segment() {
+        // Regression test for using `selector_key()` — which contains `:` — as a
+        // path component. Catches an illegal URI before it can be signed.
+        let id = derive_pseudonymous_id(
+            &[7u8; 32],
+            &root(),
+            &ConsumerIdentity::MacosBundleId {
+                bundle_id: "com.example.app".into(),
+                team_id: "ABCDE12345".into(),
+            },
+        );
+        let uri = id.uri();
+        assert_eq!(SpiffeId::from_str(&uri).expect("must round-trip"), id);
+        for seg in id.path.split('/') {
+            assert!(!seg.is_empty(), "empty path segment in {uri}");
+            assert!(
+                seg.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_')),
+                "illegal SPIFFE path segment {seg:?} in {uri}"
+            );
+        }
     }
 }

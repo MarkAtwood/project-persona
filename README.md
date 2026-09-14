@@ -34,8 +34,8 @@ identity claims it signs. Treat the assurance and presence levels below as targe
 | `prove()` -- cryptographic proof of possession | **not implemented in any attestor** -- so no SVID is issued on any platform |
 | Identity assurance levels | derived from evidence -- see below |
 | Presence levels | enforced across every audience, and unknown requirements are refused rather than ignored |
-| Per-audience pseudonyms | implemented and test-vector verified, but **not wired into issuance** |
-| Consumer attestation (`SO_PEERCRED`) | implemented but **never invoked** |
+| Per-consumer pseudonyms | wired into issuance -- every caller receives a pseudonym, never the root identity |
+| Consumer attestation | attested once per connection; a caller that cannot be attested is refused |
 | Trust bundle / `ValidateJWTSVID` | **unusable** -- publishes an empty JWKS |
 | X.509-SVID, browser HTTPS gateway | stubs |
 
@@ -61,7 +61,7 @@ Issues are tracked in-repo with [beads](https://github.com/gastownhall/beads) un
 What the daemon is for. See [Status](#status) for what runs today.
 
 - **SPIFFE Workload API** -- the daemon implements the standard gRPC Workload API (`FetchJWTSVID`, `FetchX509SVIDs`, `FetchJWTBundles`, `FetchX509Bundles`, `ValidateJWTSVID`). Any SPIFFE-aware consumer (envoy, ghostunnel, go-spiffe, rust-spiffe) works unmodified.
-- **Per-audience pseudonymity** -- each consumer gets a stable HKDF-derived pseudonym instead of the user's root identity, so linking one user across consumers takes explicit consent. The derivation is written and checked against external test vectors, but issuance never calls it. Today every caller gets the root identity.
+- **Per-consumer pseudonymity** -- each consumer gets an HKDF-derived pseudonym instead of the user's root identity, so linking one user across consumers takes explicit consent. The pseudonym is stable for the lifetime of the running daemon: the key is generated at start and never persisted, so pseudonyms rotate when personad restarts, as the ephemeral signing key already does. Keyed on the calling application, never on the audience -- one consumer gets one pseudonym across every audience it requests.
 - **Identity assurance levels** -- `iaa1` (self-asserted: SSH key, GPG, DID), `iaa2` (IdP-verified: Tailscale OIDC, GNOME Online Accounts), `iaa3` (hardware-bound + IdP-verified: FIDO2, PIV, Windows Hello).
 - **Presence levels** -- `none`, `session` (screen unlocked at login), `software` (TOTP/password re-entry), `hardware` (FIDO2 touch, Windows Hello, TouchID, PIV PIN -- timestamped, hardware-backed).
 - **Attestor plugins** -- each identity source implements `enumerate()`, `prove()`, `freshness()`. Sources are probed at startup; missing sources are skipped, never fatal.
@@ -87,7 +87,9 @@ persona (CLI)  -->  personad (daemon)  -->  identity sources
 
 The daemon implements the SPIFFE Workload API as-is. No new protocol is invented.
 
-Consumer authentication uses OS-level process attestation (`SO_PEERCRED` on Linux, `SecCodeCopyGuestWithAttributes` on macOS, EXE signing on Windows) to identify calling applications and derive per-consumer pseudonyms. The Linux path is written but never called, so callers are not distinguished today.
+Consumer authentication uses OS-level process attestation to identify calling applications and derive per-consumer pseudonyms. The peer's credentials are read when the connection is accepted, and the consumer is the SHA-256 of its main executable -- `/proc/{pid}/exe` on Linux, `proc_pidpath` on macOS. A caller that cannot be attested receives no SVID; there is no unattested fallback, because a pid-keyed identity changes on every launch and a uid-keyed one is shared by everything the user runs. Richer signing identities (`SecCodeCopyGuestWithAttributes` on macOS, EXE signing on Windows) are not implemented.
+
+This buys unlinkability against honest-but-curious consumers. It is not authentication against a local adversary: a malicious same-uid process can exec the victim's binary, and pids are reusable. It also makes the *identifier* unlinkable, not the whole token -- `persona_ext` still carries `root_trust_domain`, `sources`, `auth_methods` and a raw-second `attested_at`, which two colluding consumers served in the same window can still join on.
 
 ## Identity Sources
 

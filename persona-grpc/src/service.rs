@@ -6,6 +6,7 @@ use tonic::{Request, Response, Status};
 use persona_attestors::{Attestor, Claim};
 use persona_core::{AudienceExtensions, PresenceLevel, SvidSigner, TrustBundleStore};
 
+use crate::consumer_attest::PeerIdentity;
 use crate::workload::{
     spiffe_workload_api_server::SpiffeWorkloadApi, JwtBundlesRequest, JwtBundlesResponse,
     JwtsvidRequest, JwtsvidResponse, ValidateJwtsvidRequest, ValidateJwtsvidResponse,
@@ -119,6 +120,25 @@ impl SpiffeWorkloadApi for WorkloadApiService {
     ) -> Result<Response<JwtsvidResponse>, Status> {
         use crate::workload::Jwtsvid;
 
+        // Consumer attestation, before anything else is parsed. A caller the
+        // daemon cannot name learns nothing further — not whether the audience was
+        // well formed, not whether this user has any identity at all.
+        //
+        // tonic installs the per-connection ConnectInfo into every request's
+        // extensions, so this is the identity determined at accept. `None` is the
+        // default for any transport that does not attest, and it denies: a listener
+        // added later without an AttestedStream wrapper fails shut, not open.
+        let Some(consumer) = req
+            .extensions()
+            .get::<PeerIdentity>()
+            .and_then(PeerIdentity::get)
+            .cloned()
+        else {
+            let reason = "consumer could not be attested";
+            tracing::info!(event = "svid_denied", reason);
+            return Err(Status::unauthenticated(reason));
+        };
+
         let req = req.into_inner();
         if req.audience.is_empty() {
             let reason = "audience must not be empty";
@@ -226,7 +246,12 @@ impl SpiffeWorkloadApi for WorkloadApiService {
             "auth_methods": [claim.source()],
         });
 
-        let spiffe_id_str = claim.spiffe_id().uri();
+        // The root identity is an input to derivation and never an output. There
+        // is no branch here that can emit claim.spiffe_id().uri().
+        let spiffe_id_str = self
+            .signer
+            .pseudonymous_id(claim.spiffe_id(), &consumer)
+            .uri();
         let audiences: Vec<&str> = exts.iter().map(|e| e.audience.as_str()).collect();
 
         let token = self
@@ -238,10 +263,16 @@ impl SpiffeWorkloadApi for WorkloadApiService {
                 Status::internal(reason)
             })?;
 
-        // ponytail: consumer_uid via SO_PEERCRED not yet plumbed through tonic | upgrade when tonic exposes peer creds
+        // Deliberately no root identity here. Logging it beside the pseudonym would
+        // write the join table this feature exists to withhold, and personad is a
+        // user-session daemon: its log goes to the user journal or to
+        // ~/Library/Logs, both readable by every consumer, which all run as that
+        // same user. An operator debugging "which application got which identity"
+        // gets the consumer and the pseudonym, which is enough to follow a request;
+        // the mapping back to the root is the secret.
         tracing::info!(
             event = "svid_issued",
-            consumer_uid = "unknown",
+            consumer = %consumer.selector_key(),
             spiffe_id = %spiffe_id_str,
             source = %claim.source(),
             assurance = %claim.assurance(),

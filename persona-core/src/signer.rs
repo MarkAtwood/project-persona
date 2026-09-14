@@ -4,10 +4,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 use ring::{
-    rand::SystemRandom,
+    rand::{SecureRandom as _, SystemRandom},
     signature::{EcdsaKeyPair, KeyPair, ECDSA_P256_SHA256_FIXED_SIGNING},
 };
 use serde::{Deserialize, Serialize};
+
+use crate::consumer::ConsumerIdentity;
+use crate::pseudonym::derive_pseudonymous_id;
+use crate::spiffe_id::SpiffeId;
 
 // ── Error type ────────────────────────────────────────────────────────────────
 
@@ -58,6 +62,16 @@ pub struct SvidSigner {
     public_key_der: Vec<u8>,
     /// PKCS#8 DER bytes kept for jsonwebtoken ES256 signing.
     pkcs8_der: Vec<u8>,
+    /// Per-process key material for consumer pseudonyms. Same lifetime rule as
+    /// the keypair: never persisted, discarded when the process exits.
+    ///
+    /// ponytail: pseudonyms are stable for the daemon's lifetime, not across
+    ///   restarts | ceiling: a consumer cannot recognise the same user after
+    ///   personad restarts, so SPEC-HIA.md's "correlate across sessions" holds
+    ///   only within one run | upgrade path: persist these 32 bytes at 0600
+    ///   alongside whatever state enrollment (persona-5s4b.103) introduces; the
+    ///   derivation below does not change
+    pseudonym_ikm: [u8; 32],
 }
 
 impl SvidSigner {
@@ -69,17 +83,29 @@ impl SvidSigner {
         let key_pair =
             EcdsaKeyPair::from_pkcs8(&ECDSA_P256_SHA256_FIXED_SIGNING, pkcs8.as_ref(), &rng)?;
         let public_key_der = key_pair.public_key().as_ref().to_vec();
+        let mut pseudonym_ikm = [0u8; 32];
+        rng.fill(&mut pseudonym_ikm)?;
         Ok(Self {
             key_pair,
             rng,
             public_key_der,
             pkcs8_der,
+            pseudonym_ikm,
         })
     }
 
     /// DER-encoded public key for JWKS / trust-bundle publication.
     pub fn public_key_der(&self) -> &[u8] {
         &self.public_key_der
+    }
+
+    /// The SPIFFE ID this consumer is issued for the given root identity.
+    ///
+    /// The root identity is an input to derivation and never an output: nothing
+    /// derived from it beyond its trust domain (which is the URI authority
+    /// either way) appears in the result.
+    pub fn pseudonymous_id(&self, root: &SpiffeId, consumer: &ConsumerIdentity) -> SpiffeId {
+        derive_pseudonymous_id(&self.pseudonym_ikm, root, consumer)
     }
 
     // ── JWT-SVID ──────────────────────────────────────────────────────────────

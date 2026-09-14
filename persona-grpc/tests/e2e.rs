@@ -154,6 +154,14 @@ async fn fetch_and_validate_jwt_svid() {
         svid.spiffe_id
     );
 
+    // Check 2b: the issued ID is a pseudonym, and the token carries no trace of
+    // the root identity — through `sub`, `spiffe_id`, or any persona claim.
+    assert!(
+        svid.spiffe_id.starts_with("spiffe://ssh.local/pseudonym/"),
+        "consumer must receive a pseudonym, got: {}",
+        svid.spiffe_id
+    );
+
     // Check 3: decode the middle (claims) segment and parse as JSON.
     let parts: Vec<&str> = svid.svid.splitn(3, '.').collect();
     assert_eq!(parts.len(), 3, "JWT must have 3 dot-separated parts");
@@ -163,6 +171,12 @@ async fn fetch_and_validate_jwt_svid() {
         .expect("base64url decode of JWT claims segment failed");
     let claims: serde_json::Value =
         serde_json::from_slice(&claims_bytes).expect("JWT claims are not valid JSON");
+
+    let body = claims.to_string();
+    assert!(
+        !body.contains("user/testuser") && !body.contains("Test User"),
+        "root identity leaked into the token: {body}"
+    );
 
     // Check 4: claims contain "sub" (or spiffe_id) and "aud".
     assert!(

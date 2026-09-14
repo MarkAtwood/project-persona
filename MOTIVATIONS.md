@@ -82,7 +82,7 @@ strong that source is, so an application can require a hardware-backed identity 
 one operation and accept a cached token for another. The application never learns
 which vendor was involved.
 
-**Per-audience pseudonyms.** Each consumer receives a stable identifier derived from
+**Per-consumer pseudonyms.** Each consumer receives an identifier derived from
 its own identity plus yours, not your root identity. Two applications cannot work
 out that they are talking to the same person. This is the Sign-in-with-Apple idea
 moved down from the browser to the operating system, where it covers every

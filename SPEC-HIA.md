@@ -72,26 +72,47 @@ spiffe://example.com/user/mark/via/piv-smartcard
 
 A consumer that accepts `spiffe://example.com/**` is trusting the example.com trust domain (backed by example.com's Google Workspace). A consumer that additionally accepts `spiffe://tailscale/**` is widening its trust to include Tailscale-network identity. Each trust domain is independent.
 
-### Pseudonymous IDs (per-audience)
+### Pseudonymous IDs (per-consumer)
 
 The default SPIFFE ID exposed to a consumer is **not** the root identity. It is a stable opaque pseudonym derived deterministically from the (consumer-app-identity, root-identity) pair:
 
 ```
-spiffe://{trust-domain}/pseudonym/{hkdf-derived-opaque-id}/for/{consumer-app-id}
+spiffe://{trust-domain}/pseudonym/{hkdf-derived-opaque-id}
 ```
 
-The consumer gets a stable identifier that it can correlate across sessions with this user, but cannot correlate with any other consumer's identifier. Linkability across consumers requires explicit user consent. This is Apple's Sign-In-with-Apple model lifted into the SPIFFE ID path.
+There is deliberately no `for/{consumer-app-id}` tail. The opaque id is already per-consumer, so the tail would tell the consumer only what it already knows, while telling every relying party the token is shown to which application asked for it.
+
+The consumer gets a stable identifier that it can correlate with this user, but cannot correlate with any other consumer's identifier. Linkability across consumers requires explicit user consent. This is Apple's Sign-In-with-Apple model lifted into the SPIFFE ID path.
+
+Stability is for the lifetime of the running daemon, not across restarts: the pseudonym key is generated at start and never persisted, so a consumer cannot recognise the same user after personad restarts. The ephemeral ES256 signing key already invalidates every issued SVID on restart. Unlinkability is the privacy guarantee and it survives a restart; cross-restart stability is a consumer convenience and does not. Persisting the key waits on the storage that enrollment introduces.
+
+The derivation is keyed on the consumer application only, never on the JWT `aud`. One consumer therefore gets one pseudonym across every audience it ever requests.
 
 The pseudonym is derived via HKDF:
 ```
 pseudonym = HKDF-SHA256(
-    ikm = root_identity_key,
+    ikm  = pseudonym_key || root_spiffe_uri,
     salt = trust_domain,
-    info = consumer_app_id
+    info = consumer_selector_key
 )
 ```
 
-A consumer that presents a specific audience claim in `FetchJWTSVID` triggers derivation of its pseudonym. A consumer with elevated scope (granted by the user at enrollment) can request the full-provenance ID.
+`pseudonym_key` is 32 random bytes generated at daemon start and never persisted.
+It is the reason this is pseudonymity rather than obfuscation: every other input is
+public, and HKDF over public inputs lets any consumer recompute every other
+consumer's pseudonym offline. Because the key is ephemeral, pseudonyms are stable
+for the life of a daemon process and change across restarts.
+
+The pseudonym is keyed on the consumer, not the audience. One consumer receives the
+same pseudonym for every audience it requests.
+
+Correlation that remains: the `persona` claim block still carries `root_trust_domain`,
+`sources`, `auth_methods` and a whole-second `attested_at`, and those are identical
+for consumers served in the same window. Two colluding consumers cannot recover the
+root identity, but they can still infer they are talking to the same person from that
+tuple. Narrowing it is tracked separately.
+
+Every `FetchJWTSVID` call derives the calling consumer's pseudonym. A consumer that cannot be attested is refused outright rather than served a weaker identity. A consumer with elevated scope (granted by the user at enrollment) can request the full-provenance ID; that path is not implemented and is gated on enrollment.
 
 ---
 
@@ -197,7 +218,8 @@ On each `FetchJWTSVID` or `FetchX509SVID` call, `personad` attests the calling p
 | Platform | Attestation mechanism | Consumer ID |
 |---|---|---|
 | Linux | `SO_PEERCRED` (uid/pid) → `/proc/{pid}/exe` → binary hash → AppArmor/SELinux label → Flatpak/Snap app ID | Binary hash or app ID |
-| macOS | `LOCAL_PEERCRED` → audit token → `SecCodeCopyGuestWithAttributes` → signing identity | Bundle ID + Team ID |
+| macOS | `getpeereid` + `LOCAL_PEEREPID` (uid/pid) → `proc_pidpath` → binary hash | Binary hash |
+| macOS (planned) | `LOCAL_PEERTOKEN` → `audit_token_t` → `SecCodeCopyGuestWithAttributes` → signing identity | Bundle ID + Team ID |
 | Windows | `GetNamedPipeClientProcessId` → EXE signing certificate → MSIX Package Family Name | Package Family Name or EXE signer |
 | Browser (native messaging) | Chrome/Firefox native messaging — origin-bound; the declaring manifest extension specifies allowed origins | Extension ID + origin |
 
@@ -290,11 +312,11 @@ The JWT-SVID payload carries standard SPIFFE claims plus a `persona` extension o
 
 ```json
 {
-  "sub": "spiffe://example.com/pseudonym/3f1a7b.../for/com.notion.Notion",
+  "sub": "spiffe://example.com/pseudonym/3f1a7b...",
   "aud": ["https://example.com"],
   "exp": 1746000000,
   "iat": 1745999700,
-  "spiffe_id": "spiffe://example.com/pseudonym/3f1a7b.../for/com.notion.Notion",
+  "spiffe_id": "spiffe://example.com/pseudonym/3f1a7b...",
   "persona": {
     "root_trust_domain": "example.com",
     "sources": ["tailscale", "piv-smartcard"],
@@ -763,7 +785,7 @@ The startup probe order:
 | System | What it does | What it doesn't do |
 |---|---|---|
 | **SPIRE Agent** | Workload identity via attestation + SVID issuance | Human identity. Explicitly scoped to "what process is this," not "what human is here." No presence, no FIDO2, no desktop identity sources. Go, no FIPS path. |
-| **Kerberos / GSSAPI** | Cryptographic proof of identity from a KDC | Single identity source only. No multi-source federation, no presence model, no per-audience pseudonyms, no hardware attestation. |
+| **Kerberos / GSSAPI** | Cryptographic proof of identity from a KDC | Single identity source only. No multi-source federation, no presence model, no per-consumer pseudonyms, no hardware attestation. |
 | **macOS Keychain / Windows Credential Manager** | Platform-specific identity and credential store | No cross-platform API, no SPIFFE, no presence model, no pseudonymity. Applications must code to each platform separately. |
 | **pam-u2f / pam-fido2** | FIDO2 at the PAM authentication layer | Answers "is a human present" but not "who are they" beyond Unix UID. No daemon, no API for applications, no identity metadata. |
 | **Hashicorp Vault Agent** | Injects secrets and short-lived certs into workloads | Closer to SPIRE than personad. No human identity, no presence, no desktop integration. |
@@ -820,7 +842,7 @@ This also means kith works without Tailscale: on a machine with `personad` and a
 
 ## Open Questions
 
-1. **Pseudonymity model**: HKDF-derived pseudonyms give per-audience isolation. But what if the user wants to link their identity across two specific apps (e.g., their password manager and their SSH client)? Need an explicit user-consent flow for cross-consumer linkage.
+1. **Pseudonymity model**: HKDF-derived pseudonyms give per-consumer isolation. But what if the user wants to link their identity across two specific apps (e.g., their password manager and their SSH client)? Need an explicit user-consent flow for cross-consumer linkage.
 
 2. **Multi-user workstations**: one `personad` per login session (scoped to the session's Unix UID) is the v1 answer. Fast-user-switching requires each session's daemon to hold separate key material. Verify that the socket path scheme enforces this.
 

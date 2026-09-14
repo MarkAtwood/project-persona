@@ -24,13 +24,6 @@ pub enum ConsumerIdentity {
     MsixPublisher(String),
     /// Chrome or Firefox extension ID.
     ChromeExtension(String),
-    /// Unattested: only UID and PID are known (fallback on unconfined Linux).
-    Unattested {
-        /// Unix user ID of the calling process.
-        uid: u32,
-        /// Process ID of the calling process.
-        pid: u32,
-    },
 }
 
 impl ConsumerIdentity {
@@ -43,7 +36,6 @@ impl ConsumerIdentity {
     /// - `SnapName`      → `"snap:name:<name>"`
     /// - `MsixPublisher` → `"msix:publisher:<cn>"`
     /// - `ChromeExtension` → `"chrome_extension:id:<id>"`
-    /// - `Unattested`    → `"unattested:uid:<uid>:pid:<pid>"`
     pub fn selector_key(&self) -> String {
         match self {
             ConsumerIdentity::BinarySha256(hash) => {
@@ -61,9 +53,6 @@ impl ConsumerIdentity {
             ConsumerIdentity::SnapName(name) => format!("snap:name:{name}"),
             ConsumerIdentity::MsixPublisher(cn) => format!("msix:publisher:{cn}"),
             ConsumerIdentity::ChromeExtension(id) => format!("chrome_extension:id:{id}"),
-            ConsumerIdentity::Unattested { uid, pid } => {
-                format!("unattested:uid:{uid}:pid:{pid}")
-            }
         }
     }
 }
@@ -115,11 +104,5 @@ mod tests {
     fn chrome_extension_selector_key() {
         let key = ConsumerIdentity::ChromeExtension("aabbccddeeffgghh".into()).selector_key();
         assert_eq!(key, "chrome_extension:id:aabbccddeeffgghh");
-    }
-
-    #[test]
-    fn unattested_selector_key() {
-        let key = ConsumerIdentity::Unattested { uid: 1000, pid: 42 }.selector_key();
-        assert_eq!(key, "unattested:uid:1000:pid:42");
     }
 }

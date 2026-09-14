@@ -101,10 +101,17 @@ impl SpiffeId {
         }
     }
 
-    /// Constructs a pseudonymous `SpiffeId` for a given HKDF identity and
-    /// consumer, with path `pseudonym/{hkdf_id}/for/{consumer}`.
-    pub fn pseudonymous(trust_domain: TrustDomain, hkdf_id: &str, consumer: &str) -> SpiffeId {
-        SpiffeId::new(trust_domain, format!("pseudonym/{hkdf_id}/for/{consumer}"))
+    /// Constructs a pseudonymous `SpiffeId` with path `pseudonym/{hkdf_id}`.
+    ///
+    /// There is deliberately no `for/{consumer}` tail. `hkdf_id` is already
+    /// per-consumer, so the tail would tell the consumer only what it already
+    /// knows, while telling every relying party the token is shown to which
+    /// binary asked for it. `ConsumerIdentity::selector_key` also contains `:`,
+    /// which is not a legal SPIFFE path-segment character.
+    ///
+    /// This is a documented deviation from SPEC-HIA.md:79.
+    pub fn pseudonymous(trust_domain: TrustDomain, hkdf_id: &str) -> SpiffeId {
+        SpiffeId::new(trust_domain, format!("pseudonym/{hkdf_id}"))
     }
 }
 
