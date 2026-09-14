@@ -3,13 +3,15 @@
   "title": "CI never installs protoc, which persona-grpc's build.rs requires",
   "description": "persona-grpc/build.rs calls tonic_build::configure().compile_protos(...). tonic-build 0.12.3 -\u003e prost-build 0.13.5 (both in Cargo.lock) require a 'protoc' binary in PATH or $PROTOC; prost-build dropped the bundled protoc in 0.11.\n\n.github/workflows/ci.yml installs no system packages on either ubuntu-latest or macos-latest, so every job that compiles persona-grpc (check matrix build/test/clippy, and the msrv job) depends on protoc happening to be present in the runner image. Nothing pins that.\n\nIt is also undocumented: grep for 'protoc' across README.md, DESIGN.md, AGENTS.md, Makefile and .github/ returns zero hits. A new contributor cloning the repo gets an opaque build.rs failure with no stated prerequisite.\n\nAdd an explicit protoc install step to CI and a prerequisites line to README.md.",
   "notes": "Confirmed and mechanism established. prost-build 0.14.4's protoc_from_env() falls back to the bare string 'protoc' and spawns it from PATH; tonic-prost-build 0.14 vendors no binary (grep protoc Cargo.lock returns nothing). Neither ubuntu-24.04 nor macos-15 ships protoc, and no job installs it. Because build scripts also run under cargo clippy, this surfaces at the clippy step and will read like a clippy failure. Affects check on BOTH OSes plus the msrv job. Fix: arduino/setup-protoc@v3 before the first cargo step in each job.",
-  "status": "open",
+  "status": "closed",
   "priority": 1,
   "issue_type": "bug",
   "owner": "mark@reviewcommit.com",
   "created_at": "2026-09-13T20:57:22.577599247Z",
   "created_by": "agent",
-  "updated_at": "2026-09-14T00:32:20.843971886Z",
+  "updated_at": "2026-09-14T01:08:01.415645681Z",
+  "closed_at": "2026-09-14T01:08:01.415645681Z",
+  "close_reason": "Fixed in 3633e0b. protoc and libudev install steps added to the check and msrv jobs; AsRawFd import gated to Linux. Verified: local gates all exit 0, and cargo check --target aarch64-apple-darwin --all-targets --all-features compiles clean with zero warnings.",
   "labels": [
     "workspace",
     "review"
