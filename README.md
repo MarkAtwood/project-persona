@@ -36,7 +36,7 @@ identity claims it signs. Treat the assurance and presence levels below as targe
 | Presence levels | enforced across every audience, and unknown requirements are refused rather than ignored |
 | Per-consumer pseudonyms | wired into issuance -- every caller receives a pseudonym, never the root identity |
 | Consumer attestation | attested once per connection; a caller that cannot be attested is refused |
-| Trust bundle / `ValidateJWTSVID` | **unusable** -- publishes an empty JWKS |
+| Trust bundle / `ValidateJWTSVID` | works -- publishes a real JWKS, and validation reads only that bundle; an external verifier holding the bundle and nothing else is part of the test suite |
 | X.509-SVID, browser HTTPS gateway | stubs |
 
 The cause was structural. `enumerate()` returned the same `Claim` type `prove()`

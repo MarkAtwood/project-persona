@@ -31,15 +31,10 @@ async fn main() -> anyhow::Result<()> {
     // Ephemeral CA keypair — never persisted
     let signer = Arc::new(SvidSigner::new().context("failed to generate signing keypair")?);
 
-    // Trust bundle store: seed with our local CA public key
+    // Trust bundle store: seed with the JWT authority for our local trust domain.
     let bundles = Arc::new(TrustBundleStore::new());
     // ponytail: hardcoded local trust domain | upgrade to configurable trust domain per SPEC-HIA §Trust Domain Model
-    let local_bundle = TrustBundle::new(
-        TrustDomain::SshLocal,
-        vec![signer.public_key_der().to_vec()],
-        serde_json::json!({ "keys": [] }),
-    );
-    bundles.upsert(local_bundle);
+    bundles.upsert(TrustBundle::local(TrustDomain::SshLocal, &signer));
 
     // Probe identity sources
     let attestors = probe_sources().await;

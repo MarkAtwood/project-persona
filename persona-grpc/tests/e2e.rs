@@ -17,8 +17,10 @@ use persona_core::{SvidSigner, TrustBundle, TrustBundleStore, TrustDomain};
 use persona_grpc::{
     service::WorkloadApiService,
     workload::spiffe_workload_api_client::SpiffeWorkloadApiClient,
-    workload::{JwtsvidRequest, ValidateJwtsvidRequest},
+    workload::{JwtBundlesRequest, JwtsvidRequest, ValidateJwtsvidRequest},
 };
+
+const AUDIENCE: &str = "https://test.example.com";
 
 // ── Test attestor ─────────────────────────────────────────────────────────────
 
@@ -83,11 +85,7 @@ async fn start_daemon(
 ) {
     let signer = Arc::new(SvidSigner::new().unwrap());
     let bundles = Arc::new(TrustBundleStore::new());
-    bundles.upsert(TrustBundle::new(
-        TrustDomain::SshLocal,
-        vec![signer.public_key_der().to_vec()],
-        serde_json::json!({ "keys": [] }),
-    ));
+    bundles.upsert(TrustBundle::local(TrustDomain::SshLocal, &signer));
 
     let service = WorkloadApiService::new(
         signer,
@@ -104,6 +102,11 @@ async fn start_daemon(
 
     sleep(Duration::from_millis(100)).await;
 
+    (connect(socket_path).await, handle)
+}
+
+/// Connect a client to an already-listening daemon socket.
+async fn connect(socket_path: &str) -> SpiffeWorkloadApiClient<tonic::transport::Channel> {
     let sock_for_client = socket_path.to_owned();
     let channel = Endpoint::try_from("http://[::]:50051")
         .unwrap()
@@ -116,8 +119,7 @@ async fn start_daemon(
         }))
         .await
         .expect("client connect failed");
-
-    (SpiffeWorkloadApiClient::new(channel), handle)
+    SpiffeWorkloadApiClient::new(channel)
 }
 
 // ── Integration test ──────────────────────────────────────────────────────────
@@ -126,8 +128,6 @@ async fn start_daemon(
 async fn fetch_and_validate_jwt_svid() {
     let socket_path = tmp_socket_path();
     let (mut client, server_handle) = start_daemon(&socket_path).await;
-
-    const AUDIENCE: &str = "https://test.example.com";
 
     // ── 1. FetchJWTSVID ──────────────────────────────────────────────────────
 
@@ -306,4 +306,209 @@ async fn signed_audience_has_persona_params_stripped() {
 
     handle.abort();
     let _ = std::fs::remove_file(&socket_path);
+}
+
+// ── persona-5s4b.82: validation follows the bundle ────────────────────────────
+
+/// Start a daemon whose published bundle is a *foreign* signer's, while the
+/// service signs with its own. The discriminator for persona-5s4b.82: today's
+/// code answers the opposite on both halves below.
+async fn start_daemon_with_foreign_bundle(
+    socket_path: &str,
+) -> (
+    SpiffeWorkloadApiClient<tonic::transport::Channel>,
+    Arc<SvidSigner>,
+    tokio::task::JoinHandle<()>,
+) {
+    let service_signer = Arc::new(SvidSigner::new().unwrap());
+    let foreign = Arc::new(SvidSigner::new().unwrap());
+    let bundles = Arc::new(TrustBundleStore::new());
+    bundles.upsert(TrustBundle::local(TrustDomain::SshLocal, &foreign));
+
+    let service = WorkloadApiService::new(
+        service_signer,
+        bundles,
+        vec![Arc::new(TestAttestor) as Arc<dyn Attestor>],
+    );
+    let sock = socket_path.to_owned();
+    let handle = tokio::spawn(async move {
+        persona_grpc::server::serve(std::path::Path::new(&sock), service)
+            .await
+            .expect("server error");
+    });
+    sleep(Duration::from_millis(100)).await;
+    (connect(socket_path).await, foreign, handle)
+}
+
+#[tokio::test]
+async fn validate_follows_the_bundle_not_the_in_memory_key() {
+    let socket_path = tmp_socket_path();
+    let (mut client, foreign, handle) = start_daemon_with_foreign_bundle(&socket_path).await;
+
+    // Signed by the key that IS published, by a signer the service has never
+    // seen. Must validate: only a validator that reads the bundle can do this.
+    let id = "spiffe://ssh.local/pseudonym/deadbeef";
+    let token = foreign
+        .sign_jwt_svid(id, &[AUDIENCE], serde_json::json!({}))
+        .unwrap();
+    let ok = client
+        .validate_jwtsvid(ValidateJwtsvidRequest {
+            svid: token,
+            audience: AUDIENCE.to_owned(),
+        })
+        .await
+        .expect("a token signed by the published key must validate");
+    assert_eq!(ok.into_inner().spiffe_id, id);
+
+    // Issued by the service's own signer, whose key is NOT published. Must be
+    // refused: the daemon's in-memory key confers no authority.
+    let issued = client
+        .fetch_jwtsvid(JwtsvidRequest {
+            audience: vec![AUDIENCE.to_owned()],
+            spiffe_id: String::new(),
+        })
+        .await
+        .expect("FetchJWTSVID RPC failed")
+        .into_inner()
+        .svids
+        .remove(0);
+    assert!(
+        client
+            .validate_jwtsvid(ValidateJwtsvidRequest {
+                svid: issued.svid,
+                audience: AUDIENCE.to_owned(),
+            })
+            .await
+            .is_err(),
+        "a key that is not in the published bundle must not validate anything"
+    );
+
+    handle.abort();
+    let _ = std::fs::remove_file(&socket_path);
+}
+
+#[tokio::test]
+async fn validate_refuses_a_trust_domain_with_no_published_authority() {
+    let socket_path = tmp_socket_path();
+    let signer = Arc::new(SvidSigner::new().unwrap());
+    // Deliberately empty: consumer_gate.rs already proves the daemon is
+    // constructible with no bundle at all, and issuance stays bundle-independent.
+    let bundles = Arc::new(TrustBundleStore::new());
+    let service = WorkloadApiService::new(
+        Arc::clone(&signer),
+        bundles,
+        vec![Arc::new(TestAttestor) as Arc<dyn Attestor>],
+    );
+    let sock = socket_path.clone();
+    let handle = tokio::spawn(async move {
+        persona_grpc::server::serve(std::path::Path::new(&sock), service)
+            .await
+            .expect("server error");
+    });
+    sleep(Duration::from_millis(100)).await;
+    let mut client = connect(&socket_path).await;
+
+    let token = signer
+        .sign_jwt_svid(
+            "spiffe://ssh.local/pseudonym/deadbeef",
+            &[AUDIENCE],
+            serde_json::json!({}),
+        )
+        .unwrap();
+    assert!(
+        client
+            .validate_jwtsvid(ValidateJwtsvidRequest {
+                svid: token,
+                audience: AUDIENCE.to_owned(),
+            })
+            .await
+            .is_err(),
+        "a daemon that publishes no authority for a trust domain must not vouch for its tokens"
+    );
+
+    handle.abort();
+    let _ = std::fs::remove_file(&socket_path);
+}
+
+// ── persona-5s4b.96: the oracle is outside this codebase ──────────────────────
+
+#[tokio::test]
+async fn a_third_party_verifies_a_token_with_only_the_published_bundle() {
+    use tonic::codegen::tokio_stream::StreamExt as _;
+
+    let socket_path = tmp_socket_path();
+    let (mut client, handle) = start_daemon(&socket_path).await;
+
+    let svid = client
+        .fetch_jwtsvid(JwtsvidRequest {
+            audience: vec![AUDIENCE.to_owned()],
+            spiffe_id: String::new(),
+        })
+        .await
+        .expect("FetchJWTSVID RPC failed")
+        .into_inner()
+        .svids
+        .remove(0);
+
+    let mut stream = client
+        .fetch_jwt_bundles(JwtBundlesRequest {})
+        .await
+        .expect("FetchJWTBundles RPC failed")
+        .into_inner();
+    let bundles = stream
+        .next()
+        .await
+        .expect("FetchJWTBundles sent no message")
+        .expect("FetchJWTBundles stream error")
+        .bundles;
+    let jwks = bundles
+        .get("spiffe://ssh.local")
+        .expect("no bundle published for this daemon's trust domain");
+
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("third-party-verify");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("jwks.json"), jwks).unwrap();
+    std::fs::write(dir.join("token.jwt"), &svid.svid).unwrap();
+
+    // Everything past this line is outside the daemon: the bytes above are all
+    // the verifier gets, and every cryptographic operation is openssl's.
+    assert!(
+        verify(&dir, "token.jwt").success(),
+        "a third party holding only the published bundle could not verify the token"
+    );
+
+    // Negative control. Without it, a verifier script that always exits 0 would
+    // pass the assertion above.
+    let (input, sig) = svid.svid.rsplit_once('.').expect("compact JWS");
+    let tail = &sig[sig.len() - 2..];
+    let tampered = format!(
+        "{input}.{}{}",
+        &sig[..sig.len() - 2],
+        if tail == "AB" { "CD" } else { "AB" }
+    );
+    std::fs::write(dir.join("tampered.jwt"), tampered).unwrap();
+    assert!(
+        !verify(&dir, "tampered.jwt").success(),
+        "the external verifier accepted a tampered signature: it is verifying nothing"
+    );
+
+    handle.abort();
+    let _ = std::fs::remove_file(&socket_path);
+}
+
+/// Runs the external verifier. A missing `python3` or `openssl` fails the test;
+/// it never skips. "The test suite requires python3 and openssl" is a
+/// constraint, and skipping on a missing tool would be a weakened test by the
+/// same logic that bans `#[ignore]`.
+fn verify(dir: &std::path::Path, token: &str) -> std::process::ExitStatus {
+    std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/verify_jwt_svid.py"
+        ))
+        .arg(dir.join("jwks.json"))
+        .arg(dir.join(token))
+        .arg(dir)
+        .status()
+        .expect("python3 is required by the persona test suite (see tests/verify_jwt_svid.py)")
 }

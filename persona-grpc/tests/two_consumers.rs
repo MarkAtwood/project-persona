@@ -133,11 +133,7 @@ async fn two_consumers_get_two_pseudonyms() {
 
     let signer = Arc::new(SvidSigner::new().unwrap());
     let bundles = Arc::new(TrustBundleStore::new());
-    bundles.upsert(TrustBundle::new(
-        TrustDomain::SshLocal,
-        vec![signer.public_key_der().to_vec()],
-        serde_json::json!({ "keys": [] }),
-    ));
+    bundles.upsert(TrustBundle::local(TrustDomain::SshLocal, &signer));
     let service = WorkloadApiService::new(
         signer,
         bundles,

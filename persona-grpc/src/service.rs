@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
 use persona_attestors::{Attestor, Claim};
-use persona_core::{AudienceExtensions, PresenceLevel, SvidSigner, TrustBundleStore};
+use persona_core::{AudienceExtensions, PresenceLevel, SvidSigner, TrustBundleStore, TrustDomain};
 
 use crate::consumer_attest::PeerIdentity;
 use crate::workload::{
@@ -53,6 +53,13 @@ fn new_challenge() -> Result<[u8; 32], Status> {
     Ok(buf)
 }
 
+/// Bundle map key. The proto documents all four bundle maps as "keyed by the
+/// SPIFFE ID of the trust domain"; `TrustDomain::Display` renders the bare
+/// authority, which is not a SPIFFE ID.
+fn bundle_key(trust_domain: &TrustDomain) -> String {
+    format!("spiffe://{trust_domain}")
+}
+
 #[tonic::async_trait]
 impl SpiffeWorkloadApi for WorkloadApiService {
     type FetchX509SVIDStream = BoxStream<X509svidResponse>;
@@ -76,15 +83,23 @@ impl SpiffeWorkloadApi for WorkloadApiService {
         &self,
         _req: Request<X509BundlesRequest>,
     ) -> Result<Response<Self::FetchX509BundlesStream>, Status> {
+        // A trust domain appears here only if it actually has an X.509
+        // authority. None does: X509-SVID issuance is unimplemented and no CA
+        // certificate exists, so this map is empty today. An empty proto3 map
+        // is indistinguishable on the wire from an absent one and makes a
+        // conforming consumer reject every X509-SVID, which is the true answer.
+        // A zero-length blob would instead claim "here is the DER bundle" and
+        // hand over a non-document; the signer's raw EC point, which this used
+        // to publish, is not a certificate at all (persona-5s4b.60). The filter
+        // is the general rule and not a hardcoded emptiness: the day a real CA
+        // certificate lands in `x509_authorities`, the entry appears with no
+        // further change here.
         let bundles = self
             .bundles
             .snapshot()
             .into_iter()
-            .map(|b| {
-                // Concatenate all DER-encoded CA certs for this trust domain.
-                let der_blob: Vec<u8> = b.x509_authorities.into_iter().flatten().collect();
-                (b.trust_domain.to_string(), der_blob)
-            })
+            .filter(|b| !b.x509_authorities.is_empty())
+            .map(|b| (bundle_key(&b.trust_domain), b.x509_authorities.concat()))
             .collect();
         let response = X509BundlesResponse {
             crl: vec![],
@@ -99,15 +114,15 @@ impl SpiffeWorkloadApi for WorkloadApiService {
         &self,
         _req: Request<JwtBundlesRequest>,
     ) -> Result<Response<Self::FetchJWTBundlesStream>, Status> {
-        let bundles = self
-            .bundles
-            .snapshot()
-            .into_iter()
-            .map(|b| {
-                let jwks_bytes = serde_json::to_vec(&b.jwt_authorities).unwrap_or_default();
-                (b.trust_domain.to_string(), jwks_bytes)
-            })
-            .collect();
+        let mut bundles = std::collections::HashMap::new();
+        for b in self.bundles.snapshot() {
+            // Not `unwrap_or_default()`: that turned a serialisation failure
+            // into a published *empty* bundle, which is the silent failure
+            // these issues are about.
+            let jwks = serde_json::to_vec(&b.jwt_authorities)
+                .map_err(|_| Status::internal("trust bundle is not serialisable"))?;
+            bundles.insert(bundle_key(&b.trust_domain), jwks);
+        }
         let response = JwtBundlesResponse { bundles };
         let stream = tokio_stream::once(Ok(response));
         Ok(Response::new(Box::pin(stream)))
@@ -289,38 +304,83 @@ impl SpiffeWorkloadApi for WorkloadApiService {
         }))
     }
 
-    // persona-t67: JWT-SVID validation
+    // persona-t67: JWT-SVID validation, against the published trust bundle and
+    // nothing else.
+    //
+    // `self.signer` is deliberately not read in this method. A validator that
+    // asks the issuing key whether the issuing key signed something asserts
+    // nothing a third party could check, and it keeps passing when the
+    // published bundle is empty — which is how persona-5s4b.60 hid behind
+    // persona-5s4b.82. The only key material this method may touch is what
+    // FetchJWTBundles would hand a consumer.
     async fn validate_jwtsvid(
         &self,
         req: Request<ValidateJwtsvidRequest>,
     ) -> Result<Response<ValidateJwtsvidResponse>, Status> {
-        use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
+        use jsonwebtoken::{decode, Algorithm, Validation};
+        use persona_core::SpiffeId;
 
         let req = req.into_inner();
         if req.svid.is_empty() {
             return Err(Status::invalid_argument("svid must not be empty"));
         }
+        if req.audience.is_empty() {
+            return Err(Status::invalid_argument("audience must not be empty"));
+        }
 
-        // Get the local trust bundle's public key for verification.
-        let pub_key_der = self.signer.public_key_der();
-        let decoding_key = DecodingKey::from_ec_der(pub_key_der);
+        // One message for every rejection below. "no authority for that trust
+        // domain", "no key with that kid" and "bad signature" must not be
+        // distinguishable: this RPC is reachable by any attested consumer, and
+        // the difference would enumerate which trust domains this daemon holds
+        // keys for.
+        let reject = || Status::invalid_argument("JWT validation failed");
+
+        // Read before verifying, to choose which published key must verify.
+        // Everything obtained here is attacker-controlled and grants nothing:
+        // a caller who picks the trust domain and the kid has picked which
+        // published key their signature has to satisfy. The verified claims are
+        // checked back against this choice below.
+        let unverified = jsonwebtoken::dangerous::insecure_decode::<serde_json::Value>(&req.svid)
+            .map_err(|_| reject())?;
+        let kid = unverified.header.kid.ok_or_else(reject)?;
+        let claimed: SpiffeId = unverified
+            .claims
+            .get("spiffe_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(reject)?
+            .parse()
+            .map_err(|_| reject())?;
+
+        let decoding_key = self
+            .bundles
+            .get(&claimed.trust_domain.to_string())
+            .ok_or_else(reject)?
+            .jwt_decoding_key(&kid)
+            .ok_or_else(reject)?;
 
         let mut validation = Validation::new(Algorithm::ES256);
         validation.set_audience(&[&req.audience]);
 
-        // Decode and validate: checks signature, exp, aud.
+        // Checks signature, exp and aud.
         let token_data = decode::<serde_json::Value>(&req.svid, &decoding_key, &validation)
-            .map_err(|e| Status::invalid_argument(format!("JWT validation failed: {e}")))?;
+            .map_err(|e| {
+                tracing::debug!(event = "svid_validation_failed", reason = %e);
+                reject()
+            })?;
 
-        let spiffe_id = token_data
+        let spiffe_id: SpiffeId = token_data
             .claims
             .get("spiffe_id")
             .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
+            .ok_or_else(reject)?
+            .parse()
+            .map_err(|_| reject())?;
 
-        if spiffe_id.is_empty() {
-            return Err(Status::invalid_argument("JWT missing spiffe_id claim"));
+        // Key selection ran on unverified input; this is where that input stops
+        // being trusted. The bundle that verified this token must be the bundle
+        // for the trust domain the *verified* claims name.
+        if spiffe_id.trust_domain != claimed.trust_domain {
+            return Err(reject());
         }
 
         tracing::info!(
@@ -331,7 +391,7 @@ impl SpiffeWorkloadApi for WorkloadApiService {
 
         // ponytail: empty claims in ValidateJWTSVID response | upgrade to prost_types::Struct conversion when needed
         Ok(Response::new(ValidateJwtsvidResponse {
-            spiffe_id,
+            spiffe_id: spiffe_id.uri(),
             claims: None,
         }))
     }

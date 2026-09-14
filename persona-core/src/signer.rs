@@ -2,11 +2,14 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64URL;
+use base64::Engine as _;
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 use p256::ecdsa::{signature::Signer as _, Signature, SigningKey};
 use p256::pkcs8::EncodePrivateKey as _;
 use rand_core::{OsRng, RngCore as _};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest as _, Sha256};
 
 use crate::consumer::ConsumerIdentity;
 use crate::pseudonym::derive_pseudonymous_id;
@@ -45,9 +48,10 @@ struct JwtClaims {
 /// The keypair is never persisted; it is discarded when the process exits.
 pub struct SvidSigner {
     signing_key: SigningKey,
-    /// Uncompressed SEC1 public point (`0x04 || X || Y`, 65 bytes). Not DER,
-    /// despite the accessor's name; see `public_key_der`.
-    public_key_sec1: Vec<u8>,
+    /// Uncompressed SEC1 public point, `0x04 || X || Y`. Fixed-size so that the
+    /// JWK coordinate split in `public_xy` is infallible by construction
+    /// rather than by assertion.
+    public_key_sec1: [u8; 65],
     /// PKCS#8 DER bytes kept for jsonwebtoken ES256 signing.
     pkcs8_der: Vec<u8>,
     /// Per-process key material for consumer pseudonyms. Same lifetime rule as
@@ -89,12 +93,18 @@ impl SvidSigner {
             .to_vec();
         // `to_encoded_point(false)` and never `to_sec1_bytes`: the latter is the
         // compressing accessor by contract, and a 33-byte point would silently
-        // change the published trust bundle.
-        let public_key_sec1 = signing_key
+        // change the published trust bundle. The `try_into` is what makes
+        // "silently" impossible — a point that is not 65 uncompressed bytes
+        // fails here, at key setup, rather than producing a malformed JWK at
+        // publication time.
+        let public_key_sec1: [u8; 65] = signing_key
             .verifying_key()
             .to_encoded_point(false)
             .as_bytes()
-            .to_vec();
+            .try_into()
+            .map_err(|_| {
+                SignerError::KeyGen("public key is not an uncompressed P-256 point".into())
+            })?;
         let mut pseudonym_ikm = [0u8; 32];
         OsRng
             .try_fill_bytes(&mut pseudonym_ikm)
@@ -107,14 +117,43 @@ impl SvidSigner {
         })
     }
 
-    /// Uncompressed SEC1 public key point (65 bytes) for JWKS / trust-bundle
-    /// publication. The name is historical: these bytes are a raw EC point, not
-    /// DER. Both consumers — `DecodingKey::from_ec_der`, which is
-    /// `VerifyingKey::from_sec1_bytes` under jsonwebtoken's `rust_crypto`, and
-    /// the trust bundle — require exactly this encoding. The bundle labelling
-    /// them X.509 CA certificates is persona-5s4b.60 and is not fixed here.
-    pub fn public_key_der(&self) -> &[u8] {
-        &self.public_key_sec1
+    /// The JWKS published as this daemon's JWT authority for its trust domain.
+    ///
+    /// Exactly one key, because a persona process signs with exactly one
+    /// ephemeral keypair. This is the only encoding of the public key a JWKS
+    /// consumer can use, and it is what `FetchJWTBundles` puts on the wire.
+    pub fn jwks(&self) -> serde_json::Value {
+        let (x, y) = self.public_xy();
+        serde_json::json!({
+            "keys": [{
+                "kty": "EC",
+                "crv": "P-256",
+                "alg": "ES256",
+                "use": "sig",
+                "kid": jwk_thumbprint(&x, &y),
+                "x": x,
+                "y": y,
+            }]
+        })
+    }
+
+    /// The `kid` this signer stamps on every token it issues, and the `kid` of
+    /// its entry in [`SvidSigner::jwks`].
+    ///
+    /// The keypair is regenerated at every daemon start, so "which key signed
+    /// this" is a question a consumer holding a cached bundle actually has to
+    /// answer. The RFC 7638 thumbprint answers it with no stored state.
+    pub fn kid(&self) -> String {
+        let (x, y) = self.public_xy();
+        jwk_thumbprint(&x, &y)
+    }
+
+    /// base64url(X), base64url(Y) of the stored uncompressed point.
+    fn public_xy(&self) -> (String, String) {
+        (
+            B64URL.encode(&self.public_key_sec1[1..33]),
+            B64URL.encode(&self.public_key_sec1[33..65]),
+        )
     }
 
     /// The SPIFFE ID this consumer is issued for the given root identity.
@@ -152,7 +191,12 @@ impl SvidSigner {
             persona: persona_ext,
         };
         let key = EncodingKey::from_ec_der(&self.pkcs8_der);
-        let token = encode(&Header::new(Algorithm::ES256), &claims, &key)?;
+        let mut header = Header::new(Algorithm::ES256);
+        // Names the JWKS entry that verifies this token. Without it a consumer
+        // holding more than one key can only trial-verify, which is O(n)
+        // signature checks and cannot tell "wrong key" from "bad token".
+        header.kid = Some(self.kid());
+        let token = encode(&header, &claims, &key)?;
         Ok(token)
     }
 
@@ -181,6 +225,20 @@ impl SvidSigner {
     }
 }
 
+/// RFC 7638 §3.2 JWK thumbprint of a P-256 public key.
+///
+/// The canonical form is written out literally rather than serialised from a
+/// `serde_json::Value`: RFC 7638 fixes the exact byte sequence — required
+/// members only, lexicographic order, no whitespace — while `serde_json::Map`
+/// preserves insertion order the moment any crate in the graph turns on its
+/// `preserve_order` feature. A thumbprint that changes because of a sibling
+/// crate's feature flag is a key rotation nobody asked for. `x` and `y` are
+/// base64url, an alphabet with nothing for JSON to escape.
+fn jwk_thumbprint(x: &str, y: &str) -> String {
+    let canonical = format!(r#"{{"crv":"P-256","kty":"EC","x":"{x}","y":"{y}"}}"#);
+    B64URL.encode(Sha256::digest(canonical.as_bytes()).as_slice())
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -190,7 +248,7 @@ mod tests {
     #[test]
     fn new_generates_keypair() {
         let signer = SvidSigner::new().expect("keypair generation failed");
-        assert!(!signer.public_key_der().is_empty());
+        assert_eq!(signer.public_key_sec1.len(), 65);
     }
 
     #[test]
@@ -271,6 +329,20 @@ mod tests {
     // Cross-verified by pyca and `openssl dgst -sha256 -verify`.
     const TEST_SIG_HEX: &str = "d34088ca63c7f9733869c7b28a52706bb64ba4d2517a226759ea46d9011a54ef11de38cbf5ba7b4ca67a273997f1973e8755ed275720644039771dcf44c1a3f8";
     const TEST_MSG: &[u8] = b"persona ring-removal known-answer vector v1";
+    // pyca/cryptography over TEST_SEC1_HEX: public_numbers().x / .y, 32-byte
+    // big-endian, base64url unpadded. Regenerate with:
+    //   python3 -c "
+    //   import base64
+    //   from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePublicKey, SECP256R1
+    //   n = EllipticCurvePublicKey.from_encoded_point(SECP256R1(), bytes.fromhex(SEC1)).public_numbers()
+    //   b = lambda v: base64.urlsafe_b64encode(v.to_bytes(32,'big')).decode().rstrip('=')
+    //   print(b(n.x), b(n.y))"
+    const TEST_JWK_X: &str = "_j6QkwPqRBIeNZ7N7GfBZrv66QTZCEbo0LZwkD6UheU";
+    const TEST_JWK_Y: &str = "zPgdSrdJAJJHPjtTyBWWZfV_qrVBvX7GE4Uwh9oH9Po";
+    // RFC 7638 §3.2 thumbprint of that JWK: SHA-256 over
+    // {"crv":"P-256","kty":"EC","x":"...","y":"..."}, base64url unpadded.
+    // Regenerate with python3 json+hashlib, sort_keys=True, separators=(',',':').
+    const TEST_JWK_KID: &str = "fdGIPrvovavwHlqBF_eSYE7EpaCnB7m3IPAOaQAgdT8";
 
     fn hex(bytes: &[u8]) -> String {
         bytes.iter().map(|b| format!("{b:02x}")).collect()
@@ -292,7 +364,7 @@ mod tests {
         let signer = fixed_key_signer();
         // 65-byte uncompressed SEC1 point. SPKI (91 bytes) or a compressed
         // point (33) would fail here, which is the point of the assertion.
-        assert_eq!(hex(signer.public_key_der()), TEST_SEC1_HEX);
+        assert_eq!(hex(&signer.public_key_sec1), TEST_SEC1_HEX);
         assert_eq!(hex(&signer.pkcs8_der), TEST_PKCS8_HEX);
     }
 
@@ -341,5 +413,43 @@ mod tests {
         // an externally generated vector above, so this equality carries that
         // external oracle onto the ES256 path without a clock seam.
         assert_eq!(jwt_sig, signer.sign_raw(signing_input.as_bytes()).unwrap());
+    }
+
+    #[test]
+    fn known_vector_jwks_for_fixture_key() {
+        let jwks = fixed_key_signer().jwks();
+        let keys = jwks["keys"].as_array().expect("jwks.keys must be an array");
+        assert_eq!(keys.len(), 1, "one signing key, one published key");
+        let k = &keys[0];
+        assert_eq!(k["kty"], "EC");
+        assert_eq!(k["crv"], "P-256");
+        assert_eq!(k["alg"], "ES256");
+        assert_eq!(k["use"], "sig");
+        assert_eq!(k["x"], TEST_JWK_X);
+        assert_eq!(k["y"], TEST_JWK_Y);
+        assert_eq!(k["kid"], TEST_JWK_KID);
+    }
+
+    #[test]
+    fn issued_token_header_names_the_published_key() {
+        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+
+        let signer = fixed_key_signer();
+        let token = signer
+            .sign_jwt_svid(
+                "spiffe://example.org/workload",
+                &["api.example.org"],
+                serde_json::json!({}),
+            )
+            .unwrap();
+        let header: serde_json::Value = serde_json::from_slice(
+            &URL_SAFE_NO_PAD
+                .decode(token.split('.').next().unwrap())
+                .unwrap(),
+        )
+        .unwrap();
+        // A consumer cannot select a key it is not told about.
+        assert_eq!(header["kid"], TEST_JWK_KID);
+        assert_eq!(signer.kid(), TEST_JWK_KID);
     }
 }
