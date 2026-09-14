@@ -1396,7 +1396,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "hyper-util",
- "libc",
  "persona-core",
  "persona-grpc",
  "serde",
@@ -1413,7 +1412,6 @@ name = "personad"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "libc",
  "persona-attestors",
  "persona-core",
  "persona-grpc",

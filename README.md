@@ -71,9 +71,10 @@ persona (CLI)  -->  personad (daemon)  -->  identity sources
 
 - **Daemon:** `personad` -- runs as a user-session service (no root required)
 - **CLI:** `persona` -- `whoami`, `enumerate`, `fetch-jwt`, `enroll app`, `delegate`, etc.
-- **Socket (Linux):** `/run/user/{uid}/persona/workload.sock`
-- **Socket (macOS):** `$TMPDIR/persona/workload.sock`
+- **Socket (Linux):** `$XDG_RUNTIME_DIR/persona/workload.sock`, normally `/run/user/{uid}/persona/workload.sock`
+- **Socket (macOS):** `<darwin-user-temp>/persona/workload.sock`, the per-user temp directory launchd also exports as `$TMPDIR`
 - **Socket (Windows):** `\\.\pipe\persona-workload-{sid}`
+- **Socket (fallback):** `/tmp/persona-{uid}/workload.sock` when the platform supplies no runtime directory
 - **Browser bridge:** localhost HTTPS gateway on `127.0.0.1:2443` + native messaging host
 
 The daemon implements the SPIFFE Workload API as-is. No new protocol is invented.
@@ -105,7 +106,7 @@ The consumer-facing API is identical on every platform -- the SPIFFE Workload AP
 | Platform | Service manager | Notes |
 |---|---|---|
 | Linux (systemd) | `persona.service` (user unit) | Full source support |
-| Linux (non-systemd) | Init script or user session | Socket at `/tmp/persona-{uid}/workload.sock` |
+| Linux (non-systemd) | Init script or user session | Socket at `$XDG_RUNTIME_DIR/persona/workload.sock`, or `/tmp/persona-{uid}/workload.sock` if that is unset |
 | macOS | LaunchAgent | TouchID via CryptoTokenKit |
 | Windows | User-mode service | Windows Hello, named pipe transport |
 | FreeBSD / OpenBSD | User session | SSH agent, GPG, Kerberos, PIV, FIDO2 |

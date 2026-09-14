@@ -51,13 +51,6 @@ Environment=RUST_LOG=info
 WantedBy=default.target
 ";
 
-/// Returns the path to the personad workload API Unix socket for the current user.
-fn socket_path() -> PathBuf {
-    // SAFETY: getuid() has no preconditions and always succeeds.
-    let uid = unsafe { libc::getuid() };
-    PathBuf::from(format!("/run/user/{uid}/persona/workload.sock"))
-}
-
 /// Connects to the personad Unix socket and returns a ready gRPC client.
 async fn connect_to_daemon() -> Result<SpiffeWorkloadApiClient<Channel>> {
     use hyper_util::rt::TokioIo;
@@ -65,7 +58,7 @@ async fn connect_to_daemon() -> Result<SpiffeWorkloadApiClient<Channel>> {
     use tonic::transport::{Endpoint, Uri};
     use tower::service_fn;
 
-    let path = socket_path();
+    let path = persona_grpc::socket::workload_socket_path();
     if !path.exists() {
         anyhow::bail!(
             "personad socket not found at {}\nIs personad running? Try: systemctl --user start persona",

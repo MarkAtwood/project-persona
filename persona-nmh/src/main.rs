@@ -58,11 +58,6 @@ fn send_response(resp: &BrowserResponse) -> Result<()> {
     write_message(&json)
 }
 
-fn socket_path() -> std::path::PathBuf {
-    let uid = unsafe { libc::getuid() };
-    std::path::PathBuf::from(format!("/run/user/{uid}/persona/workload.sock"))
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     // Don't log to stderr — that would corrupt the Native Messaging framing.
@@ -94,7 +89,7 @@ async fn main() -> Result<()> {
 async fn handle_request(req: BrowserRequest) -> BrowserResponse {
     match req {
         BrowserRequest::Status => BrowserResponse::Status {
-            running: socket_path().exists(),
+            running: persona_grpc::socket::workload_socket_path().exists(),
             version: env!("CARGO_PKG_VERSION").to_owned(),
         },
         BrowserRequest::FetchJwt { audience } => match fetch_jwt(audience).await {
@@ -115,7 +110,10 @@ async fn fetch_jwt(audience: Vec<String>) -> Result<(String, String)> {
     use tonic::transport::{Endpoint, Uri};
     use tower::service_fn;
 
-    let path = socket_path().to_str().unwrap().to_owned();
+    let path = persona_grpc::socket::workload_socket_path()
+        .to_str()
+        .unwrap()
+        .to_owned();
     let channel = Endpoint::try_from("http://[::]:50051")
         .context("invalid endpoint")?
         .connect_with_connector(service_fn(move |_: Uri| {

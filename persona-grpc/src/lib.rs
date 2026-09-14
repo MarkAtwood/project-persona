@@ -3,6 +3,7 @@
 pub mod consumer_attest;
 pub mod server;
 pub mod service;
+pub mod socket;
 
 /// Generated types and service traits from the SPIFFE Workload API proto.
 pub mod workload {

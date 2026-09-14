@@ -1,6 +1,6 @@
 //! personad — human identity daemon, SPIFFE Workload API.
 
-use std::{path::PathBuf, sync::Arc};
+use std::sync::Arc;
 
 use anyhow::Context;
 use persona_attestors::registry::probe_sources;
@@ -49,9 +49,7 @@ async fn main() -> anyhow::Result<()> {
     // Build gRPC service
     let service = WorkloadApiService::new(Arc::clone(&signer), Arc::clone(&bundles), attestors);
 
-    // Determine socket path: /run/user/{uid}/persona/workload.sock
-    let uid = unsafe { libc::getuid() };
-    let socket_path = PathBuf::from(format!("/run/user/{uid}/persona/workload.sock"));
+    let socket_path = persona_grpc::socket::workload_socket_path();
 
     info!(?socket_path, "binding SPIFFE Workload API socket");
 
