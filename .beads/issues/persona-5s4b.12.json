@@ -2,13 +2,15 @@
   "id": "persona-5s4b.12",
   "title": "Socket path /run/user/{uid} hardcoded in 3 binaries; launchd plist ships a macOS daemon that cannot bind it",
   "description": "The same literal socket path is constructed independently in three places:\n- personad/src/main.rs:54\n- persona/src/main.rs:58\n- persona-nmh/src/main.rs:63\n\neach as format!(\"/run/user/{uid}/persona/workload.sock\"). It is the daemon's public contract between the server and both clients, yet it lives in no shared crate — persona-core would be the right home (all three already depend on it). Changing it requires three edits that nothing keeps in sync, and a mismatch silently yields a client that connects to nothing.\n\nWorse, /run/user/{uid} is a Linux systemd/pam_systemd construct that does not exist on macOS. launchd/personal.atwood.persona.plist ships personad as a macOS LaunchAgent, and .github/workflows/ci.yml builds and tests on macos-latest. On macOS the daemon's create_dir_all (persona-grpc/src/server.rs:24) tries to mkdir /run/user/501, which fails on the read-only root volume. The shipped launchd plist therefore cannot work.\n\nAlso inconsistent with systemd/personad.socket, which uses '%t/persona/workload.sock' — correct for a user unit today, but a second, independent spelling of the same path.\n\nFix: one accessor in persona-core that resolves XDG_RUNTIME_DIR (Linux) / a Darwin-appropriate location, used by all three binaries and matched by the unit files.",
-  "status": "open",
+  "status": "closed",
   "priority": 1,
   "issue_type": "bug",
   "owner": "mark@reviewcommit.com",
   "created_at": "2026-09-13T20:57:22.638933078Z",
   "created_by": "agent",
-  "updated_at": "2026-09-13T20:57:22.638933078Z",
+  "updated_at": "2026-09-14T01:37:38.347538184Z",
+  "closed_at": "2026-09-14T01:37:38.347538184Z",
+  "close_reason": "Fixed in ceea8bd. Single persona_grpc::socket::workload_socket_path() helper; all four call sites use it, three hand-formatted copies deleted. Also fixed two defects found in review: empty XDG_RUNTIME_DIR yielding a relative path, and an unsafe /tmp fallback directory. Tests 37 -\u003e 48, none modified.",
   "labels": [
     "workspace",
     "review"

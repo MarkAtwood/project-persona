@@ -1,0 +1,27 @@
+{
+  "id": "persona-5s4b.111",
+  "title": "Docs and a user-facing error name persona.service; the shipped unit is personad.service",
+  "description": "Three documents and one error message name a systemd unit that does not exist.\n\n  DESIGN.md:47    **User systemd unit (Linux):** persona.service\n  SPEC-HIA.md:47  same line\n  README.md:108   | Linux (systemd) | persona.service (user unit) |\n  persona/src/main.rs:64  error text: \"Is personad running? Try: systemctl --user start persona\"\n\nThe shipped unit is systemd/personad.service, and 'persona install-service' writes personad.service (persona/src/main.rs:506-508). README.md:135 tells the reader 'systemctl --user enable --now personad', contradicting its own table 27 lines earlier.\n\nmain.rs:64 is the worst of the four: it is the message a user sees precisely when the socket is missing, and it sends them to a unit name that will fail.\n\nFound during persona-5s4b.110 by the doc-consistency verifier. Left unfixed there to keep that change to socket-path derivation.",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "bug",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-14T01:37:38.026277038Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-14T01:37:38.026277038Z",
+  "labels": [
+    "docs",
+    "consistency",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.111",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-14T01:37:38.068290435Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}
