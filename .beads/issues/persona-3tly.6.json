@@ -1,0 +1,26 @@
+{
+  "id": "persona-3tly.6",
+  "title": "Presence ends two different ways and the model can only express one",
+  "description": "Nothing in the workspace observes departure. Grep finds no logind, no screensaver hook, no PC/SC removal watch, no session-change handling. ValidateJWTSVID consults no presence state. FreshnessResult offers Stale of a PresenceLevel, meaning decay to a lower level, and Unavailable, meaning the source went away. Neither means \"I observed the human leave\", and nothing calls freshness anyway.\n\nTWO EPISTEMICALLY DIFFERENT ENDINGS, currently conflated:\n  DECAY     a TTL ran out. A GUESS: time passed, so they might be gone.\n  DEPARTURE we OBSERVED them go. Card withdrawn, screen locked, session ended. A FACT.\n\nDEPARTURE DETECTION IS A CAPABILITY OF THE SOURCE, not a property of presence. Some sources can revoke; most can only expire.\n\n  PIV or CAC      presence via PIN       departure via a PC/SC card-removal event\n  Screen lock     presence via unlock    departure via logind LockedHint on Linux, a\n                                         distributed notification on macOS, a WTS\n                                         session-change on Windows\n  FIDO2 touch     presence via UP or UV  NO departure signal. A key cannot tell you the\n                                         human walked away.\n  TouchID, Hello  presence               no\n  OIDC, SSH, GPG, Tailscale              weak presence or none, and no departure\n\nTHREE CONSEQUENCES\n\n1. TTL means different things per source. Where departure is observable a TTL is a backstop and can be generous. Where it is not, the TTL is the ENTIRE safety margin and should be short. Today one hardcoded 300 seconds covers both. This is a fourth axis on top of the three in persona-3tly.5, and a scalar PresenceLevel cannot carry it.\n\n2. An issued JWT cannot be recalled. A card withdrawn at T plus 30, against a present_until of T plus 300, leaves 270 seconds of false claim. That is the actual hole.\n\n3. The hook already exists. persona-5s4b.82 just made ValidateJWTSVID consult live trust-bundle state rather than a cached key. The same shape applies here: validation consults live PRESENCE state, so a token whose presence was observably revoked fails validation even though exp has not passed. Departure then lands in an RPC that already exists rather than needing a revocation protocol.\n\n   Limit, stated honestly: that only helps consumers which actually call ValidateJWTSVID. A consumer verifying the signature itself against the published JWKS never sees the revocation.\n\nSCREEN LOCK IS THE BROADLY AVAILABLE ONE and is probably where to start. logind gives LockedHint and session state on Linux with no hardware at all, macOS has lock and screensaver notifications, Windows has session-change events. Far wider reach than CAC, and it is the signal a desktop user generates constantly.\n\nInteracts with persona-ogiv, in flight: a departure event carries a time too, and it should TRUNCATE present_until rather than merely competing with it.",
+  "status": "open",
+  "priority": 1,
+  "issue_type": "feature",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-14T20:46:36.767632169Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-14T20:46:36.767632169Z",
+  "labels": [
+    "presence",
+    "design"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-3tly.6",
+      "depends_on_id": "persona-3tly",
+      "type": "parent-child",
+      "created_at": "2026-09-14T20:46:36.782470996Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}
