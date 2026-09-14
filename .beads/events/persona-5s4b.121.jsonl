@@ -1,0 +1,4 @@
+{"id":"01a0a20d-0299-719c-b12f-c7a9ae573ffe","issue_id":"persona-5s4b.121","event_type":"created","actor":"agent","old_value":"","new_value":"","created_at":"2026-09-14T22:32:36.761107976Z"}
+{"id":"01a0a20d-029d-7254-98c6-098a6620e4df","issue_id":"persona-5s4b.121","event_type":"label_added","actor":"agent","comment":"Added label: attestors","created_at":"2026-09-14T22:32:36.765153722Z"}
+{"id":"01a0a20d-02a1-7141-b231-df9d84592957","issue_id":"persona-5s4b.121","event_type":"label_added","actor":"agent","comment":"Added label: ssh","created_at":"2026-09-14T22:32:36.769083097Z"}
+{"id":"01a0a20d-02a5-70ca-80a6-996ee6c87eb4","issue_id":"persona-5s4b.121","event_type":"label_added","actor":"agent","comment":"Added label: review","created_at":"2026-09-14T22:32:36.773052258Z"}

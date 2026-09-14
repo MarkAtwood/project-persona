@@ -1,0 +1,27 @@
+{
+  "id": "persona-5s4b.121",
+  "title": "ssh-agent prove() refuses every key type except ed25519",
+  "description": "ssh.rs prove() supports ssh-ed25519 and refuses ecdsa-sha2-nistp256 and ssh-rsa, so an agent holding only those enumerates candidates and proves none of them. The user sees the daemon decline with no obvious reason.\n\nDeliberate, and recorded here rather than left to be rediscovered. ed25519 verification is a few lines with no encoding decisions. ECDSA needs an mpint decoder, because an ssh signature nests r and s as mpints which may carry a leading zero byte while p256 wants a fixed 64-byte r||s. The design that proposed it conceded the decoder would be guarded by a convention rather than a test: if whoever writes the fixtures samples a key instead of mining for a 31-byte scalar, the roughly one-in-128 case ships unexercised and the suite still looks complete. That is the same class of encoding trap that nearly shipped a broken signature during the ring removal.\n\nRSA is a separate matter and should stay refused for a reason beyond effort: .cargo/audit.toml ignores RUSTSEC-2023-0071 on the recorded grounds that RSA code paths are unreachable, and states its own re-verification condition. Supporting ssh-rsa would falsify that justification, so adding it means rewriting the ignore honestly or accepting a live advisory.\n\nWhat to do when a real user turns up with an ecdsa-only agent: add a sibling verifying constructor in claim.rs, never a second verifier in ssh.rs, and mine a fixture with a 31-byte scalar rather than sampling one. The upgrade path is written on the refusal arm in ssh.rs.\n\nUntil then the refusal is logged, so the reason is at least discoverable in the daemon log.",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-14T22:32:36.756932689Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-14T22:32:36.756932689Z",
+  "labels": [
+    "attestors",
+    "ssh",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.121",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-14T22:32:36.782243051Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}
