@@ -35,10 +35,15 @@ fn socket_under(runtime_dir: Option<PathBuf>, uid: u32) -> PathBuf {
 /// Darwin's per-user temp confinement directory, `/var/folders/<..>/T/`, mode 0700.
 ///
 /// Read from the system rather than from `$TMPDIR` so that a client with a scrubbed or
-/// overridden environment still finds the daemon's socket, and so the result keeps the
-/// fixed Darwin shape. That shape is roughly 45 bytes, which leaves the assembled path
-/// near 70 bytes against the 104-byte `sun_path` limit on macOS; an inherited `$TMPDIR`
-/// carries no such bound and can overflow it.
+/// overridden environment still finds the daemon's socket.
+///
+/// Measured on macOS 26.6.2. `confstr` returned the same 49-byte directory whether
+/// `$TMPDIR` was set normally, unset, or overridden to `/tmp`. Both `$TMPDIR` and
+/// `std::env::temp_dir()` followed the override and reported `/tmp`, so either would
+/// have sent a client looking in a different place from the daemon. The assembled
+/// socket path is 70 bytes against the 104-byte `sun_path` limit; an inherited
+/// `$TMPDIR` carries no such bound. A real `UnixListener::bind` at the derived path
+/// succeeded on that machine.
 #[cfg(target_os = "macos")]
 fn runtime_dir() -> Option<PathBuf> {
     use std::ffi::OsStr;
