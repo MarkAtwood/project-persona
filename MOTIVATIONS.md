@@ -56,6 +56,28 @@ into each and you have written it five times, five different ways, with five set
 bugs. That is the fragmentation this project exists to remove, and it only became
 worth removing once the consumers showed up.
 
+## It has been tried
+
+Some years ago a large technology company was assembling a version of this internally. The
+pieces were real. A hardware token with modified firmware handled workstation login, acted
+as the SSH agent, signed web logins, carried cloud credentials, and followed the user
+through jump hosts onto remote instances. One token, one human, and every consumer that
+needed to know who was at the keyboard asking the same thing.
+
+It did not stall on feasibility. It stalled on the protocol argument. Enough of the people
+involved held a favourite corner of the cryptographic space, and each wanted their part to
+be the foundation the rest was built on, so the wire format never closed.
+
+Two things follow from that. The first is that this is wanted and achievable: an
+organisation with resources looked at the same gap and started building, and the parts
+worked. The second is the constraint this project treats as settled, which the next section
+is about.
+
+> This account is second-hand, roughly two years stale, and comes from someone who was not
+> closely involved. No documents or code left that company with it, and the current state of
+> that work is unknown. It is included because the shape of the failure is instructive, not
+> as a claim about anyone's engineering.
+
 ## The API already exists
 
 The interesting part is that the hard design work is done, by someone else, for a
@@ -74,8 +96,13 @@ same API at a desk instead of a cluster, swap kernel and container attestors for
 FIDO2 and PIV and Tailscale, and the shape fits without modification.
 
 So `personad` invents no protocol. Any objection to the API is an objection to a
-CNCF standard. Everything new is in the attestation sources and in two ideas SPIFFE
-did not need for workloads:
+CNCF standard.
+
+That is a procedural choice as much as a technical one. A wire format that a graduated CNCF
+project already shipped, and that Envoy already speaks, is not available to argue about. The
+effort described above had no such anchor, and the argument consumed it. Everything new here
+is pushed into the attestation sources, where disagreement is cheap because each source is
+independent, and into two ideas SPIFFE did not need for workloads:
 
 **Assurance, stated out loud.** A credential says which source produced it and how
 strong that source is, so an application can require a hardware-backed identity for
