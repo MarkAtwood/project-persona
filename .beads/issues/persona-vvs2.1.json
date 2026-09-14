@@ -1,0 +1,27 @@
+{
+  "id": "persona-vvs2.1",
+  "title": "Add a Windows CI leg covering persona-core",
+  "description": "persona-core builds and tests on Windows today: zero Unix-only source, no libc dependency, and all eight dependencies are cross-platform.\n\nAdd a windows-latest job running 'cargo build -p persona-core' and 'cargo test -p persona-core'. Do NOT widen it to the workspace: persona-attestors, persona-grpc and the three binaries are Unix-only and would fail immediately, giving a permanently red gate that everyone learns to ignore.\n\nWhat this buys is narrow and worth having: it prevents persona-core drifting Unix-ward unnoticed. Someone adds libc or std::os::unix to the crate holding the crypto and the pseudonym derivation, and today nothing notices until a Windows port begins. It also needs no protoc, since persona-core has no build script.\n\nWiden the leg one crate at a time as the transport abstraction lands.",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-14T05:14:38.197146303Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-14T05:14:38.197146303Z",
+  "labels": [
+    "windows",
+    "ci",
+    "portability"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-vvs2.1",
+      "depends_on_id": "persona-vvs2",
+      "type": "parent-child",
+      "created_at": "2026-09-14T05:14:38.228492061Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}
