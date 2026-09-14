@@ -1,4 +1,4 @@
-.PHONY: check fmt lint test clean
+.PHONY: check fmt lint test audit clean
 
 check:
 	cargo check --workspace
@@ -15,7 +15,10 @@ lint:
 test:
 	cargo test --workspace
 
-ci: fmt-check lint test
+audit:
+	cargo audit
+
+ci: fmt-check lint test audit
 	@echo "CI passed"
 
 clean:

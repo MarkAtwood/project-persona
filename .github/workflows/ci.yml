@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    # Advisories land without any push to this repo: both findings that
+    # prompted this job (RUSTSEC-2026-0258, RUSTSEC-2026-0190) appeared
+    # against an unchanged Cargo.lock. Re-check daily.
+    - cron: '17 6 * * *'
 
 env:
   CARGO_TERM_COLOR: always
@@ -54,3 +59,21 @@ jobs:
         uses: Swatinem/rust-cache@v2
       - name: build
         run: cargo build
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+
+      # Run the binary directly rather than rustsec/audit-check so that
+      # .cargo/audit.toml is honoured and CI matches `make audit` locally.
+      # That file documents one ignore (RUSTSEC-2023-0071, rsa/Marvin) with
+      # its reachability argument and re-verification conditions.
+      - name: cargo audit
+        run: cargo audit
