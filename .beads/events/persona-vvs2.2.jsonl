@@ -1,0 +1,4 @@
+{"id":"01a0a0ed-dd76-7524-9968-965c5e0ce52f","issue_id":"persona-vvs2.2","event_type":"created","actor":"agent","old_value":"","new_value":"","created_at":"2026-09-14T17:18:58.422338575Z"}
+{"id":"01a0a0ed-dd7a-7434-8ce0-ab7471d4db8c","issue_id":"persona-vvs2.2","event_type":"label_added","actor":"agent","comment":"Added label: ci","created_at":"2026-09-14T17:18:58.426276967Z"}
+{"id":"01a0a0ed-dd7e-7424-8da2-e5682cae7003","issue_id":"persona-vvs2.2","event_type":"label_added","actor":"agent","comment":"Added label: portability","created_at":"2026-09-14T17:18:58.430271988Z"}
+{"id":"01a0a0ed-dd82-70bc-b444-2cef58b16c12","issue_id":"persona-vvs2.2","event_type":"label_added","actor":"agent","comment":"Added label: windows","created_at":"2026-09-14T17:18:58.434048603Z"}
