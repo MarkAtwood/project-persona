@@ -46,8 +46,8 @@ is observed.
 
 Each of those existing pieces was built for one consumer. `ssh-agent` exists because
 `ssh` needed it. GPG's agent exists because GPG needed it. They are narrow because
-narrow was correct: a general local identity daemon only pays for itself once several
-independent programs want the same answer, and until recently they didn't.
+narrow was correct: writing a general local identity daemon is only worth the effort
+once several independent programs want the same answer, and until recently they didn't.
 
 That changed. A Zero Trust desktop has an SSH bouncer, a mail gateway, a `sudo` PAM
 module, a device posture agent, and a browser bridge, and every one of them needs to
@@ -66,7 +66,7 @@ needed to know who was at the keyboard asking the same thing.
 
 It did not stall on feasibility. It stalled on the protocol argument. Enough of the people
 involved held a favourite corner of the cryptographic space, and each wanted their part to
-be the foundation the rest was built on, so the wire format never closed.
+be the foundation the rest was built on. Nobody ever agreed on a wire format.
 
 That is evidence the thing is both wanted and achievable: an organisation with
 considerable resources looked at the same gap and started building, and the parts worked.
@@ -100,9 +100,10 @@ CNCF standard.
 
 That is a procedural choice as much as a technical one. A wire format that a graduated CNCF
 project already shipped, and that Envoy already speaks, is not available to argue about. The
-effort described above had no such anchor, and the argument consumed it. Everything new here
-is pushed into the attestation sources, where disagreement is cheap because each source is
-independent, and into two ideas SPIFFE did not need for workloads:
+effort described above had no such starting point, and the argument ran on until the work
+stopped. Everything new here is pushed into the attestation sources, where disagreement is
+cheap because each source is independent, and into two ideas SPIFFE did not need for
+workloads:
 
 **Assurance, stated out loud.** A credential says which source produced it and how
 strong that source is, so an application can require a hardware-backed identity for

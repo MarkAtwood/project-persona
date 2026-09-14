@@ -17,7 +17,7 @@ SPIFFE/SPIRE solved this for workloads and graduated in the CNCF. Nobody did it 
 | WebAuthn | browser only; every relying party gets an unlinked credential |
 | Windows SSPI, macOS ASAuth | one OS each |
 
-`personad` answers "who is the human at this keyboard, and are they present right now?" over the SPIFFE Workload API, which already exists and has clients. The longer argument is in [WHY.md](WHY.md); the full comparison table is in [SPEC-HIA.md](SPEC-HIA.md#prior-art-and-why-nothing-existing-solves-this).
+`personad` answers "who is the human at this keyboard, and are they present right now?" over the SPIFFE Workload API, which already exists and has clients. The longer argument is in [MOTIVATIONS.md](MOTIVATIONS.md); the full comparison table is in [SPEC-HIA.md](SPEC-HIA.md#prior-art-and-why-nothing-existing-solves-this).
 
 ## Status
 
@@ -178,7 +178,7 @@ another local user.
 
 ## Documents
 
-- [WHY.md](WHY.md) -- why this needs to exist at all
+- [MOTIVATIONS.md](MOTIVATIONS.md) -- why this needs to exist at all
 - [SPEC-HIA.md](SPEC-HIA.md) -- normative specification: SPIFFE ID schema, trust domains, assurance levels, prior art
 - [DESIGN.md](DESIGN.md) -- technical design and architecture
 - [PRFAQ.md](PRFAQ.md) -- press release and anticipated questions
@@ -190,7 +190,7 @@ Two licenses apply, by file type:
 - **Code** — Apache-2.0. All Rust sources, `Cargo.toml` manifests, build scripts,
   protobuf definitions, and service/config files. See [LICENSE](LICENSE).
   Each crate carries `license = "Apache-2.0"` in its manifest.
-- **Documentation** — CC-BY-4.0. `WHY.md`, `SPEC-HIA.md`, `DESIGN.md`,
+- **Documentation** — CC-BY-4.0. `MOTIVATIONS.md`, `SPEC-HIA.md`, `DESIGN.md`,
   `PRFAQ.md` and this README. See [LICENSE-CC-BY-4.0](LICENSE-CC-BY-4.0). Each carries an SPDX
   identifier on its first line.
 
