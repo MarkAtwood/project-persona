@@ -6,13 +6,13 @@
 
 use async_trait::async_trait;
 
-use crate::{Attestor, AttestorError, Claim, FreshnessResult, SignedAssertion};
+use crate::{Attestor, AttestorError, Candidate};
 
 /// Attestor for PIV smartcards via PKCS#11.
 ///
-/// Requires the `pkcs11` feature and a connected PIV card.
-/// Assurance: Iaa3 (hardware-bound key, user presence required).
-/// Presence: Hardware (PIV slot 9A PIN/touch assertion).
+/// Requires the `pkcs11` feature and a connected PIV card. Assurance and
+/// presence would come from a slot 9A signature via `prove()`, which is not
+/// implemented, so this attestor contributes no level today.
 #[derive(Debug)]
 pub struct PivAttestor;
 
@@ -46,25 +46,9 @@ impl Attestor for PivAttestor {
         "piv"
     }
 
-    async fn enumerate(&self) -> Result<Vec<Claim>, AttestorError> {
+    async fn enumerate(&self) -> Result<Vec<Candidate>, AttestorError> {
         // ponytail: PKCS#11 slot enumeration not yet implemented | upgrade:
         //   C_EnumerateSlots, C_GetCertificate, parse X.509 UPN/email
         Ok(vec![])
-    }
-
-    async fn prove(
-        &self,
-        _claim: &Claim,
-        _challenge: &[u8],
-    ) -> Result<SignedAssertion, AttestorError> {
-        // ponytail: PIV slot 9A sign not yet implemented | upgrade:
-        //   C_SignInit with CKM_RSA_PKCS or CKM_ECDSA
-        Err(AttestorError::ChallengeFailed(
-            "PIV signing not yet implemented".into(),
-        ))
-    }
-
-    async fn freshness(&self, _claim: &Claim) -> Result<FreshnessResult, AttestorError> {
-        Ok(FreshnessResult::Unavailable)
     }
 }

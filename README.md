@@ -29,21 +29,29 @@ identity claims it signs. Treat the assurance and presence levels below as targe
 |---|---|
 | SPIFFE Workload API over gRPC/UDS | works -- covered by an end-to-end test |
 | JWT-SVID issuance, ephemeral in-memory CA | works |
-| Attestor registry, startup probing, `enumerate()` | works for most sources |
+| Attestor registry, startup probing, `enumerate()` | works for most sources; returns candidates, not claims |
 | CLI (`whoami`, `enumerate`, `fetch-jwt`, ...) | works |
-| `prove()` -- cryptographic proof of possession | **not implemented in any attestor** |
-| Identity assurance levels | **asserted, not established** -- see below |
+| `prove()` -- cryptographic proof of possession | **not implemented in any attestor** -- so no SVID is issued on any platform |
+| Identity assurance levels | derived from evidence -- see below |
 | Presence levels | **not enforced correctly** -- the gate is bypassable |
 | Per-audience pseudonyms | implemented and test-vector verified, but **not wired into issuance** |
 | Consumer attestation (`SO_PEERCRED`) | implemented but **never invoked** |
 | Trust bundle / `ValidateJWTSVID` | **unusable** -- publishes an empty JWKS |
 | X.509-SVID, browser HTTPS gateway | stubs |
 
-The cause is structural. `enumerate()` returns the same `Claim` type `prove()`
-produces, so a discovery call can return an assurance level nothing established. A
-FIDO2 key that is merely plugged in yields `iaa3` and hardware presence, claiming a
-touch that never happened. The fix is to make the unproven state impossible to
-construct, tracked as one item with the individual defects under it.
+The cause was structural. `enumerate()` returned the same `Claim` type `prove()`
+produces, so a discovery call could return an assurance level nothing established. A
+FIDO2 key that was merely plugged in yielded `iaa3` and hardware presence, claiming a
+touch that never happened.
+
+`enumerate()` now returns a `Candidate`, which carries no assurance and no presence.
+A `Claim` has private fields and one constructor, `Claim::derive(candidate, evidence)`,
+whose signature takes no level: the tier is read off the evidence variants. No evidence
+means no claim, so the daemon declines instead of asserting. Because no attestor
+implements `prove()` yet, that is what happens everywhere today -- `personad` finds
+candidates, cannot prove any of them, and answers `UNAUTHENTICATED` with
+`no identity claims available`. The first prover to land will be ssh-agent
+`SSH2_AGENTC_SIGN_REQUEST`, which earns the floor tier.
 
 Issues are tracked in-repo with [beads](https://github.com/gastownhall/beads) under
 `.beads/`.

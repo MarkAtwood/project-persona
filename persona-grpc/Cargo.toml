@@ -21,6 +21,7 @@ tracing.workspace          = true
 rustls.workspace           = true
 libc.workspace             = true
 sha2.workspace             = true
+ring.workspace             = true
 
 [dev-dependencies]
 tokio.workspace         = true

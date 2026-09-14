@@ -6,9 +6,7 @@
 use async_trait::async_trait;
 use sha2::{Digest, Sha256};
 
-use persona_core::{IdentityAssurance, PresenceLevel, SpiffeId, TrustDomain};
-
-use crate::{Attestor, AttestorError, Claim, FreshnessResult, SignedAssertion};
+use crate::{Attestor, AttestorError, Candidate, SelfAssertedDomain};
 
 /// Attestor that returns did:key identifiers configured via PERSONA_DID_KEYS.
 #[derive(Debug)]
@@ -58,40 +56,23 @@ impl Attestor for DidKeyAttestor {
         "did:key"
     }
 
-    async fn enumerate(&self) -> Result<Vec<Claim>, AttestorError> {
-        let claims = parse_did_keys()
+    async fn enumerate(&self) -> Result<Vec<Candidate>, AttestorError> {
+        // ponytail: did:key candidates sit under ssh.local | ceiling: the
+        //   PersonalDid trust domain is never used | upgrade path: switch the
+        //   domain once the DID is actually resolved rather than string-matched
+        let candidates = parse_did_keys()
             .into_iter()
             .map(|did| {
                 let short = did_short_id(&did);
-                Claim::new(
+                Candidate::new(
                     "did:key",
-                    IdentityAssurance::Iaa1,
-                    PresenceLevel::None,
-                    SpiffeId::new(TrustDomain::SshLocal, format!("did/{short}")),
+                    SelfAssertedDomain::SshLocal,
+                    format!("did/{short}"),
                     did.clone(),
                 )
             })
             .collect();
-        Ok(claims)
-    }
-
-    async fn prove(
-        &self,
-        _claim: &Claim,
-        _challenge: &[u8],
-    ) -> Result<SignedAssertion, AttestorError> {
-        // ponytail: did:key signing not yet implemented | upgrade: resolve key material and sign with ed25519 or p256
-        Err(AttestorError::ChallengeFailed(
-            "did:key signing not yet implemented".into(),
-        ))
-    }
-
-    async fn freshness(&self, _claim: &Claim) -> Result<FreshnessResult, AttestorError> {
-        if Self::is_available() {
-            Ok(FreshnessResult::Fresh)
-        } else {
-            Ok(FreshnessResult::Unavailable)
-        }
+        Ok(candidates)
     }
 }
 

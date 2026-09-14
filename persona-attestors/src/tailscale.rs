@@ -8,9 +8,7 @@
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use persona_core::{IdentityAssurance, PresenceLevel, SpiffeId, TrustDomain};
-
-use crate::{Attestor, AttestorError, Claim, FreshnessResult, SignedAssertion};
+use crate::{Attestor, AttestorError, Candidate, SelfAssertedDomain};
 
 /// Attests identity via the Tailscale LocalAPI Unix socket.
 #[derive(Debug)]
@@ -64,7 +62,7 @@ impl Attestor for TailscaleAttestor {
         "tailscale"
     }
 
-    async fn enumerate(&self) -> Result<Vec<Claim>, AttestorError> {
+    async fn enumerate(&self) -> Result<Vec<Candidate>, AttestorError> {
         if !self.is_available() {
             return Ok(vec![]);
         }
@@ -84,50 +82,13 @@ impl Attestor for TailscaleAttestor {
             .unwrap_or(login_name)
             .to_owned();
 
-        let claim = Claim {
-            source: "tailscale".into(),
-            assurance: IdentityAssurance::Iaa2,
-            presence: PresenceLevel::None,
-            spiffe_id: SpiffeId::new(
-                TrustDomain::Tailscale,
-                format!("user/{login_name}/node/{node_name}"),
-            ),
-            display_name: display,
-        };
+        let candidate = Candidate::new(
+            "tailscale",
+            SelfAssertedDomain::Tailscale,
+            format!("user/{login_name}/node/{node_name}"),
+            display,
+        );
 
-        Ok(vec![claim])
-    }
-
-    // ponytail: stub prove() | upgrade to Tailscale node keypair signing when needed
-    async fn prove(
-        &self,
-        _claim: &Claim,
-        _challenge: &[u8],
-    ) -> Result<SignedAssertion, AttestorError> {
-        Err(AttestorError::Unavailable(
-            "Tailscale prove() not yet implemented".into(),
-        ))
-    }
-
-    async fn freshness(&self, claim: &Claim) -> Result<FreshnessResult, AttestorError> {
-        if !self.is_available() {
-            return Ok(FreshnessResult::Unavailable);
-        }
-
-        let status = match fetch_status(&self.socket_path).await {
-            Ok(s) => s,
-            Err(_) => return Ok(FreshnessResult::Unavailable),
-        };
-
-        let login_name = status["Self"]["LoginName"].as_str().unwrap_or("");
-        if claim
-            .spiffe_id
-            .path
-            .starts_with(&format!("user/{login_name}/"))
-        {
-            Ok(FreshnessResult::Fresh)
-        } else {
-            Ok(FreshnessResult::Unavailable)
-        }
+        Ok(vec![candidate])
     }
 }

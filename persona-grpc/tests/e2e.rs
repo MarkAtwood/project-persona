@@ -9,11 +9,11 @@ use tokio::time::sleep;
 use tonic::transport::{Endpoint, Uri};
 use tower::service_fn;
 
-use persona_attestors::{Attestor, AttestorError, Claim, FreshnessResult, SignedAssertion};
-use persona_core::{
-    IdentityAssurance, PresenceLevel, SpiffeId, SvidSigner, TrustBundle, TrustBundleStore,
-    TrustDomain,
+use persona_attestors::{
+    Attestor, AttestorError, Candidate, ChallengeSignature, Evidence, FreshnessResult,
+    SelfAssertedDomain, SignedAssertion,
 };
+use persona_core::{SvidSigner, TrustBundle, TrustBundleStore, TrustDomain};
 use persona_grpc::{
     service::WorkloadApiService,
     workload::spiffe_workload_api_client::SpiffeWorkloadApiClient,
@@ -31,25 +31,30 @@ impl Attestor for TestAttestor {
         "test"
     }
 
-    async fn enumerate(&self) -> Result<Vec<Claim>, AttestorError> {
-        Ok(vec![Claim::new(
+    async fn enumerate(&self) -> Result<Vec<Candidate>, AttestorError> {
+        Ok(vec![Candidate::new(
             "test",
-            IdentityAssurance::Iaa1,
-            PresenceLevel::None,
-            SpiffeId::new(TrustDomain::SshLocal, "user/testuser"),
+            SelfAssertedDomain::SshLocal,
+            "user/testuser",
             "Test User",
         )])
     }
 
+    // A test double standing in for an attestor that can prove possession.
+    // Possession maps to the floor tier (Iaa1 / PresenceLevel::None), which is
+    // exactly what the old `Claim::new(..., Iaa1, PresenceLevel::None, ...)`
+    // fixture asserted, so the issued token is unchanged.
     async fn prove(
         &self,
-        _claim: &Claim,
-        _challenge: &[u8],
-    ) -> Result<SignedAssertion, AttestorError> {
-        Err(AttestorError::ChallengeFailed("not implemented".into()))
+        _candidate: &Candidate,
+        challenge: &[u8],
+    ) -> Result<Vec<Evidence>, AttestorError> {
+        Ok(vec![Evidence::Possession(ChallengeSignature::new(
+            SignedAssertion::new(challenge.to_vec(), "application/test"),
+        ))])
     }
 
-    async fn freshness(&self, _claim: &Claim) -> Result<FreshnessResult, AttestorError> {
+    async fn freshness(&self, _candidate: &Candidate) -> Result<FreshnessResult, AttestorError> {
         Ok(FreshnessResult::Fresh)
     }
 }

@@ -178,16 +178,14 @@ async fn enumerate() -> Result<()> {
 
     for attestor in &sources {
         match attestor.enumerate().await {
-            Ok(claims) => {
-                for claim in claims {
+            Ok(candidates) => {
+                for cand in candidates {
                     any = true;
                     println!(
-                        "{} | {} | {} | {} | {}",
-                        claim.source,
-                        claim.spiffe_id.uri(),
-                        claim.assurance,
-                        claim.presence,
-                        claim.display_name,
+                        "{} | {} | {}",
+                        cand.source,
+                        cand.spiffe_id().uri(),
+                        cand.display_name,
                     );
                 }
             }

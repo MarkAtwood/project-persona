@@ -114,7 +114,7 @@ SPIFFE Federation handles cross-domain trust bundle distribution for any of thes
 
 ## Sources (Attestor Plugins)
 
-Each source implements a plugin interface: `enumerate()`, `prove(claim, challenge)`, `freshness(claim)`. Sources are loaded at startup based on what is available on the platform.
+Each source implements a plugin interface: `enumerate()`, `prove(candidate, challenge)`, `freshness(candidate)`. `enumerate()` returns candidates, which carry no assurance and no presence; those come only from the evidence `prove()` returns. Sources are loaded at startup based on what is available on the platform.
 
 ### Day-One Sources
 
@@ -258,7 +258,7 @@ If presence requirements are not met, `personad` triggers a presence challenge (
 
 ```
 persona whoami                           # print current identity summary
-persona enumerate                        # list all available claims with source and assurance
+persona enumerate                        # list all candidate identities with source and SPIFFE ID
 persona disclose --audience X            # show which claims would be disclosed to audience X
 persona fetch-jwt --audience X           # fetch JWT-SVID for audience X (calls FetchJWTSVID)
 persona fetch-x509                       # fetch X.509-SVID bundle (calls FetchX509SVIDs)

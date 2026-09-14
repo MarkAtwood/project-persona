@@ -6,13 +6,14 @@
 
 use async_trait::async_trait;
 
-use crate::{Attestor, AttestorError, Claim, FreshnessResult, SignedAssertion};
+use crate::{Attestor, AttestorError, Candidate};
 
 /// Attestor for GNOME Online Accounts.
 ///
 /// Queries D-Bus `org.gnome.OnlineAccounts` for configured accounts and
-/// extracts per-provider OIDC tokens. Assurance: Iaa2 (IdP-verified).
-/// Presence: Session (token may be stale).
+/// extracts per-provider OIDC tokens. Assurance and presence would come from a
+/// verified token via `prove()`, which is not implemented, so this attestor
+/// contributes no level today.
 ///
 /// Only compiled on Linux; requires the `goa` feature flag.
 #[derive(Debug)]
@@ -47,30 +48,10 @@ impl Attestor for GoaAttestor {
         "gnome-online-accounts"
     }
 
-    async fn enumerate(&self) -> Result<Vec<Claim>, AttestorError> {
+    async fn enumerate(&self) -> Result<Vec<Candidate>, AttestorError> {
         // ponytail: full D-Bus account enumeration not yet implemented | upgrade path:
         //   zbus::Connection::session().await, proxy to org.gnome.OnlineAccounts,
         //   call GetAccounts(), extract OAuthBasedProviders for Google/Microsoft/Nextcloud
         Ok(vec![])
-    }
-
-    async fn prove(
-        &self,
-        _claim: &Claim,
-        _challenge: &[u8],
-    ) -> Result<SignedAssertion, AttestorError> {
-        // ponytail: OIDC token presentation not yet implemented | upgrade:
-        //   fetch access token via EnsureCredentials(), sign challenge with it
-        Err(AttestorError::ChallengeFailed(
-            "GOA signing not yet implemented".into(),
-        ))
-    }
-
-    async fn freshness(&self, _claim: &Claim) -> Result<FreshnessResult, AttestorError> {
-        if Self::is_available() {
-            Ok(FreshnessResult::Fresh)
-        } else {
-            Ok(FreshnessResult::Unavailable)
-        }
     }
 }

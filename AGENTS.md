@@ -56,7 +56,7 @@ For any task touching more than 3 files or requiring more than a few steps:
 | `personad` | Daemon binary: socket listener, startup, signal handling, systemd/launchd integration |
 | `persona` | CLI binary: `persona whoami`, `persona enumerate`, `persona fetch-jwt`, etc. |
 | `persona-core` | Shared types: SPIFFE ID schema, assurance levels (`iaa1`/`iaa2`/`iaa3`), presence model (`none`/`session`/`software`/`hardware`), trust domain model |
-| `persona-attestors` | Attestor plugin trait (`enumerate`/`prove`/`freshness`) + implementations: tailscale, fido2, piv, oidc, ssh-agent, gpg, did, secure-enclave, windows-hello, gnome-online-accounts |
+| `persona-attestors` | Attestor plugin trait (`enumerate` -> candidates, `prove` -> evidence, `freshness`) + implementations: tailscale, fido2, piv, oidc, ssh-agent, gpg, did, secure-enclave, windows-hello, gnome-online-accounts |
 | `persona-grpc` | SPIFFE Workload API gRPC server: `FetchX509SVIDs`, `FetchX509Bundles`, `FetchJWTSVID`, `FetchJWTBundles`, `ValidateJWTSVID` |
 
 **No gRPC outside `persona-grpc`. No platform-specific attestation outside `persona-attestors`. No `unsafe`.**
@@ -67,7 +67,7 @@ For any task touching more than 3 files or requiring more than a few steps:
 
 **Per-audience pseudonymity.** The default SPIFFE ID exposed to a consumer is an HKDF-derived pseudonym: `spiffe://{trust-domain}/pseudonym/{hkdf-id}/for/{consumer-app-id}`. Consumers get stable identifiers that cannot be correlated across apps without explicit user consent. Derivation uses `HKDF-SHA256(ikm=root_identity_key, salt=trust_domain, info=consumer_app_id)`.
 
-**Attestor plugin architecture.** Each identity source is a plugin implementing three methods: `enumerate()` discovers available claims, `prove(claim, challenge)` produces a signed assertion, `freshness(claim)` checks liveness. Plugins are loaded at startup based on platform availability. Missing sources are logged and skipped, never fatal.
+**Attestor plugin architecture.** Each identity source is a plugin implementing three methods: `enumerate()` discovers candidate identities, `prove(candidate, challenge)` produces evidence, `freshness(candidate)` checks liveness. A candidate carries no assurance and no presence level; both are derived from the evidence by `Claim::derive`, which is the only constructor for a `Claim`. `prove()` defaults to declining, so an attestor that cannot verify anything contributes no level and the daemon declines rather than asserting. `Claim` lives in `persona-attestors/src/claim.rs` and not in `lib.rs`: private fields on a crate-root struct stay writable from every attestor module, so moving it back would silently remove the guarantee. Plugins are loaded at startup based on platform availability. Missing sources are logged and skipped, never fatal.
 
 **Consumer authentication via OS process attestation.** On each API call, personad attests the calling process: `SO_PEERCRED` on Linux, `LOCAL_PEERCRED` on macOS, `GetNamedPipeClientProcessId` on Windows. The consumer's verified identity drives pseudonym derivation.
 

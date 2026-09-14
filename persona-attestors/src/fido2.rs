@@ -1,7 +1,7 @@
 //! FIDO2 hardware attestor — enumerates connected FIDO2 devices.
 //!
-//! Requires the `fido2` feature. When compiled without it, all methods
-//! return empty/unavailable results so the crate still builds everywhere.
+//! Requires the `fido2` feature. When compiled without it, enumerate returns
+//! empty so the crate still builds everywhere.
 // ponytail: full FIDO2 get_assertion for prove() | upgrade path is implementing
 //   ctap2 get_assertion with pinUvAuthProtocol once prove() is needed
 
@@ -10,15 +10,17 @@ use async_trait::async_trait;
 #[cfg(feature = "fido2")]
 use sha2::{Digest, Sha256};
 
-#[cfg(feature = "fido2")]
-use persona_core::{IdentityAssurance, PresenceLevel, SpiffeId, TrustDomain};
+use crate::{Attestor, AttestorError, Candidate};
 
-use crate::{Attestor, AttestorError, Claim, FreshnessResult, SignedAssertion};
+#[cfg(feature = "fido2")]
+use crate::SelfAssertedDomain;
 
 /// Attestor for FIDO2 hardware authenticators.
 ///
 /// Requires the `fido2` feature and connected FIDO2 devices.
-/// Assurance: Iaa3 (hardware-bound + IdP-verified, user presence required).
+/// Enumeration finds devices that are plugged in. Assurance and presence would
+/// come from a CTAP2 assertion via `prove()`, which is not implemented, so this
+/// attestor contributes no level today.
 /// Presence: Hardware (timestamped UP bit assertion).
 #[derive(Debug)]
 pub struct Fido2Attestor;
@@ -58,14 +60,14 @@ impl Attestor for Fido2Attestor {
         "fido2"
     }
 
-    async fn enumerate(&self) -> Result<Vec<Claim>, AttestorError> {
+    async fn enumerate(&self) -> Result<Vec<Candidate>, AttestorError> {
         #[cfg(feature = "fido2")]
         {
             let devices = tokio::task::spawn_blocking(ctap_hid_fido2::get_fidokey_devices)
                 .await
                 .map_err(|e| AttestorError::Unavailable(format!("fido2 task error: {e}")))?;
 
-            let claims = devices
+            let candidates = devices
                 .into_iter()
                 .map(|dev| {
                     let path_key = match &dev.param {
@@ -80,54 +82,22 @@ impl Attestor for Fido2Attestor {
                     } else {
                         dev.product_string.clone()
                     };
-                    Claim {
-                        source: "fido2".into(),
-                        assurance: IdentityAssurance::Iaa3,
-                        presence: PresenceLevel::Hardware,
-                        spiffe_id: SpiffeId::new(
-                            TrustDomain::SshLocal,
-                            format!("fido2/{path_hash}"),
-                        ),
-                        display_name: format!("FIDO2 {product}"),
-                    }
+                    // A device answering a HID enumeration proves only that it is
+                    // plugged in. The touch that would buy Hardware presence, and the
+                    // attestation that would buy Iaa3, can only come from prove().
+                    Candidate::new(
+                        "fido2",
+                        SelfAssertedDomain::SshLocal,
+                        format!("fido2/{path_hash}"),
+                        format!("FIDO2 {product}"),
+                    )
                 })
                 .collect();
 
-            Ok(claims)
+            Ok(candidates)
         }
 
         #[cfg(not(feature = "fido2"))]
         Ok(vec![])
-    }
-
-    async fn prove(
-        &self,
-        _claim: &Claim,
-        _challenge: &[u8],
-    ) -> Result<SignedAssertion, AttestorError> {
-        #[cfg(feature = "fido2")]
-        {
-            // ponytail: full FIDO2 get_assertion not yet implemented | upgrade path:
-            //   ctap2 get_assertion with pinUvAuthProtocol
-            Err(AttestorError::ChallengeFailed(
-                "FIDO2 assertion not yet implemented".into(),
-            ))
-        }
-
-        #[cfg(not(feature = "fido2"))]
-        Err(AttestorError::Unavailable(
-            "fido2 feature not compiled in".into(),
-        ))
-    }
-
-    async fn freshness(&self, _claim: &Claim) -> Result<FreshnessResult, AttestorError> {
-        #[cfg(feature = "fido2")]
-        {
-            // ponytail: track UP timestamp, decay after configurable TTL
-            Ok(FreshnessResult::Fresh)
-        }
-
-        #[cfg(not(feature = "fido2"))]
-        Ok(FreshnessResult::Unavailable)
     }
 }

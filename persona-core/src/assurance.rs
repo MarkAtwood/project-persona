@@ -104,3 +104,25 @@ impl FromStr for PresenceLevel {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Three production sites compare these levels with `>` / `>=`: the
+    // best-of-assurance selection loop, the presence gate, and claim
+    // derivation. The ordering is derived from declaration order, so pin it.
+
+    #[test]
+    fn assurance_levels_are_ordered() {
+        assert!(IdentityAssurance::Iaa1 < IdentityAssurance::Iaa2);
+        assert!(IdentityAssurance::Iaa2 < IdentityAssurance::Iaa3);
+    }
+
+    #[test]
+    fn presence_levels_are_ordered() {
+        assert!(PresenceLevel::None < PresenceLevel::Session);
+        assert!(PresenceLevel::Session < PresenceLevel::Software);
+        assert!(PresenceLevel::Software < PresenceLevel::Hardware);
+    }
+}

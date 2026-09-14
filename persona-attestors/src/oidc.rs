@@ -1,4 +1,4 @@
-//! OIDC cached-token attestor — enumerates identity claims from local token
+//! OIDC cached-token attestor — enumerates identity candidates from local token
 //! caches (gcloud ADC, Azure MSAL) without network I/O.
 //!
 // ponytail: manual JWT payload parsing without signature validation |
@@ -10,9 +10,9 @@ use async_trait::async_trait;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;
 
-use persona_core::{IdentityAssurance, PresenceLevel, SpiffeId, TrustDomain};
+use persona_core::PresenceLevel;
 
-use crate::{Attestor, AttestorError, Claim, FreshnessResult, SignedAssertion};
+use crate::{Attestor, AttestorError, Candidate, FreshnessResult, SelfAssertedDomain};
 
 /// Attestor that reads cached OIDC tokens from well-known local paths.
 #[derive(Debug)]
@@ -40,16 +40,6 @@ fn parse_jwt_payload(token: &str) -> Option<serde_json::Value> {
     serde_json::from_slice(&decoded).ok()
 }
 
-/// Extract a usable domain string from an OIDC issuer URI.
-/// e.g. "https://accounts.google.com" → "accounts.google.com"
-fn extract_domain(iss: &str) -> String {
-    iss.strip_prefix("https://")
-        .or_else(|| iss.strip_prefix("http://"))
-        .unwrap_or(iss)
-        .trim_end_matches('/')
-        .to_owned()
-}
-
 fn now_unix() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -57,13 +47,21 @@ fn now_unix() -> u64 {
         .unwrap_or(0)
 }
 
-/// Build a Claim from a raw JWT string, or return None if parsing fails.
-fn claim_from_jwt(raw_token: &str) -> Option<Claim> {
+/// Returns true if the token's `exp` claim is in the future.
+///
+/// Reads the raw token every time. This is an unauthenticated field and is
+/// treated as a hint about staleness only — never as an assurance signal.
+fn token_is_unexpired(raw_token: &str) -> bool {
+    parse_jwt_payload(raw_token)
+        .and_then(|p| p.get("exp").and_then(|v| v.as_u64()))
+        .is_some_and(|exp| exp > now_unix())
+}
+
+/// Build a Candidate from a raw JWT string, or return None if parsing fails.
+fn candidate_from_jwt(raw_token: &str) -> Option<Candidate> {
     let payload = parse_jwt_payload(raw_token)?;
 
     let sub = payload.get("sub")?.as_str()?.to_owned();
-    let iss = payload.get("iss")?.as_str()?.to_owned();
-    let exp = payload.get("exp").and_then(|v| v.as_u64()).unwrap_or(0);
 
     let display_name = payload
         .get("email")
@@ -72,42 +70,34 @@ fn claim_from_jwt(raw_token: &str) -> Option<Claim> {
         .unwrap_or(&sub)
         .to_owned();
 
-    let assurance = if exp > now_unix() {
-        IdentityAssurance::Iaa2
-    } else {
-        IdentityAssurance::Iaa1
-    };
-
-    let domain = extract_domain(&iss);
-
-    Some(Claim {
-        source: "oidc-cached".into(),
-        assurance,
-        presence: PresenceLevel::None,
-        spiffe_id: SpiffeId::new(
-            TrustDomain::OrgOidc(domain),
-            format!("user/{sub}/via/oidc-cached"),
-        ),
+    // ponytail: the token's `iss` is unverified, so it names no trust domain |
+    //   ceiling: OIDC identities sit under ssh.local and cap at the floor tier |
+    //   upgrade path: a signature-verifying prove() returns
+    //   Evidence::IdpVerified, which re-anchors the domain to the verified issuer
+    Some(Candidate::new(
+        "oidc-cached",
+        SelfAssertedDomain::SshLocal,
+        format!("user/{sub}/via/oidc-cached"),
         display_name,
-    })
+    ))
 }
 
-/// Scan well-known token cache files and return all parseable claims.
-fn scan_token_caches() -> Vec<(Claim, String)> {
+/// Scan well-known token cache files and return all parseable candidates.
+fn scan_token_caches() -> Vec<(Candidate, String)> {
     let home = match std::env::var("HOME") {
         Ok(h) => h,
         Err(_) => return vec![],
     };
 
-    let mut pairs: Vec<(Claim, String)> = Vec::new();
+    let mut pairs: Vec<(Candidate, String)> = Vec::new();
 
     // --- gcloud application default credentials ---
     let gcloud_adc = format!("{home}/.config/gcloud/application_default_credentials.json");
     if let Ok(text) = std::fs::read_to_string(&gcloud_adc) {
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
             if let Some(token) = json.get("id_token").and_then(|v| v.as_str()) {
-                if let Some(claim) = claim_from_jwt(token) {
-                    pairs.push((claim, token.to_owned()));
+                if let Some(candidate) = candidate_from_jwt(token) {
+                    pairs.push((candidate, token.to_owned()));
                 }
             }
         }
@@ -127,14 +117,14 @@ fn scan_token_caches() -> Vec<(Claim, String)> {
 }
 
 /// Walk Azure MSAL cache JSON looking for id_token or idToken fields.
-fn collect_azure_tokens(json: &serde_json::Value, out: &mut Vec<(Claim, String)>) {
+fn collect_azure_tokens(json: &serde_json::Value, out: &mut Vec<(Candidate, String)>) {
     // msal_token_cache.json: top-level "IdToken" object with entries that
     // have a "secret" field containing the raw JWT.
     if let Some(id_tokens) = json.get("IdToken").and_then(|v| v.as_object()) {
         for entry in id_tokens.values() {
             if let Some(token) = entry.get("secret").and_then(|v| v.as_str()) {
-                if let Some(claim) = claim_from_jwt(token) {
-                    out.push((claim, token.to_owned()));
+                if let Some(candidate) = candidate_from_jwt(token) {
+                    out.push((candidate, token.to_owned()));
                 }
             }
         }
@@ -145,8 +135,8 @@ fn collect_azure_tokens(json: &serde_json::Value, out: &mut Vec<(Claim, String)>
     if let Some(arr) = json.as_array() {
         for entry in arr {
             if let Some(token) = entry.get("idToken").and_then(|v| v.as_str()) {
-                if let Some(claim) = claim_from_jwt(token) {
-                    out.push((claim, token.to_owned()));
+                if let Some(candidate) = candidate_from_jwt(token) {
+                    out.push((candidate, token.to_owned()));
                 }
             }
         }
@@ -159,42 +149,19 @@ impl Attestor for OidcCachedAttestor {
         "oidc-cached"
     }
 
-    async fn enumerate(&self) -> Result<Vec<Claim>, AttestorError> {
+    async fn enumerate(&self) -> Result<Vec<Candidate>, AttestorError> {
         let pairs = scan_token_caches();
-        Ok(pairs.into_iter().map(|(claim, _)| claim).collect())
+        Ok(pairs.into_iter().map(|(candidate, _)| candidate).collect())
     }
 
-    async fn prove(
-        &self,
-        claim: &Claim,
-        _challenge: &[u8],
-    ) -> Result<SignedAssertion, AttestorError> {
-        // The cached JWT is itself the signed assertion. Re-scan to find it.
+    async fn freshness(&self, candidate: &Candidate) -> Result<FreshnessResult, AttestorError> {
+        // Re-read `exp` on the raw token, not an assurance level this attestor
+        // derived from that same `exp` two functions earlier.
         let pairs = scan_token_caches();
-        let raw_token = pairs
-            .into_iter()
-            .find(|(c, _)| c.spiffe_id == claim.spiffe_id)
-            .map(|(_, tok)| tok)
-            .ok_or_else(|| {
-                AttestorError::Unavailable(format!("no cached token found for {}", claim.spiffe_id))
-            })?;
-
-        Ok(SignedAssertion {
-            bytes: raw_token.into_bytes(),
-            format: "application/jwt".into(),
-        })
-    }
-
-    async fn freshness(&self, claim: &Claim) -> Result<FreshnessResult, AttestorError> {
-        // Re-scan and re-check exp.
-        let pairs = scan_token_caches();
-        match pairs
-            .into_iter()
-            .find(|(c, _)| c.spiffe_id == claim.spiffe_id)
-        {
+        match pairs.into_iter().find(|(c, _)| c.path == candidate.path) {
             None => Ok(FreshnessResult::Unavailable),
-            Some((c, _)) => {
-                if c.assurance >= IdentityAssurance::Iaa2 {
+            Some((_, raw)) => {
+                if token_is_unexpired(&raw) {
                     Ok(FreshnessResult::Fresh)
                 } else {
                     Ok(FreshnessResult::Stale(PresenceLevel::None))

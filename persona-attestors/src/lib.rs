@@ -1,5 +1,6 @@
 //! Attestor plugin trait and identity source implementations.
 
+pub mod claim;
 pub mod did_key;
 pub mod fido2;
 pub mod goa;
@@ -9,6 +10,10 @@ pub mod piv;
 pub mod ssh;
 pub mod tailscale;
 
+pub use claim::{
+    Candidate, ChallengeSignature, Claim, Evidence, HardwareTouch, SelfAssertedDomain,
+    VerifiedToken,
+};
 pub use did_key::DidKeyAttestor;
 pub use fido2::Fido2Attestor;
 pub use goa::GoaAttestor;
@@ -21,46 +26,8 @@ pub use tailscale::TailscaleAttestor;
 pub mod registry;
 pub use registry::probe_sources;
 
-use persona_core::{IdentityAssurance, PresenceLevel, SpiffeId};
+use persona_core::PresenceLevel;
 use std::fmt;
-
-/// A single identity claim discovered by an attestor.
-///
-/// Carries the source name, assurance level, presence level, and enough
-/// identity metadata for the daemon to construct a SPIFFE SVID.
-#[non_exhaustive]
-#[derive(Debug, Clone)]
-pub struct Claim {
-    /// Attestor source name, e.g. "tailscale", "fido2", "ssh-agent".
-    pub source: String,
-    /// Identity assurance level for this claim.
-    pub assurance: IdentityAssurance,
-    /// Current presence level for this claim.
-    pub presence: PresenceLevel,
-    /// The SPIFFE ID this claim corresponds to.
-    pub spiffe_id: SpiffeId,
-    /// Human-readable display name, e.g. "mark@example.com".
-    pub display_name: String,
-}
-
-impl Claim {
-    /// Construct a new [`Claim`].
-    pub fn new(
-        source: impl Into<String>,
-        assurance: IdentityAssurance,
-        presence: PresenceLevel,
-        spiffe_id: SpiffeId,
-        display_name: impl Into<String>,
-    ) -> Self {
-        Self {
-            source: source.into(),
-            assurance,
-            presence,
-            spiffe_id,
-            display_name: display_name.into(),
-        }
-    }
-}
 
 /// A signed cryptographic assertion produced by prove().
 #[non_exhaustive]
@@ -70,6 +37,16 @@ pub struct SignedAssertion {
     pub bytes: Vec<u8>,
     /// MIME type or format descriptor, e.g. "application/cbor+fido2".
     pub format: String,
+}
+
+impl SignedAssertion {
+    /// Construct a new [`SignedAssertion`].
+    pub fn new(bytes: Vec<u8>, format: impl Into<String>) -> Self {
+        Self {
+            bytes,
+            format: format.into(),
+        }
+    }
 }
 
 /// Liveness/staleness result from freshness().
@@ -109,28 +86,43 @@ pub trait Attestor: Send + Sync + fmt::Debug {
     /// Returns the human-readable name of this attestor, e.g. "tailscale".
     fn name(&self) -> &str;
 
-    /// Discovers available identity claims from this source.
+    /// Discovers candidate identities this source can see.
     ///
-    /// Returns an empty Vec if no claims are currently available (not an error).
-    async fn enumerate(&self) -> Result<Vec<Claim>, AttestorError>;
+    /// Returns an empty `Vec` if none are visible (not an error). Discovery is
+    /// not proof: a [`Candidate`] carries no assurance and no presence level.
+    async fn enumerate(&self) -> Result<Vec<Candidate>, AttestorError>;
 
-    /// Produces a signed cryptographic proof for the given claim and challenge.
+    /// Produces evidence binding `candidate` to `challenge`.
     ///
-    /// `challenge` is a freshly-generated nonce. The attestor signs it with
-    /// the key material backing the claim.
+    /// `challenge` is a freshly-generated nonce. The attestor proves the key
+    /// material backing the candidate, and the tier follows from what it
+    /// proved — see [`Claim::derive`].
+    ///
+    /// The default declines. An attestor that cannot verify anything cannot
+    /// contribute an assurance level, and the daemon declines rather than
+    /// issuing a credential nobody proved.
     ///
     /// ## Errors
-    /// Returns [`AttestorError::ChallengeFailed`] if the user cancels or the
-    /// hardware key is not present.
+    /// Returns [`AttestorError::ChallengeFailed`] if the user cancels, the
+    /// hardware key is absent, or the attestor has no proof mechanism.
     async fn prove(
         &self,
-        claim: &Claim,
+        candidate: &Candidate,
         challenge: &[u8],
-    ) -> Result<SignedAssertion, AttestorError>;
+    ) -> Result<Vec<Evidence>, AttestorError> {
+        let _ = (candidate, challenge);
+        Err(AttestorError::ChallengeFailed(format!(
+            "{} cannot produce evidence",
+            self.name()
+        )))
+    }
 
-    /// Checks liveness and staleness of the given claim.
+    /// Checks liveness and staleness of the given candidate.
     ///
-    /// Called periodically to detect when a hardware-presence claim has expired
-    /// or the underlying source has disconnected.
-    async fn freshness(&self, claim: &Claim) -> Result<FreshnessResult, AttestorError>;
+    /// Called periodically to detect when a hardware-presence assertion has
+    /// expired or the underlying source has disconnected.
+    async fn freshness(&self, candidate: &Candidate) -> Result<FreshnessResult, AttestorError> {
+        let _ = candidate;
+        Ok(FreshnessResult::Unavailable)
+    }
 }

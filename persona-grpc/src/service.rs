@@ -35,6 +35,23 @@ impl WorkloadApiService {
 
 type BoxStream<T> = Pin<Box<dyn tokio_stream::Stream<Item = Result<T, Status>> + Send + 'static>>;
 
+/// A fresh 32-byte challenge, handed to `prove()` so that an attestor which signs it
+/// produces something specific to this request rather than replayable.
+///
+/// Nothing verifies that binding yet. No attestor implements `prove()`, so no signature
+/// exists to check, and `Claim::derive` is not given the challenge and so could not check
+/// one if it did. Whoever implements the first real `prove()` has to close that: the
+/// challenge must reach the verifier alongside the assertion, and the assertion must be
+/// checked against it and against the candidate's key. Tracked as persona-5s4b.116.
+fn new_challenge() -> Result<[u8; 32], Status> {
+    use ring::rand::SecureRandom as _;
+    let mut buf = [0u8; 32];
+    ring::rand::SystemRandom::new()
+        .fill(&mut buf)
+        .map_err(|_| Status::internal("challenge generation failed"))?;
+    Ok(buf)
+}
+
 #[tonic::async_trait]
 impl SpiffeWorkloadApi for WorkloadApiService {
     type FetchX509SVIDStream = BoxStream<X509svidResponse>;
@@ -116,19 +133,45 @@ impl SpiffeWorkloadApi for WorkloadApiService {
             Status::invalid_argument(reason)
         })?;
 
-        // Enumerate claims from all active attestors; pick highest assurance.
+        let challenge = new_challenge()?;
+
+        // Discover candidates, then ask each attestor to prove one. Assurance
+        // exists only on the far side of prove(): a candidate with no evidence
+        // yields no claim at all.
+        //
+        // ponytail: every candidate is proved on every request | ceiling: once a
+        //   hardware attestor can prompt, this is one touch per candidate per RPC
+        //   | upgrade path: cache the proven Claim for the presence TTL, keyed by
+        //   spiffe_id, and prove lazily in descending attainable tier
         let mut best: Option<Claim> = None;
         for attestor in &self.attestors {
-            match attestor.enumerate().await {
-                Ok(claims) => {
-                    for claim in claims {
-                        if best.as_ref().is_none_or(|b| claim.assurance > b.assurance) {
-                            best = Some(claim);
-                        }
-                    }
-                }
+            let candidates = match attestor.enumerate().await {
+                Ok(c) => c,
                 Err(e) => {
                     tracing::warn!(name = attestor.name(), err = %e, "attestor enumerate failed");
+                    continue;
+                }
+            };
+            for candidate in candidates {
+                let evidence = match attestor.prove(&candidate, &challenge).await {
+                    Ok(ev) => ev,
+                    Err(e) => {
+                        tracing::debug!(
+                            name = attestor.name(),
+                            err = %e,
+                            "attestor cannot prove candidate"
+                        );
+                        continue;
+                    }
+                };
+                let Some(claim) = Claim::derive(&candidate, &evidence) else {
+                    continue;
+                };
+                if best
+                    .as_ref()
+                    .is_none_or(|b| claim.assurance() > b.assurance())
+                {
+                    best = Some(claim);
                 }
             }
         }
@@ -140,10 +183,11 @@ impl SpiffeWorkloadApi for WorkloadApiService {
         })?;
 
         // Check presence requirement.
-        if ext.require_presence > claim.presence {
+        if ext.require_presence > claim.presence() {
             let reason = format!(
                 "required presence level not satisfied (need {:?}, have {:?})",
-                ext.require_presence, claim.presence
+                ext.require_presence,
+                claim.presence()
             );
             tracing::info!(event = "svid_denied", reason = %reason);
             return Err(Status::unauthenticated(reason));
@@ -157,19 +201,19 @@ impl SpiffeWorkloadApi for WorkloadApiService {
         let present_until = now_secs + 300; // 5 min presence TTL
 
         let persona_ext = serde_json::json!({
-            "root_trust_domain": claim.spiffe_id.trust_domain.to_string(),
-            "sources": [&claim.source],
-            "identity_assurance": claim.assurance.to_string(),
+            "root_trust_domain": claim.spiffe_id().trust_domain.to_string(),
+            "sources": [claim.source()],
+            "identity_assurance": claim.assurance().to_string(),
             "presence": {
-                "present": claim.presence != PresenceLevel::None,
-                "attested_by": &claim.source,
+                "present": claim.presence() != PresenceLevel::None,
+                "attested_by": claim.source(),
                 "attested_at": now_secs,
                 "present_until": present_until,
             },
-            "auth_methods": [&claim.source],
+            "auth_methods": [claim.source()],
         });
 
-        let spiffe_id_str = claim.spiffe_id.uri();
+        let spiffe_id_str = claim.spiffe_id().uri();
         let audiences: Vec<&str> = req.audience.iter().map(String::as_str).collect();
 
         let token = self
@@ -186,9 +230,9 @@ impl SpiffeWorkloadApi for WorkloadApiService {
             event = "svid_issued",
             consumer_uid = "unknown",
             spiffe_id = %spiffe_id_str,
-            source = %claim.source,
-            assurance = %claim.assurance,
-            presence = ?claim.presence,
+            source = %claim.source(),
+            assurance = %claim.assurance(),
+            presence = ?claim.presence(),
             audience = %req.audience[0],
         );
 

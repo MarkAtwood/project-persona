@@ -1377,6 +1377,7 @@ dependencies = [
  "persona-core",
  "prost",
  "prost-types",
+ "ring",
  "rustls",
  "serde_json",
  "sha2 0.11.0",

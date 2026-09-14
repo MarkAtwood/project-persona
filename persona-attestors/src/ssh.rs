@@ -12,9 +12,7 @@ use sha2::{Digest, Sha256};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 
-use persona_core::{IdentityAssurance, PresenceLevel, SpiffeId, TrustDomain};
-
-use crate::{Attestor, AttestorError, Claim, FreshnessResult, SignedAssertion};
+use crate::{Attestor, AttestorError, Candidate, SelfAssertedDomain};
 
 const SSH2_AGENTC_REQUEST_IDENTITIES: u8 = 11;
 const SSH2_AGENT_IDENTITIES_ANSWER: u8 = 12;
@@ -83,7 +81,7 @@ impl Attestor for SshAgentAttestor {
         "ssh-agent"
     }
 
-    async fn enumerate(&self) -> Result<Vec<Claim>, AttestorError> {
+    async fn enumerate(&self) -> Result<Vec<Candidate>, AttestorError> {
         let sock_path = std::env::var("SSH_AUTH_SOCK")
             .map_err(|_| AttestorError::Unavailable("SSH_AUTH_SOCK not set".into()))?;
 
@@ -107,7 +105,7 @@ impl Attestor for SshAgentAttestor {
         let nkeys = u32::from_be_bytes(cur[..4].try_into().unwrap()) as usize;
         cur = &cur[4..];
 
-        let mut claims = Vec::with_capacity(nkeys);
+        let mut candidates = Vec::with_capacity(nkeys);
         for _ in 0..nkeys {
             let (key_blob, rest) = match read_string(cur) {
                 Some(v) => v,
@@ -125,34 +123,14 @@ impl Attestor for SshAgentAttestor {
             };
             let display_name = String::from_utf8_lossy(comment_bytes).into_owned();
 
-            claims.push(Claim {
-                source: "ssh-agent".into(),
-                assurance: IdentityAssurance::Iaa1,
-                presence: PresenceLevel::None,
-                spiffe_id: SpiffeId::new(TrustDomain::SshLocal, format!("key/{fingerprint}")),
+            candidates.push(Candidate::new(
+                "ssh-agent",
+                SelfAssertedDomain::SshLocal,
+                format!("key/{fingerprint}"),
                 display_name,
-            });
+            ));
         }
 
-        Ok(claims)
-    }
-
-    async fn prove(
-        &self,
-        _claim: &Claim,
-        _challenge: &[u8],
-    ) -> Result<SignedAssertion, AttestorError> {
-        // ponytail: sign not yet implemented | upgrade to ssh-agent-client-tokio
-        Err(AttestorError::ChallengeFailed(
-            "ssh-agent sign not implemented in this phase".into(),
-        ))
-    }
-
-    async fn freshness(&self, _claim: &Claim) -> Result<FreshnessResult, AttestorError> {
-        if Self::is_available() {
-            Ok(FreshnessResult::Fresh)
-        } else {
-            Ok(FreshnessResult::Unavailable)
-        }
+        Ok(candidates)
     }
 }
