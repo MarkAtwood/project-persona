@@ -8,14 +8,15 @@
 # with no per-algorithm opt-out (see its [features] table). persona never
 # performs an RSA operation — the only algorithm used is ES256, at exactly two
 # call sites:
-#   persona-core/src/signer.rs:111   Header::new(Algorithm::ES256)
-#   persona-grpc/src/service.rs:223  Validation::new(Algorithm::ES256)
+#   persona-core/src/signer.rs:155   Header::new(Algorithm::ES256)
+#   persona-grpc/src/service.rs:308  Validation::new(Algorithm::ES256)
 # The Marvin attack requires observing timing of RSA private-key operations,
 # which this code never invokes.
 #
 # Re-verify this justification if either call site gains a non-ES256 algorithm,
 # or if jsonwebtoken gains a feature that excludes rsa. The rsa-free
-# alternative is jsonwebtoken's `aws_lc_rs` backend (measured: audit clean,
-# 21 fewer deps, but adds cmake + a C compiler to build requirements).
+# alternative is jsonwebtoken's `aws_lc_rs` backend, which is rejected on other
+# grounds: it adds cmake and a C compiler to the build, and this workspace is
+# deliberately C-free so that it cross-compiles (see the `ring` removal).
 [advisories]
 ignore = ["RUSTSEC-2023-0071"]

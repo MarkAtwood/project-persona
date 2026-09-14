@@ -45,10 +45,10 @@ type BoxStream<T> = Pin<Box<dyn tokio_stream::Stream<Item = Result<T, Status>> +
 /// challenge must reach the verifier alongside the assertion, and the assertion must be
 /// checked against it and against the candidate's key. Tracked as persona-5s4b.116.
 fn new_challenge() -> Result<[u8; 32], Status> {
-    use ring::rand::SecureRandom as _;
+    use rand_core::{OsRng, RngCore as _};
     let mut buf = [0u8; 32];
-    ring::rand::SystemRandom::new()
-        .fill(&mut buf)
+    OsRng
+        .try_fill_bytes(&mut buf)
         .map_err(|_| Status::internal("challenge generation failed"))?;
     Ok(buf)
 }

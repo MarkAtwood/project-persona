@@ -50,6 +50,23 @@ jobs:
       - name: Cache
         uses: Swatinem/rust-cache@v2
 
+      - name: no C dependencies (default features)
+        # Scoped to default features: --features fido2 pulls ctap-hid-fido2, whose
+        # src/crypto.rs compile_error!s unless `ring` or `aws-lc-rs` is enabled, and
+        # which also links the C hidapi. No pure-Rust configuration of fido2 exists.
+        run: |
+          # --prefix none matters: cargo tree indents with box-drawing characters
+          # (U+2502, U+251C), which are not [[:space:]], so an anchored pattern
+          # against the default output can only ever match a workspace root and
+          # never fires on a transitive dependency.
+          if cargo tree -e normal,build --workspace --prefix none \
+               | grep -qE '^(ring|cc|aws-lc[a-z-]*) v'; then
+            echo "::error::a C-bearing crate re-entered the default dependency graph"
+            cargo tree -e normal,build --workspace --prefix none \
+              | grep -E '^(ring|cc|aws-lc[a-z-]*) v' | sort -u
+            exit 1
+          fi
+
       - name: fmt
         run: cargo fmt --all --check
 
