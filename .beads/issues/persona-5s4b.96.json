@@ -2,13 +2,15 @@
   "id": "persona-5s4b.96",
   "title": "e2e test validates a JWT with the same in-process signer that issued it, so it cannot catch the bundle and validation defects it appears to cover",
   "description": "persona-grpc/tests/e2e.rs:213-325 is the only integration test. Its final assertion (e2e.rs:307-320) issues a JWT-SVID via FetchJWTSVID and then validates it via ValidateJWTSVID against the same WorkloadApiService, holding the same Arc\u003cSvidSigner\u003e (e2e.rs:218, 227-231). Signing and verification are the same key in the same process, so the test cannot fail for any reason other than the JWT library contradicting itself. It is the \"encrypt with A, decrypt with A\" pattern the repo test-integrity rule prohibits: no independent oracle.\n\nConcretely, here is what it does not catch even though it looks like it should:\n\n  • The trust bundle it installs at e2e.rs:220-224 uses jwt_authorities: json!({\"keys\": []}) -- byte-for-byte the same empty JWKS as personad/src/main.rs:40. The test never calls FetchJWTBundles, so the fact that no consumer can obtain a verification key is invisible to it. The test reproduces the production bug rather than detecting it.\n  • ValidateJWTSVID ignoring the TrustBundleStore (service.rs:220) is invisible for the same reason -- the local signer path is the only one exercised.\n  • Nothing asserts the persona extension claim at all. The presence/assurance fields that service.rs:162-173 emits -- the security-relevant output -- are unchecked. The test asserts only that \"sub\" or \"spiffe_id\" and \"aud\" exist (e2e.rs:298-305).\n  • No negative cases: no wrong-audience validation, no tampered signature, no expired token, no missing-claims request. Every assertion is a success path.\n\nWhat goes wrong: the suite reports green while the JWT-SVID issued by this daemon is unverifiable by any external party, which is the products core function. A reviewer or contributor reasonably reads \"fetch_and_validate_jwt_svid passes\" as evidence that issuance and verification interoperate.\n\nFix direction: verify the token with an oracle that is not the service -- decode the JWKS returned by FetchJWTBundles and verify with jsonwebtoken directly against that published key (which will fail today, correctly), or check the compact JWS against a fixed known-answer vector. Add the negative cases.\n\nMinor, same file: tmp_socket_path() (e2e.rs:202-209) keys the filename on SystemTime subsec_nanos() alone, so it is not unique across runs within the same nanosecond bucket and lands in world-writable /tmp; a per-test tempdir would be both unique and unreachable by other users.",
-  "status": "open",
+  "status": "closed",
   "priority": 1,
   "issue_type": "bug",
   "owner": "mark@reviewcommit.com",
   "created_at": "2026-09-13T21:01:09.637800989Z",
   "created_by": "agent",
-  "updated_at": "2026-09-13T21:10:28.825358059Z",
+  "updated_at": "2026-09-14T18:08:45.824438577Z",
+  "closed_at": "2026-09-14T18:08:45.824438577Z",
+  "close_reason": "Fixed together in e3940ad. The bundle publishes a real one-key JWKS keyed by the trust domain's SPIFFE ID and no X.509 authority (empty is proto-permitted; a SEC1 point in an ASN.1 DER field was not). ValidateJWTSVID resolves the bundle and selects by kid with no fallback to the local key. A third-party verifier using only the published JWKS and the token, via python stdlib plus openssl, is part of the suite and was observed failing against the unfixed code first.",
   "labels": [
     "correctness",
     "review"
