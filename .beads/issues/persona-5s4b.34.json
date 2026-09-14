@@ -2,13 +2,15 @@
   "id": "persona-5s4b.34",
   "title": "launchd plist writes identity-daemon logs to a predictable path in shared /tmp",
   "description": "launchd/personal.atwood.persona.plist sets both StandardOutPath and StandardErrorPath to /tmp/personad.log, with RUST_LOG=info.\n\n/tmp is world-writable and the filename is fixed and predictable. Any local user can pre-create /tmp/personad.log as a symlink before the agent first starts and have launchd's file open follow it — launchd does not use O_NOFOLLOW here — giving an arbitrary-file-write/truncate primitive as the daemon's user. If the file is created by launchd with a default mode, another local user can also read personad's logs, which for an identity daemon at info level include the socket path, enumerated identity sources, and attestor probe results.\n\nUse ~/Library/Logs/persona/personad.log (the macOS convention for a LaunchAgent), which is inside the user's home and not attacker-precreatable.\n\nRelated install inconsistency worth settling in the same change: the plist runs /usr/local/bin/personad while systemd/personad.service runs %h/.cargo/bin/personad, and no Makefile target installs to either.",
-  "status": "open",
+  "status": "closed",
   "priority": 2,
   "issue_type": "bug",
   "owner": "mark@reviewcommit.com",
   "created_at": "2026-09-13T20:58:08.768410429Z",
   "created_by": "agent",
-  "updated_at": "2026-09-13T20:58:08.768410429Z",
+  "updated_at": "2026-09-14T02:32:43.44720918Z",
+  "closed_at": "2026-09-14T02:32:43.44720918Z",
+  "close_reason": "Fixed together in 67abb54: both stemmed from launchd expanding nothing, so install_service() now substitutes $HOME into a plist template. Binary path is ~/.cargo/bin/personad matching the README and the systemd unit; output is no longer redirected to /tmp and goes to the system log instead. Two tests added.",
   "labels": [
     "workspace",
     "review"

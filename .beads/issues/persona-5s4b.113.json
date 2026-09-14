@@ -2,13 +2,15 @@
   "id": "persona-5s4b.113",
   "title": "launchd plist points at /usr/local/bin/personad, which no documented install produces",
   "description": "launchd/personal.atwood.persona.plist:9 sets ExecStart to /usr/local/bin/personad.\n\nsystemd/personad.service:8 uses %h/.cargo/bin/personad, which matches README.md:129 ('cargo install --path personad'). No documented step installs anything to /usr/local/bin, so the macOS LaunchAgent points at a path that will not exist after following the README.\n\nAlso related: persona-5s4b.34 notes the same plist writes logs to a predictable /tmp path.",
-  "status": "open",
+  "status": "closed",
   "priority": 3,
   "issue_type": "bug",
   "owner": "mark@reviewcommit.com",
   "created_at": "2026-09-14T01:37:38.226857077Z",
   "created_by": "agent",
-  "updated_at": "2026-09-14T01:37:38.226857077Z",
+  "updated_at": "2026-09-14T02:32:43.426540913Z",
+  "closed_at": "2026-09-14T02:32:43.426540913Z",
+  "close_reason": "Fixed together in 67abb54: both stemmed from launchd expanding nothing, so install_service() now substitutes $HOME into a plist template. Binary path is ~/.cargo/bin/personad matching the README and the systemd unit; output is no longer redirected to /tmp and goes to the system log instead. Two tests added.",
   "labels": [
     "packaging",
     "review"
