@@ -3,11 +3,13 @@
   "title": "Carry an attestation timestamp on Claim, then honour persona_max_age",
   "description": "Add `attested_at` to `Claim`, derived from the newest `Evidence::HardwarePresence(_).touched_at()` in `Claim::derive`.\n\nThen replace the fabricated `attested_at`/`present_until` at persona-grpc/src/service.rs:196-211, which today sets attested_at to now_secs unconditionally and so lets any caller extend the presence TTL indefinitely by re-requesting (contradicting SPEC-HIA.md:819, \"fixed TTL from the last hardware attestation\").\n\nThen re-admit `persona_max_age` in AudienceExtensions::parse (it is currently refused as AudienceParseError::UnsupportedExtension) and compare `now - attested_at \u003e max_age` at the presence gate.\n\nContext: persona-5s4b.71 refused persona_max_age rather than enforce it, because Claim (persona-attestors/src/claim.rs:212-218) carries no timestamp and \"enforcing\" it today would compare now against now and pass for every bound including 0. SPEC-HIA.md:252 and DESIGN.md:252 were edited to document the refusal; both must be reverted when this lands.",
   "notes": "Parent context: this is the timestamp half of epic persona-3tly, 'The presence model claims more than it can establish'. The other children are the hearsay problem, the UP/UV conflation, the missing consent surface, and a spec section recording what cannot be engineered away.",
-  "status": "open",
+  "status": "closed",
   "priority": 1,
   "issue_type": "task",
   "owner": "mark@reviewcommit.com",
   "created_at": "2026-09-14T04:50:59.828524152Z",
   "created_by": "agent",
-  "updated_at": "2026-09-14T05:44:13.366728131Z"
+  "updated_at": "2026-09-14T20:59:56.889080328Z",
+  "closed_at": "2026-09-14T20:59:56.889080328Z",
+  "close_reason": "Implemented in 5f58cfc. Evidence carries the instant it witnessed; Claim::derive folds the observation from whichever evidence set the presence level; attested_at and present_until derive from that rather than from the request clock; persona_max_age is un-refused and enforced, folded with min across audiences. Wall clock, since the value is published. age_at returns None for a future observation. Honest limit recorded in the commit: for evidence any attestor can produce today the published integer is unchanged, because nothing caches evidence across requests — what changed is that the clock read now sits where evidence can override it, and tier() is exhaustive so a new variant must decide what instant it witnesses."
 }
