@@ -5,8 +5,8 @@ use std::path::PathBuf;
 /// Path to the `personad` SPIFFE Workload API socket for the current user.
 ///
 /// Linux and the BSDs use `$XDG_RUNTIME_DIR/persona/workload.sock`. Under a systemd
-/// user session that is `/run/user/{uid}/persona/workload.sock`, the same directory the
-/// shipped `personad.socket` unit names with its `%t` specifier. macOS uses the per-user
+/// user session that is `/run/user/{uid}/persona/workload.sock`, which is also what a
+/// user unit's `%t` specifier resolves to. macOS uses the per-user
 /// Darwin temp directory, which is what launchd exports as `$TMPDIR`. When neither is
 /// available the path is `/tmp/persona-{uid}/workload.sock`.
 ///

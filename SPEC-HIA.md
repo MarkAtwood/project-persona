@@ -44,7 +44,7 @@ This is a deliberate strategic choice. By presenting the standard SPIFFE Workloa
 **Socket (macOS):** `<darwin-user-temp>/persona/workload.sock`, the per-user temp directory launchd also exports as `$TMPDIR`
 **Socket (Windows):** Named pipe `\\.\pipe\persona-workload-{sid}`
 **Localhost HTTP gateway:** `127.0.0.1:2443` (for browser native-messaging bridge)
-**User systemd unit (Linux):** `persona.service`
+**User systemd unit (Linux):** `personad.service`
 **LaunchAgent (macOS):** `personal.atwood.persona`
 **Windows user-mode service:** `PersonaIdentityAgent`
 

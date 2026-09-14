@@ -105,7 +105,7 @@ The consumer-facing API is identical on every platform -- the SPIFFE Workload AP
 
 | Platform | Service manager | Notes |
 |---|---|---|
-| Linux (systemd) | `persona.service` (user unit) | Full source support |
+| Linux (systemd) | `personad.service` (user unit) | Full source support |
 | Linux (non-systemd) | Init script or user session | Socket at `$XDG_RUNTIME_DIR/persona/workload.sock`, or `/tmp/persona-{uid}/workload.sock` if that is unset |
 | macOS | LaunchAgent | TouchID via CryptoTokenKit |
 | Windows | User-mode service | Windows Hello, named pipe transport |
@@ -117,10 +117,9 @@ Implementation is a single Rust binary with `#[cfg]` feature flags per platform.
 
 ## Installation
 
-> The systemd units do not work together yet. `personad.socket` declares socket
-> activation, but the daemon binds its own socket at the same path and deletes it on
-> shutdown, and `personad.service` does not depend on the socket unit. Run the binary
-> directly for now.
+> `personad.service` starts the daemon, which binds its own socket. There is no
+> socket-activation unit: the daemon does not read `LISTEN_FDS` yet, so a `.socket`
+> unit would hand it a listener it ignores.
 
 ### systemd (Linux)
 

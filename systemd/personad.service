@@ -1,7 +1,7 @@
 [Unit]
 Description=Persona identity daemon (SPIFFE Workload API)
 After=tailscaled.service
-Documentation=https://github.com/persona-id/persona
+Documentation=https://github.com/MarkAtwood/project-persona
 
 [Service]
 Type=simple

@@ -61,7 +61,7 @@ async fn connect_to_daemon() -> Result<SpiffeWorkloadApiClient<Channel>> {
     let path = persona_grpc::socket::workload_socket_path();
     if !path.exists() {
         anyhow::bail!(
-            "personad socket not found at {}\nIs personad running? Try: systemctl --user start persona",
+            "personad socket not found at {}\nIs personad running? Try: systemctl --user start personad",
             path.display()
         );
     }
