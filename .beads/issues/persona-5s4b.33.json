@@ -2,13 +2,14 @@
   "id": "persona-5s4b.33",
   "title": "CI --all-features pulls ctap-hid-fido2 -\u003e hidapi, needing system libs CI never installs",
   "description": ".github/workflows/ci.yml runs clippy with --all-features, which enables persona-attestors' 'fido2' feature and therefore ctap-hid-fido2 3.5.11. Per Cargo.lock that crate depends on hidapi, which on Linux links against libudev and needs pkg-config; on macOS it needs the IOKit/CoreFoundation frameworks.\n\nCI installs no system packages on either runner. The --all-features clippy step builds only as long as the GitHub runner image happens to carry libudev-dev and pkg-config — an implicit dependency on runner-image contents that nothing declares and that image updates can remove.\n\nNote this affects clippy only: the 'build' and 'test' steps use default features, so a --all-features-only breakage would show up as a clippy failure with a linker error, which is a confusing place to find it.\n\nEither add an explicit apt install step, or drop --all-features from clippy and lint the fido2 feature in a dedicated job that installs its prerequisites.",
+  "notes": "RE-PROMOTED P3 -\u003e P1. I demoted this during triage on the grounds that hidapi builds fine locally, so it looked runner-specific and unproven. A dedicated CI-simulation agent has now established the mechanism: --all-features enables persona-attestors/fido2 -\u003e ctap-hid-fido2 3.6.0 -\u003e hidapi 2.6.7, whose Linux backend build.rs calls pkg_config::probe_library(\"libudev\").expect(\"Unable to find libudev\"). ubuntu-24.04 does not ship libudev-dev and ci.yml installs nothing, so the check job's clippy step panics. It builds here only because this box has the dev package. macOS is unaffected (IOKit backend). Fix: apt-get install -y libudev-dev, guarded by 'if: runner.os == Linux'. Now also affects the msrv job, which was widened to --all-features.",
   "status": "open",
-  "priority": 3,
+  "priority": 1,
   "issue_type": "task",
   "owner": "mark@reviewcommit.com",
   "created_at": "2026-09-13T20:58:08.703039867Z",
   "created_by": "agent",
-  "updated_at": "2026-09-13T21:05:35.50373662Z",
+  "updated_at": "2026-09-14T00:32:20.802067847Z",
   "labels": [
     "workspace",
     "review"
