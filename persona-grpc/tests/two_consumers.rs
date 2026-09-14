@@ -22,10 +22,9 @@ use tokio::time::sleep;
 use tonic::transport::{Endpoint, Uri};
 use tower::service_fn;
 
-use persona_attestors::{
-    Attestor, AttestorError, Candidate, ChallengeSignature, Evidence, SelfAssertedDomain,
-    SignedAssertion,
-};
+use persona_attestors::{Attestor, AttestorError, Candidate, Evidence};
+
+mod common;
 use persona_core::{SvidSigner, TrustBundle, TrustBundleStore, TrustDomain};
 use persona_grpc::service::WorkloadApiService;
 use persona_grpc::workload::spiffe_workload_api_client::SpiffeWorkloadApiClient;
@@ -43,21 +42,14 @@ impl Attestor for ProvingAttestor {
         "test"
     }
     async fn enumerate(&self) -> Result<Vec<Candidate>, AttestorError> {
-        Ok(vec![Candidate::new(
-            "test",
-            SelfAssertedDomain::SshLocal,
-            "user/testuser",
-            "Test User",
-        )])
+        Ok(vec![common::candidate("test")])
     }
     async fn prove(
         &self,
-        _candidate: &Candidate,
+        candidate: &Candidate,
         challenge: &[u8],
     ) -> Result<Vec<Evidence>, AttestorError> {
-        Ok(vec![Evidence::Possession(ChallengeSignature::new(
-            SignedAssertion::new(challenge.to_vec(), "application/test"),
-        ))])
+        Ok(vec![common::possession(candidate, challenge)])
     }
 }
 
@@ -178,7 +170,8 @@ async fn two_consumers_get_two_pseudonyms() {
     let prefix = "spiffe://ssh.local/pseudonym/";
     assert!(a1.starts_with(prefix), "A got {a1}");
     assert!(b.starts_with(prefix), "B got {b}");
-    assert!(!a1.contains("user/testuser") && !b.contains("user/testuser"));
+    let root = common::candidate("test").path;
+    assert!(!a1.contains(&root) && !b.contains(&root));
     assert_ne!(a1, b, "two applications must not share a pseudonym");
     assert_eq!(
         a2, a1,

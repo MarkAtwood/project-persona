@@ -31,10 +31,10 @@ identity claims it signs. Treat the assurance and presence levels below as targe
 | JWT-SVID issuance, ephemeral in-memory CA | works |
 | Attestor registry, startup probing, `enumerate()` | works for most sources; returns candidates, not claims |
 | CLI (`whoami`, `enumerate`, `fetch-jwt`, ...) | works |
-| `prove()` -- cryptographic proof of possession | **not implemented in any attestor** -- so no SVID is issued on any platform |
+| `prove()` -- cryptographic proof of possession | ssh-agent only, ed25519 keys only. Every other attestor still declines, so an agent key is currently the only way to obtain an SVID |
 | Identity assurance levels | derived from evidence -- see below |
 | Presence levels | enforced across every audience, and unknown requirements are refused rather than ignored |
-| Presence freshness (`persona_max_age`, 300s presence TTL) | enforced -- but **while `prove()` is unimplemented in every attestor, no real observation reaches the daemon on any platform**, so this is live code on a synthetic input |
+| Presence freshness (`persona_max_age`, 300s presence TTL) | enforced -- but no attestor yet establishes presence at all, so the bound is checked against an observation that always reports no presence |
 | Per-consumer pseudonyms | wired into issuance -- every caller receives a pseudonym, never the root identity |
 | Consumer attestation | attested once per connection; a caller that cannot be attested is refused |
 | Trust bundle / `ValidateJWTSVID` | works -- publishes a real JWKS, and validation reads only that bundle; an external verifier holding the bundle and nothing else is part of the test suite |
@@ -48,12 +48,17 @@ plugged in yielded `iaa3` and hardware presence, claiming a touch that never hap
 `enumerate()` now returns a `Candidate`, which carries no assurance and no presence.
 A `Claim` has private fields and one constructor, `Claim::derive(candidate, evidence)`,
 whose signature takes no level: the tier is read off the evidence variants. No evidence
-means no claim, so the daemon declines instead of asserting. Because no attestor
-implements `prove()` yet, that is what happens everywhere today -- `personad` finds
-candidates, cannot prove any of them, and answers `UNAUTHENTICATED` with
-`no identity claims available`. The first `prove()` implementation will be
-ssh-agent's `SSH2_AGENTC_SIGN_REQUEST`; a signature from it establishes the floor tier,
-`iaa1`.
+means no claim, so the daemon declines instead of asserting. ssh-agent is the first and so far only
+attestor that can prove: it asks the agent to sign the daemon's challenge with
+`SSH2_AGENTC_SIGN_REQUEST`, and the signature is verified against both that challenge
+and the key the candidate names. That establishes the floor tier, `iaa1`, and nothing
+above it.
+
+It claims **no presence**, deliberately. An agent key with no passphrase and no confirm
+flag signs without prompting anybody, so no human took part and the daemon says so. A
+token from this path reports `iaa1` with `present: false`. Every other attestor still
+declines, so on a machine with no ssh-agent `personad` finds candidates, proves none of
+them, and answers `UNAUTHENTICATED` with `no identity claims available`.
 
 Issues are tracked in-repo with [beads](https://github.com/gastownhall/beads) under
 `.beads/`.

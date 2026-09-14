@@ -9,16 +9,15 @@ use tokio::time::sleep;
 use tonic::transport::{Endpoint, Uri};
 use tower::service_fn;
 
-use persona_attestors::{
-    Attestor, AttestorError, Candidate, ChallengeSignature, Evidence, FreshnessResult,
-    SelfAssertedDomain, SignedAssertion,
-};
+use persona_attestors::{Attestor, AttestorError, Candidate, Evidence, FreshnessResult};
 use persona_core::{SvidSigner, TrustBundle, TrustBundleStore, TrustDomain};
 use persona_grpc::{
     service::WorkloadApiService,
     workload::spiffe_workload_api_client::SpiffeWorkloadApiClient,
     workload::{JwtBundlesRequest, JwtsvidRequest, ValidateJwtsvidRequest},
 };
+
+mod common;
 
 const AUDIENCE: &str = "https://test.example.com";
 
@@ -34,26 +33,24 @@ impl Attestor for TestAttestor {
     }
 
     async fn enumerate(&self) -> Result<Vec<Candidate>, AttestorError> {
-        Ok(vec![Candidate::new(
-            "test",
-            SelfAssertedDomain::SshLocal,
-            "user/testuser",
-            "Test User",
-        )])
+        Ok(vec![common::candidate("test")])
     }
 
     // A test double standing in for an attestor that can prove possession.
     // Possession maps to the floor tier (Iaa1 / PresenceLevel::None), which is
     // exactly what the old `Claim::new(..., Iaa1, PresenceLevel::None, ...)`
     // fixture asserted, so the issued token is unchanged.
+    //
+    // It signs for real: a fixed ed25519 key signs `challenge` and the result
+    // goes through `ChallengeSignature::verify_ssh_ed25519`, the same path the
+    // ssh attestor takes. Before persona-5s4b.116 this handed back the challenge
+    // itself as the "signature", which bound nothing.
     async fn prove(
         &self,
-        _candidate: &Candidate,
+        candidate: &Candidate,
         challenge: &[u8],
     ) -> Result<Vec<Evidence>, AttestorError> {
-        Ok(vec![Evidence::Possession(ChallengeSignature::new(
-            SignedAssertion::new(challenge.to_vec(), "application/test"),
-        ))])
+        Ok(vec![common::possession(candidate, challenge)])
     }
 
     async fn freshness(&self, _candidate: &Candidate) -> Result<FreshnessResult, AttestorError> {
@@ -75,50 +72,46 @@ fn tmp_socket_path() -> String {
     format!("/tmp/persona-test-{nanos}-{seq}.sock")
 }
 
-/// An attestor that observes once, at construction, and hands back a clone of
-/// that same observation on every `prove()`.
+/// An attestor that proves once, at construction, and replays that same proof
+/// on every later request regardless of the challenge it is handed.
 ///
-/// This is the only way in the workspace to put a genuinely *aged* observation
-/// in front of the gate: `ChallengeSignature::new` stamps the instant it is
-/// called, `HardwareTouch` has no public constructor, and adding one to buy test
-/// coverage would make `PresenceLevel::Hardware` and Iaa3 reachable from outside
-/// `persona-attestors::claim`, which is the property that module's placement
-/// exists to hold.
+/// The proof is genuine — a real signature, through the real verifying
+/// constructor — which is the point: signature verification inside an attestor
+/// establishes only that *some* challenge was answered, and the attestor picks
+/// which. This double is the shape a cache-and-replay attestor would take, and
+/// what the test below proves is that `Claim::derive` refuses it anyway.
 ///
-/// It is also the shape named as a risk: a real attestor that cached an
-/// assertion and re-stamped it per request would reintroduce persona-ogiv's
-/// defect one layer down. This double deliberately does the honest half of that
-/// — cache the assertion, keep its original instant — and the tests below are
-/// what prove the daemon no longer re-dates it.
+/// It replaced a double that did the same thing to exercise a genuinely *aged*
+/// observation. That is no longer constructible from outside
+/// `persona-attestors`: `observed_at` is stamped when the signature verifies,
+/// and adding a constructor that dates it otherwise would make replay the
+/// supported path. The gate's arithmetic is unit-tested at its boundaries in
+/// `persona-grpc/src/service.rs` instead.
 #[derive(Debug)]
-struct CachedProofAttestor {
+struct ReplayingAttestor {
+    candidate: Candidate,
     observed: Evidence,
 }
 
-impl CachedProofAttestor {
+impl ReplayingAttestor {
     fn new() -> Self {
+        let candidate = common::candidate("replaying");
+        let observed = common::possession(&candidate, b"a challenge from an earlier request");
         Self {
-            observed: Evidence::Possession(ChallengeSignature::new(SignedAssertion::new(
-                b"cached".to_vec(),
-                "application/test",
-            ))),
+            candidate,
+            observed,
         }
     }
 }
 
 #[async_trait]
-impl Attestor for CachedProofAttestor {
+impl Attestor for ReplayingAttestor {
     fn name(&self) -> &str {
-        "cached"
+        "replaying"
     }
 
     async fn enumerate(&self) -> Result<Vec<Candidate>, AttestorError> {
-        Ok(vec![Candidate::new(
-            "cached",
-            SelfAssertedDomain::SshLocal,
-            "user/testuser",
-            "Test User",
-        )])
+        Ok(vec![self.candidate.clone()])
     }
 
     async fn prove(
@@ -235,8 +228,9 @@ async fn fetch_and_validate_jwt_svid() {
         serde_json::from_slice(&claims_bytes).expect("JWT claims are not valid JSON");
 
     let body = claims.to_string();
+    let root = common::candidate("test").path;
     assert!(
-        !body.contains("user/testuser") && !body.contains("Test User"),
+        !body.contains(&root) && !body.contains("Test User"),
         "root identity leaked into the token: {body}"
     );
 
@@ -726,26 +720,32 @@ async fn try_fetch(
         .await
 }
 
-// The same observation, aged past a tight bound and still inside a loose one.
-// The two requests are served from one cached observation, so the only variable
-// between them is the bound the caller named.
+// One observation put to two bounds. The two requests are served from the same
+// attestor and the same key, so the only variable between them is the bound the
+// caller named.
 //
-// The sleep is real elapsed time and is the point: there is no other way to age
-// a genuine observation without a clock seam or a production constructor added
-// for a test. Every other freshness test in this workspace is arithmetic over
-// fixed constants (persona-attestors/src/claim.rs).
+// MIGRATED (persona-5s4b.116). Before: `CachedProofAttestor` plus a real 2.2s
+// sleep aged one cached observation past `persona_max_age=1`, and the same
+// observation passed `persona_max_age=3600`. After: a genuinely fresh
+// observation, `persona_max_age=0` — documented at persona-core/src/audience.rs
+// as "accepts nothing" — denies, and `persona_max_age=3600` serves. Identical
+// assertions, identical code path, identical status code and message check, 2.2
+// seconds faster.
+//
+// What is lost and where it went: nothing can put a wall-clock-aged observation
+// in front of this gate any more, because `observed_at` is stamped when the
+// signature verifies and a replayed proof is now refused before it reaches here.
+// The arithmetic the sleep was exercising is unit-tested at its boundaries —
+// below, at and above a bound, and with no bound — in
+// persona-grpc/src/service.rs.
 #[tokio::test]
-async fn one_aged_observation_fails_a_tight_bound_and_passes_a_loose_one() {
+async fn one_observation_fails_a_tight_bound_and_passes_a_loose_one() {
     let socket_path = tmp_socket_path();
-    let (mut client, handle) =
-        start_daemon_with(&socket_path, Arc::new(CachedProofAttestor::new())).await;
+    let (mut client, handle) = start_daemon(&socket_path).await;
 
-    // Age the cached observation well past the tight bound of 1 second.
-    sleep(Duration::from_millis(2_200)).await;
-
-    let refused = try_fetch(&mut client, "https://bank.example?persona_max_age=1")
+    let refused = try_fetch(&mut client, "https://bank.example?persona_max_age=0")
         .await
-        .expect_err("an observation older than the bound must not be served");
+        .expect_err("a bound that accepts nothing must not be served");
     assert_eq!(refused.code(), tonic::Code::Unauthenticated);
     assert!(
         refused.message().contains("persona_max_age"),
@@ -762,46 +762,51 @@ async fn one_aged_observation_fails_a_tight_bound_and_passes_a_loose_one() {
     let _ = std::fs::remove_file(&socket_path);
 }
 
-// Re-requesting does not move the presence window. Under the old code both
-// published values were `SystemTime::now()` at request-handling time, so the
-// second request would report a window starting a second later and ending a
-// second later — presence held open indefinitely by anyone willing to ask again.
+// MIGRATED (persona-5s4b.116), and the migration is a move rather than a
+// rewrite. Before: `re_requesting_does_not_extend_the_presence_window` fetched
+// twice from `CachedProofAttestor` across a 1.5s sleep and asserted the two
+// published windows were byte-identical while `iat` advanced. That premise
+// stopped being true and patching around it would have been dishonest: with an
+// honest fresh proof per request, a second signature *is* a second genuine
+// observation, and re-dating it is the right answer.
+//
+// After, with nothing dropped on the floor:
+//   * the window arithmetic it carried (`present_until == attested_at + 300`)
+//     is asserted by `the_token_publishes_the_observation_and_its_window`
+//     above, which is pre-existing and untouched, and which additionally holds
+//     `attested_at <= iat`;
+//   * "a fresh possession must not refresh a stale touch" is held at
+//     persona-attestors/src/claim.rs by
+//     `a_fresh_signature_does_not_refresh_a_stale_touch`;
+//   * the replay it was reaching for and could not state — under the old code
+//     the replayed proof was *served*, so the test could only check that
+//     serving it did not also extend the window — is now stated directly, by
+//     `a_replayed_proof_is_denied` below.
+//
+// One thing the old comment claimed is simply not reproducible any more and is
+// recorded here rather than asserted: it said the aged observation was "the
+// first time a consumer can see present_until < exp". For a fresh observation
+// the two coincide to the second, because both are the same instant plus 300.
+// They remain different quantities and must not be folded into one constant;
+// no end-to-end test can currently tell them apart.
+
+// The direct end-to-end test for persona-5s4b.116: a proof answering an earlier
+// challenge buys nothing, however genuine its signature.
+//
+// This is what the replaced timestamp-equality assertion was reaching for and
+// could not state. Under the old code the replay was *served*, and the test
+// could only check that serving it did not also extend the window.
 #[tokio::test]
-async fn re_requesting_does_not_extend_the_presence_window() {
+async fn a_replayed_proof_is_denied() {
     let socket_path = tmp_socket_path();
     let (mut client, handle) =
-        start_daemon_with(&socket_path, Arc::new(CachedProofAttestor::new())).await;
+        start_daemon_with(&socket_path, Arc::new(ReplayingAttestor::new())).await;
 
-    let first = fetch_claims(&mut client, AUDIENCE).await;
-    sleep(Duration::from_millis(1_500)).await;
-    let second = fetch_claims(&mut client, AUDIENCE).await;
-
-    let window = |c: &serde_json::Value| {
-        (
-            c["persona"]["presence"]["attested_at"]
-                .as_u64()
-                .expect("attested_at must be whole Unix seconds"),
-            c["persona"]["presence"]["present_until"]
-                .as_u64()
-                .expect("present_until must be whole Unix seconds"),
-        )
-    };
-    let (a1, u1) = window(&first);
-    let (a2, u2) = window(&second);
-
-    assert_eq!(a1, a2, "re-requesting must not re-date the observation");
-    assert_eq!(u1, u2, "re-requesting must not extend the presence window");
-    assert_eq!(u1, a1 + 300, "the window is the observation plus the TTL");
-
-    // The token around it did move on, which is what makes the equality above
-    // evidence rather than a tautology: the clock advanced, the observation did
-    // not. This is also the first time a consumer can see present_until < exp.
-    let iat1 = first["iat"].as_u64().expect("iat");
-    let iat2 = second["iat"].as_u64().expect("iat");
-    assert!(
-        iat2 > iat1,
-        "the request clock must have advanced across the two calls: {iat1} then {iat2}"
-    );
+    let refused = try_fetch(&mut client, AUDIENCE)
+        .await
+        .expect_err("a proof answering an earlier challenge must not be served");
+    assert_eq!(refused.code(), tonic::Code::Unauthenticated);
+    assert_eq!(refused.message(), "no identity claims available");
 
     handle.abort();
     let _ = std::fs::remove_file(&socket_path);

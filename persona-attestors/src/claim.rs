@@ -12,9 +12,15 @@
 
 use std::time::{Duration, SystemTime};
 
+use ed25519_dalek::{Signature, VerifyingKey};
 use persona_core::{IdentityAssurance, PresenceLevel, SpiffeId, TrustDomain};
 
-use crate::SignedAssertion;
+use crate::ssh::{read_string, spiffe_path, SSH_ED25519};
+use crate::{AttestorError, SignedAssertion};
+
+fn malformed() -> AttestorError {
+    AttestorError::ChallengeFailed("malformed ssh-agent blob".into())
+}
 
 /// A trust domain an attestor may name about itself with no evidence at all.
 ///
@@ -94,43 +100,115 @@ impl Candidate {
 
 /// A signature over a daemon-generated challenge by the key a candidate names.
 ///
-/// Establishes possession and nothing more, so this is the one evidence payload
-/// with an ungated constructor: it maps to the floor tier, and no gate can lower
-/// a floor. An attestor that has already discovered an identity is entitled to
-/// self-assert it; this type only forces that assertion to arrive through
-/// `prove()` rather than through `enumerate()`.
+/// Establishes possession and nothing more: `Iaa1`, with no presence. A
+/// signature proves that a key is reachable, not that a human asked for it —
+/// an agent key with no passphrase signs with no prompt at all.
+///
+/// The challenge it verified against is retained, because verification inside
+/// an attestor proves only that *some* challenge was answered. The attestor
+/// chooses which one, so a cached triple passes every signature check.
+/// [`Claim::derive`] is what makes it *this* request's challenge.
 #[derive(Debug, Clone)]
 pub struct ChallengeSignature {
     assertion: SignedAssertion,
+    challenge: Vec<u8>,
     observed_at: SystemTime,
 }
 
 impl ChallengeSignature {
-    /// Wrap a signed assertion produced in response to a challenge.
+    /// Check an ssh-agent signature, and witness it only if every part holds.
     ///
-    /// This constructor is public, unlike those of [`VerifiedToken`] and
-    /// [`HardwareTouch`], so an attestor inside this workspace can build one without
-    /// the signature having been checked against anything. That is deliberate and it is
-    /// the weakest point of the type: it buys the floor tier only, `Iaa1` with no
-    /// presence, and it keeps the end-to-end issuance path testable while no attestor
-    /// can really prove. `Iaa2` and `Iaa3` stay unreachable from outside this module
-    /// because their payloads have no public constructor.
+    /// This is the only constructor, so `Evidence::Possession` cannot be
+    /// self-asserted by an attestor inside this workspace. That is what
+    /// persona-5s4b.116 closes, and it is why the previous `new` is gone rather
+    /// than merely narrowed: a verified path an attestor may *choose* is a
+    /// convention, and the next attestor omits it while the type still claims
+    /// the signature was checked.
     ///
-    /// Verifying the assertion against the challenge is persona-5s4b.116.
+    /// Four checks, and dropping any one makes the other three prove nothing:
+    ///
+    /// 1. the blob hashes to the key the candidate names — without this, the
+    ///    proof is of *some* key in the agent;
+    /// 2. the blob is `ssh-ed25519` with a 32-byte point and no trailing bytes;
+    /// 3. the signature names the same algorithm and carries exactly 64 bytes;
+    /// 4. the signature verifies over *this* challenge.
+    ///
+    /// Raw blobs are taken rather than parsed values on purpose. If the caller
+    /// parsed, it could hand over a blob whose fingerprint matches the candidate
+    /// and a public key that did not come from it.
     ///
     /// The observation instant is taken here rather than passed in: the
     /// signature is produced during the request that consumes it, so "now" is
     /// the truthful answer and there is no earlier moment to name.
-    pub fn new(assertion: SignedAssertion) -> Self {
-        Self {
-            assertion,
-            observed_at: SystemTime::now(),
+    ///
+    /// ponytail: ssh-ed25519 only | ceiling: an agent holding only ecdsa or rsa
+    ///   keys yields no claim | upgrade path: a sibling constructor per key
+    ///   family, here and nowhere else.
+    ///
+    /// ## Errors
+    /// Returns [`AttestorError::ChallengeFailed`] if any check fails. No variant
+    /// of failure yields evidence.
+    pub fn verify_ssh_ed25519(
+        candidate: &Candidate,
+        challenge: &[u8],
+        key_blob: &[u8],
+        signature: &[u8],
+    ) -> Result<Self, AttestorError> {
+        if spiffe_path(key_blob) != candidate.path {
+            return Err(AttestorError::ChallengeFailed(
+                "ssh-agent signed with a key the candidate does not name".into(),
+            ));
         }
+
+        let (algorithm, rest) = read_string(key_blob).ok_or_else(malformed)?;
+        let (point, rest) = read_string(rest).ok_or_else(malformed)?;
+        if algorithm != SSH_ED25519 || !rest.is_empty() {
+            return Err(AttestorError::ChallengeFailed(format!(
+                "unsupported ssh key type {}",
+                String::from_utf8_lossy(algorithm)
+            )));
+        }
+        let point = <&[u8; 32]>::try_from(point).map_err(|_| malformed())?;
+        let key = VerifyingKey::from_bytes(point).map_err(|_| {
+            AttestorError::ChallengeFailed("ssh-agent key is not a valid ed25519 point".into())
+        })?;
+
+        let (sig_algorithm, rest) = read_string(signature).ok_or_else(malformed)?;
+        let (sig_bytes, rest) = read_string(rest).ok_or_else(malformed)?;
+        if sig_algorithm != algorithm || !rest.is_empty() {
+            return Err(malformed());
+        }
+        let sig_bytes = <&[u8; 64]>::try_from(sig_bytes).map_err(|_| malformed())?;
+
+        // verify_strict, not verify: it rejects small-order R, small-order
+        // public keys and non-canonical encodings, and it is inherent, so no
+        // trait import. Stricter and fewer imports — no tradeoff to weigh.
+        // The blob came off a socket.
+        key.verify_strict(challenge, &Signature::from_bytes(sig_bytes))
+            .map_err(|_| {
+                AttestorError::ChallengeFailed(
+                    "ssh-agent signature does not verify over the challenge".into(),
+                )
+            })?;
+
+        Ok(Self {
+            assertion: SignedAssertion::new(
+                sig_bytes.to_vec(),
+                "application/vnd.persona.ssh-ed25519-signature",
+            ),
+            challenge: challenge.to_vec(),
+            observed_at: SystemTime::now(),
+        })
     }
 
     /// The underlying signed assertion.
     pub fn assertion(&self) -> &SignedAssertion {
         &self.assertion
+    }
+
+    /// The challenge this signature was verified against.
+    pub fn challenge(&self) -> &[u8] {
+        &self.challenge
     }
 
     /// When the daemon observed the signature come back from the key.
@@ -258,6 +336,21 @@ impl Evidence {
             ),
         }
     }
+
+    /// Whether this evidence answers the challenge that opened this request.
+    ///
+    /// Exhaustive, so a new variant forces the question rather than defaulting
+    /// to "bound". Only possession is challenge-bound today.
+    ///
+    /// ponytail: possession only | ceiling: nothing binds a future
+    ///   `VerifiedToken` to this request | upgrade path: when a verifying
+    ///   constructor for it lands it carries the token's `nonce`, compared here.
+    fn binds_to(&self, challenge: &[u8]) -> bool {
+        match self {
+            Evidence::Possession(s) => s.challenge() == challenge,
+            Evidence::IdpVerified(_) | Evidence::HardwarePresence(_) => true,
+        }
+    }
 }
 
 /// A proven identity claim.
@@ -278,10 +371,16 @@ pub struct Claim {
 impl Claim {
     /// Derive a claim from a candidate and the evidence proving it.
     ///
-    /// Returns `None` when there is no evidence. Discovery alone entitles a
-    /// candidate to nothing — not even the lowest tier — so the daemon declines
-    /// rather than issuing a credential nobody proved.
-    pub fn derive(candidate: &Candidate, evidence: &[Evidence]) -> Option<Claim> {
+    /// Returns `None` when no evidence answers `challenge`. Discovery alone
+    /// entitles a candidate to nothing, and evidence answering some *other*
+    /// challenge is a replay, not evidence.
+    ///
+    /// The challenge is a parameter rather than something the caller is trusted
+    /// to check, because the attestor is the party a replay would arrive from
+    /// and there must be no `derive` that skips the comparison. Plain `==`: the
+    /// challenge is a public nonce and this is a freshness check, not a MAC.
+    pub fn derive(candidate: &Candidate, challenge: &[u8], evidence: &[Evidence]) -> Option<Claim> {
+        let evidence: Vec<&Evidence> = evidence.iter().filter(|e| e.binds_to(challenge)).collect();
         let (first, rest) = evidence.split_first()?;
 
         let (mut assurance, mut presence, mut attested_at) = first.tier();
@@ -309,7 +408,8 @@ impl Claim {
         }
 
         // persona-5s4b.55: an issuer-anchored trust domain may come only from a
-        // verified token. Otherwise the candidate's self-asserted domain stands.
+        // verified token. Iterating the *filtered* evidence, not the argument:
+        // a replayed token must not re-anchor the domain either.
         let trust_domain = evidence
             .iter()
             .find_map(|e| match e {
@@ -394,11 +494,25 @@ mod tests {
         Candidate::new("test", SelfAssertedDomain::SshLocal, "user/alice", "Alice")
     }
 
+    /// The challenge every `Claim::derive` call in this module answers.
+    const TEST_CHALLENGE: &[u8] = b"the challenge this request opened";
+
+    /// Possession evidence bound to [`TEST_CHALLENGE`].
+    ///
+    /// A struct literal, as the `verified_token` and `hardware_touch` helpers
+    /// below already are — this module is a descendant of `claim`. What is
+    /// under test here is the tier table and the challenge filter, not the
+    /// signature check; that has its own module, against RFC 8032 and pyca.
     fn possession() -> Evidence {
-        Evidence::Possession(ChallengeSignature::new(SignedAssertion::new(
-            b"sig".to_vec(),
-            "application/test",
-        )))
+        possession_over(TEST_CHALLENGE)
+    }
+
+    fn possession_over(challenge: &[u8]) -> Evidence {
+        Evidence::Possession(ChallengeSignature {
+            assertion: SignedAssertion::new(b"sig".to_vec(), "application/test"),
+            challenge: challenge.to_vec(),
+            observed_at: SystemTime::now(),
+        })
     }
 
     // This module is a descendant of `claim`, so it may build the gated payloads
@@ -423,19 +537,24 @@ mod tests {
 
     #[test]
     fn no_evidence_yields_no_claim() {
-        assert!(Claim::derive(&candidate(), &[]).is_none());
+        assert!(Claim::derive(&candidate(), TEST_CHALLENGE, &[]).is_none());
     }
 
     #[test]
     fn possession_alone_is_the_floor() {
-        let c = Claim::derive(&candidate(), &[possession()]).unwrap();
+        let c = Claim::derive(&candidate(), TEST_CHALLENGE, &[possession()]).unwrap();
         assert_eq!(c.assurance(), IdentityAssurance::Iaa1);
         assert_eq!(c.presence(), PresenceLevel::None);
     }
 
     #[test]
     fn touch_alone_is_hardware_presence_but_not_iaa3() {
-        let c = Claim::derive(&candidate(), &[hardware_touch(epoch_plus(1_000))]).unwrap();
+        let c = Claim::derive(
+            &candidate(),
+            TEST_CHALLENGE,
+            &[hardware_touch(epoch_plus(1_000))],
+        )
+        .unwrap();
         assert_eq!(c.assurance(), IdentityAssurance::Iaa1);
         assert_eq!(c.presence(), PresenceLevel::Hardware);
     }
@@ -444,6 +563,7 @@ mod tests {
     fn verified_token_alone_is_iaa2_session() {
         let c = Claim::derive(
             &candidate(),
+            TEST_CHALLENGE,
             &[verified_token("example.com", epoch_plus(1_000))],
         )
         .unwrap();
@@ -455,6 +575,7 @@ mod tests {
     fn touch_plus_verified_token_is_iaa3() {
         let c = Claim::derive(
             &candidate(),
+            TEST_CHALLENGE,
             &[
                 hardware_touch(epoch_plus(1_000)),
                 verified_token("example.com", epoch_plus(1_000)),
@@ -469,6 +590,7 @@ mod tests {
     fn verified_issuer_anchors_the_trust_domain() {
         let c = Claim::derive(
             &candidate(),
+            TEST_CHALLENGE,
             &[verified_token("example.com", epoch_plus(1_000))],
         )
         .unwrap();
@@ -481,13 +603,13 @@ mod tests {
 
     #[test]
     fn without_a_verified_token_the_domain_stays_self_asserted() {
-        let c = Claim::derive(&candidate(), &[possession()]).unwrap();
+        let c = Claim::derive(&candidate(), TEST_CHALLENGE, &[possession()]).unwrap();
         assert_eq!(c.spiffe_id().trust_domain, TrustDomain::SshLocal);
     }
 
     #[test]
     fn a_claims_display_and_source_come_from_the_candidate() {
-        let c = Claim::derive(&candidate(), &[possession()]).unwrap();
+        let c = Claim::derive(&candidate(), TEST_CHALLENGE, &[possession()]).unwrap();
         assert_eq!(c.source(), "test");
         assert_eq!(c.display_name(), "Alice");
     }
@@ -496,7 +618,12 @@ mod tests {
 
     #[test]
     fn age_at_measures_a_past_attestation() {
-        let c = Claim::derive(&candidate(), &[hardware_touch(epoch_plus(1_000))]).unwrap();
+        let c = Claim::derive(
+            &candidate(),
+            TEST_CHALLENGE,
+            &[hardware_touch(epoch_plus(1_000))],
+        )
+        .unwrap();
         assert_eq!(c.age_at(epoch_plus(1_600)), Some(Duration::from_secs(600)));
     }
 
@@ -504,13 +631,23 @@ mod tests {
     fn a_future_attestation_has_no_measurable_age() {
         // A clock that stepped backwards, or an attestor that dated evidence
         // forwards. `unwrap_or_default()` would call this maximally fresh.
-        let c = Claim::derive(&candidate(), &[hardware_touch(epoch_plus(10_000))]).unwrap();
+        let c = Claim::derive(
+            &candidate(),
+            TEST_CHALLENGE,
+            &[hardware_touch(epoch_plus(10_000))],
+        )
+        .unwrap();
         assert_eq!(c.age_at(epoch_plus(9_000)), None);
     }
 
     #[test]
     fn a_touch_dates_the_claim() {
-        let c = Claim::derive(&candidate(), &[hardware_touch(epoch_plus(1_000))]).unwrap();
+        let c = Claim::derive(
+            &candidate(),
+            TEST_CHALLENGE,
+            &[hardware_touch(epoch_plus(1_000))],
+        )
+        .unwrap();
         assert_eq!(c.attested_at(), epoch_plus(1_000));
     }
 
@@ -528,7 +665,7 @@ mod tests {
                 hardware_touch(epoch_plus(1_000)),
             ],
         ] {
-            let c = Claim::derive(&candidate(), &evidence).unwrap();
+            let c = Claim::derive(&candidate(), TEST_CHALLENGE, &evidence).unwrap();
             assert_eq!(c.presence(), PresenceLevel::Hardware);
             assert_eq!(c.attested_at(), epoch_plus(1_000));
         }
@@ -541,7 +678,7 @@ mod tests {
             vec![hardware_touch(epoch_plus(1_000)), possession()],
             vec![possession(), hardware_touch(epoch_plus(1_000))],
         ] {
-            let c = Claim::derive(&candidate(), &evidence).unwrap();
+            let c = Claim::derive(&candidate(), TEST_CHALLENGE, &evidence).unwrap();
             assert_eq!(c.attested_at(), epoch_plus(1_000));
         }
     }
@@ -558,7 +695,7 @@ mod tests {
                 hardware_touch(epoch_plus(1_000)),
             ],
         ] {
-            let c = Claim::derive(&candidate(), &evidence).unwrap();
+            let c = Claim::derive(&candidate(), TEST_CHALLENGE, &evidence).unwrap();
             assert_eq!(c.attested_at(), epoch_plus(2_000));
         }
     }
@@ -567,8 +704,306 @@ mod tests {
     fn possession_alone_dates_the_claim_from_the_signature() {
         // Brackets the clock rather than using it as an oracle.
         let before = SystemTime::now();
-        let c = Claim::derive(&candidate(), &[possession()]).unwrap();
+        let c = Claim::derive(&candidate(), TEST_CHALLENGE, &[possession()]).unwrap();
         let after = SystemTime::now();
         assert!(c.attested_at() >= before && c.attested_at() <= after);
+    }
+
+    // ── The challenge filter (persona-5s4b.116) ───────────────────────────
+
+    #[test]
+    fn evidence_answering_another_challenge_is_not_evidence() {
+        // The attestor is the party a replay arrives from, so `derive` asks
+        // the question rather than trusting that its caller did.
+        assert!(Claim::derive(
+            &candidate(),
+            b"this request",
+            &[possession_over(b"some other")]
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn the_filter_drops_the_replayed_proof_and_keeps_the_fresh_one() {
+        // Mandatory pair with the test above: without it, a filter that
+        // discarded everything would pass that one. Both orders, so the
+        // outcome cannot depend on which proof the fold starts from.
+        for evidence in [
+            vec![possession_over(b"some other"), possession()],
+            vec![possession(), possession_over(b"some other")],
+        ] {
+            let c = Claim::derive(&candidate(), TEST_CHALLENGE, &evidence)
+                .expect("the proof answering this challenge must survive");
+            assert_eq!(c.assurance(), IdentityAssurance::Iaa1);
+            assert_eq!(c.presence(), PresenceLevel::None);
+        }
+    }
+}
+
+/// Signature verification, checked against oracles this workspace did not write.
+///
+/// Two of them, both named acceptable by the project's test-vector rule. The
+/// RFC 8032 section 7.1 rows are transcribed out of the RFC text; nothing on
+/// this machine produced those signature bytes. The remaining fixtures come
+/// from pyca/cryptography, which also recorded its own verdict on each row at
+/// generation time. The generator is
+/// `persona-attestors/tests/fixtures/gen_ssh_fixtures.py`; regenerating these
+/// with persona would turn the oracle into a mirror.
+///
+/// Where the two disagree, dalek's `verify_strict` is the stricter one — it
+/// refuses small-order points and non-canonical encodings that pyca accepts —
+/// so a row expecting `Err` against a pyca `Ok` is correct, not a defect.
+#[cfg(test)]
+mod ssh_ed25519_verification {
+    use super::*;
+
+    /// Decode a hex fixture. Bytes in, bytes out, no crate.
+    fn hex(s: &str) -> Vec<u8> {
+        assert!(s.len().is_multiple_of(2), "hex fixture has an odd length");
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).expect("hex fixture is not hex"))
+            .collect()
+    }
+
+    fn candidate_naming(path: &str) -> Candidate {
+        Candidate::new("ssh-agent", SelfAssertedDomain::SshLocal, path, "Test Key")
+    }
+
+    // Generated fixtures. Fingerprints were computed with hashlib and base64,
+    // not with `spiffe_path`, so the expected path is not the code's own output.
+    const KEY_A_PATH: &str = "key/hypfbr3urYfzkHDZVEL25Nfwd0reLKQq+dAsi48SBq4";
+    const KEY_A_BLOB: &str = "0000000b7373682d6564323535313900000020db995fe25169d141cab9bbba92baa01f9f2e1ece7df4cb2ac05190f37fcc1f9d";
+    const KEY_A_SIG: &str = "0000000b7373682d656432353531390000004024aa9e2c440f78a2fe6d110f539179631c6265229b7b083bfb22a5cb7cc40a4dcfe99e0a0323d787d709f94241b10a4808002f06f04d4b421ee324b2eae04c06";
+    const KEY_B_PATH: &str = "key/ZsrOVCtcb1bouzun0GIHz5vL5oCjVhVIQ3jfIBIgZ8g";
+    const KEY_B_BLOB: &str = "0000000b7373682d65643235353139000000202152f8d19b791d24453242e15f2eab6cb7cffa7b6a5ed30097960e069881db12";
+    const KEY_B_SIG: &str = "0000000b7373682d65643235353139000000401bbdbb894c1f0026792d3cba5c74eed9e8c00d09680de18e8aea654ebb007f77a642da6cae45a6c782601b719acf972a984486fcf1a8e89e416f1a4679608c0e";
+    const CHALLENGE: &str = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+    const ECDSA_PATH: &str = "key/tqnTrJ8h0Tph2jhd1rW9SOLL+jq2kKxUvzS0Wg2A190";
+    const ECDSA_BLOB: &str = "0000001365636473612d736861322d6e69737470323536000000086e6973747032353600000041040050a4e9d0bdd2c23ddd8c8f01b8414133c5c7126a8913040dd84a2f2669eae9816511317b14463b5462f8cb47a7b63a66f4fe2a528189b74f1b83fdf00388a5";
+
+    /// One RFC 8032 section 7.1 row: expected path, key blob, message,
+    /// signature. The message stands in for the challenge: Ed25519 signs
+    /// whatever it is handed, and the agent hands it the challenge raw.
+    type Vector = (&'static str, &'static str, &'static str, &'static str);
+
+    fn rfc8032_vectors() -> Vec<Vector> {
+        vec![
+            // TEST 1
+            (
+                "key/bbXpuKG6zhzdmnxq256TlqzFBzRl2f6OOg722cYNbU8",
+                "0000000b7373682d6564323535313900000020d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+                "",
+                "0000000b7373682d6564323535313900000040e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b",
+            ),
+            // TEST 2
+            (
+                "key/F34nin7tcaYH6WR5LSWSfj6weFBPfBpuyUUoPFP9YjA",
+                "0000000b7373682d65643235353139000000203d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c",
+                "72",
+                "0000000b7373682d656432353531390000004092a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da085ac1e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00",
+            ),
+            // TEST 3
+            (
+                "key/s3Z2A+mldeflHo5TMMEUA7MlkMg96xvtqH9DGLHHZmE",
+                "0000000b7373682d6564323535313900000020fc51cd8e6218a1a38da47ed00230f0580816ed13ba3303ac5deb911548908025",
+                "af82",
+                "0000000b7373682d65643235353139000000406291d657deec24024827e69c3abe01a30ce548a284743a445e3680d7db5ac3ac18ff9b538d16f290ae67f760984dc6594a7c15e9716ed28dc027beceea1ec40a",
+            ),
+            // TEST SHA(abc)
+            (
+                "key/LuQFmSsJbAkjYpb1LObnHa6mOAGiucbY/zOy8nrd28I",
+                "0000000b7373682d6564323535313900000020ec172b93ad5e563bf4932c70e1245034c35467ef2efd4d64ebf819683467e2bf",
+                "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f",
+                "0000000b7373682d6564323535313900000040dc2a4459e7369633a52b1bf277839a00201009a3efbf3ecb69bea2186c26b58909351fc9ac90b3ecfdfbc7c66431e0303dca179c138ac17ad9bef1177331a704",
+            ),
+        ]
+    }
+
+    #[test]
+    fn rfc_8032_vectors_verify() {
+        for (path, blob, message, signature) in rfc8032_vectors() {
+            let evidence = ChallengeSignature::verify_ssh_ed25519(
+                &candidate_naming(path),
+                &hex(message),
+                &hex(blob),
+                &hex(signature),
+            )
+            .unwrap_or_else(|e| panic!("RFC 8032 vector {path} must verify: {e}"));
+            assert_eq!(evidence.challenge(), hex(message));
+        }
+    }
+
+    #[test]
+    fn an_rfc_vector_with_one_message_byte_flipped_is_refused() {
+        for (path, blob, message, signature) in rfc8032_vectors() {
+            let mut tampered = hex(message);
+            // The empty-message vector has no byte to flip; extend it instead,
+            // which is the same falsification with one fewer special case.
+            tampered.push(0x01);
+            assert!(ChallengeSignature::verify_ssh_ed25519(
+                &candidate_naming(path),
+                &tampered,
+                &hex(blob),
+                &hex(signature),
+            )
+            .is_err());
+        }
+    }
+
+    #[test]
+    fn a_genuine_signature_over_this_challenge_verifies() {
+        let evidence = ChallengeSignature::verify_ssh_ed25519(
+            &candidate_naming(KEY_A_PATH),
+            &hex(CHALLENGE),
+            &hex(KEY_A_BLOB),
+            &hex(KEY_A_SIG),
+        )
+        .expect("pyca signed this challenge with this key");
+        assert_eq!(evidence.challenge(), hex(CHALLENGE));
+        assert_eq!(
+            evidence.assertion().format,
+            "application/vnd.persona.ssh-ed25519-signature"
+        );
+    }
+
+    #[test]
+    fn a_signature_over_a_different_challenge_is_refused() {
+        let mut other = hex(CHALLENGE);
+        other[0] ^= 0x01;
+        assert!(ChallengeSignature::verify_ssh_ed25519(
+            &candidate_naming(KEY_A_PATH),
+            &other,
+            &hex(KEY_A_BLOB),
+            &hex(KEY_A_SIG),
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn a_genuine_signature_by_another_key_is_refused() {
+        // Key B's signature over the same challenge is perfectly valid. It is
+        // refused because the candidate names key A: without the fingerprint
+        // check, this would prove possession of *some* key in the agent.
+        let err = ChallengeSignature::verify_ssh_ed25519(
+            &candidate_naming(KEY_A_PATH),
+            &hex(CHALLENGE),
+            &hex(KEY_B_BLOB),
+            &hex(KEY_B_SIG),
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string().contains("the candidate does not name"),
+            "must refuse at the fingerprint binding, got: {err}"
+        );
+    }
+
+    #[test]
+    fn key_bs_own_signature_verifies_for_key_b() {
+        // The negative above is only evidence if the same bytes pass when the
+        // candidate names the key that produced them.
+        ChallengeSignature::verify_ssh_ed25519(
+            &candidate_naming(KEY_B_PATH),
+            &hex(CHALLENGE),
+            &hex(KEY_B_BLOB),
+            &hex(KEY_B_SIG),
+        )
+        .expect("key B's signature must verify for key B");
+    }
+
+    #[test]
+    fn an_ecdsa_key_is_refused_by_name() {
+        // The refusal message is the user-visible contract of the ed25519-only
+        // constraint: an operator learns which algorithm was declined.
+        let err = ChallengeSignature::verify_ssh_ed25519(
+            &candidate_naming(ECDSA_PATH),
+            &hex(CHALLENGE),
+            &hex(ECDSA_BLOB),
+            &hex(KEY_A_SIG),
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string().contains("ecdsa-sha2-nistp256"),
+            "the refusal must name the algorithm, got: {err}"
+        );
+    }
+
+    #[test]
+    fn malformed_blobs_are_refused_and_never_panic() {
+        let sig = hex(KEY_A_SIG);
+        let blob = hex(KEY_A_BLOB);
+        let challenge = hex(CHALLENGE);
+        let candidate = candidate_naming(KEY_A_PATH);
+
+        let mut cases: Vec<(&str, Vec<u8>)> = vec![
+            ("empty signature", vec![]),
+            ("truncated length prefix", sig[..3].to_vec()),
+            (
+                "length prefix promising more than is there",
+                sig[..8].to_vec(),
+            ),
+            (
+                "trailing bytes after the sigblob",
+                [sig.clone(), vec![0u8]].concat(),
+            ),
+        ];
+        // A 63-byte and a 65-byte signature body, reframed honestly so the
+        // length prefix agrees with the body: the check under test is the
+        // 64-byte requirement, not the framing.
+        for len in [63usize, 65] {
+            let mut body = sig[19..].to_vec();
+            body.resize(len, 0);
+            let mut reframed = sig[..15].to_vec();
+            reframed.extend_from_slice(&(len as u32).to_be_bytes());
+            reframed.extend_from_slice(&body);
+            cases.push(("wrong signature length", reframed));
+        }
+
+        for (name, candidate_sig) in cases {
+            assert!(
+                ChallengeSignature::verify_ssh_ed25519(
+                    &candidate,
+                    &challenge,
+                    &blob,
+                    &candidate_sig
+                )
+                .is_err(),
+                "{name} must be refused"
+            );
+        }
+
+        // And the same on the key side: a blob whose fingerprint still matches
+        // the candidate but whose body is truncated.
+        let short = blob[..blob.len() - 1].to_vec();
+        assert!(
+            ChallengeSignature::verify_ssh_ed25519(
+                &candidate_naming(&spiffe_path(&short)),
+                &challenge,
+                &short,
+                &sig
+            )
+            .is_err(),
+            "a truncated key blob must be refused"
+        );
+    }
+
+    #[test]
+    fn an_all_zero_public_key_is_refused() {
+        // A small-order point. `verify_strict` refuses it; a plain `verify`
+        // would not, and pyca does not either.
+        let blob = [
+            &(11u32.to_be_bytes())[..],
+            b"ssh-ed25519",
+            &(32u32.to_be_bytes())[..],
+            &[0u8; 32][..],
+        ]
+        .concat();
+        assert!(ChallengeSignature::verify_ssh_ed25519(
+            &candidate_naming(&spiffe_path(&blob)),
+            &hex(CHALLENGE),
+            &blob,
+            &hex(KEY_A_SIG),
+        )
+        .is_err());
     }
 }

@@ -55,14 +55,35 @@ const PRESENCE_TTL: Duration = Duration::from_secs(300);
 
 type BoxStream<T> = Pin<Box<dyn tokio_stream::Stream<Item = Result<T, Status>> + Send + 'static>>;
 
+/// Whether an observation of measured `age` satisfies the caller's bound.
+///
+/// The caller's bound is refused outright rather than decayed, so a named
+/// parameter is never silently a no-op. Strictly younger, so `persona_max_age=0`
+/// is a deterministic refusal with no special case for zero. An unmeasurable age
+/// (`None`, from `Claim::age_at` on a forward-dated observation) satisfies no
+/// bound. An absent bound is satisfied by anything, including an unmeasurable age
+/// — naming no bound asks no question.
+///
+/// A named function rather than an inline `if`, because no end-to-end test can
+/// put an observation of a chosen age in front of it: `observed_at` is stamped
+/// when the signature is verified, so every claim the RPC can reach is fresh.
+/// The boundaries are tested here instead, over both arguments directly.
+fn within_max_age(age: Option<Duration>, max_age: Option<Duration>) -> bool {
+    match max_age {
+        Some(max_age) => age.is_some_and(|age| age < max_age),
+        None => true,
+    }
+}
+
 /// A fresh 32-byte challenge, handed to `prove()` so that an attestor which signs it
 /// produces something specific to this request rather than replayable.
 ///
-/// Nothing verifies that binding yet. No attestor implements `prove()`, so no signature
-/// exists to check, and `Claim::derive` is not given the challenge and so could not check
-/// one if it did. Whoever implements the first real `prove()` has to close that: the
-/// challenge must reach the verifier alongside the assertion, and the assertion must be
-/// checked against it and against the candidate's key. Tracked as persona-5s4b.116.
+/// The binding is checked in two places, and both are required. The attestor verifies
+/// the signature against this challenge and the key its candidate names —
+/// `ChallengeSignature::verify_ssh_ed25519` is the only way to build possession
+/// evidence, so there is no unchecked path. `Claim::derive` is then given the same
+/// challenge and discards evidence that answers a different one, because the attestor
+/// is the party a replay would arrive from. persona-5s4b.116.
 fn new_challenge() -> Result<[u8; 32], Status> {
     use rand_core::{OsRng, RngCore as _};
     let mut buf = [0u8; 32];
@@ -238,7 +259,7 @@ impl SpiffeWorkloadApi for WorkloadApiService {
                         continue;
                     }
                 };
-                let Some(claim) = Claim::derive(&candidate, &evidence) else {
+                let Some(claim) = Claim::derive(&candidate, &challenge, &evidence) else {
                     continue;
                 };
                 if best
@@ -272,19 +293,13 @@ impl SpiffeWorkloadApi for WorkloadApiService {
         let now = SystemTime::now();
         let age = claim.age_at(now);
 
-        // The caller's bound, refused outright rather than decayed, so a named
-        // parameter is never silently a no-op. Strictly younger, so
-        // `persona_max_age=0` is a deterministic refusal with no special case
-        // for zero. An unmeasurable age (`None`) satisfies no bound.
-        if let Some(max_age) = max_age {
-            if !age.is_some_and(|age| age < max_age) {
-                // The measured age is not in the reason: it is a per-human value
-                // and this string goes to the consumer. The bound is the
-                // caller's own parameter, so naming it tells a colluder nothing.
-                let reason = "presence observation is older than the requested persona_max_age";
-                tracing::info!(event = "svid_denied", reason);
-                return Err(Status::unauthenticated(reason));
-            }
+        if !within_max_age(age, max_age) {
+            // The measured age is not in the reason: it is a per-human value
+            // and this string goes to the consumer. The bound is the caller's
+            // own parameter, so naming it tells a colluder nothing.
+            let reason = "presence observation is older than the requested persona_max_age";
+            tracing::info!(event = "svid_denied", reason);
+            return Err(Status::unauthenticated(reason));
         }
 
         // The daemon's own TTL, applied as decay rather than as a second refusal
@@ -494,5 +509,43 @@ impl SpiffeWorkloadApi for WorkloadApiService {
         _req: Request<WitBundlesRequest>,
     ) -> Result<Response<Self::FetchWITBundlesStream>, Status> {
         Err(Status::unimplemented("FetchWITBundles not yet implemented"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::within_max_age;
+    use std::time::Duration;
+
+    const BOUND: Duration = Duration::from_secs(60);
+
+    #[test]
+    fn an_observation_younger_than_the_bound_is_served() {
+        assert!(within_max_age(Some(Duration::from_secs(59)), Some(BOUND)));
+    }
+
+    #[test]
+    fn an_observation_older_than_the_bound_is_refused() {
+        assert!(!within_max_age(Some(Duration::from_secs(61)), Some(BOUND)));
+    }
+
+    #[test]
+    fn an_observation_exactly_at_the_bound_is_refused() {
+        // Strictly younger. This is the boundary that decides what
+        // `persona_max_age=0` means, and it is why zero needs no special case.
+        assert!(!within_max_age(Some(BOUND), Some(BOUND)));
+        assert!(!within_max_age(Some(Duration::ZERO), Some(Duration::ZERO)));
+    }
+
+    #[test]
+    fn an_unmeasurable_age_satisfies_no_bound() {
+        // `Claim::age_at` returns None for an observation dated in the future.
+        assert!(!within_max_age(None, Some(BOUND)));
+    }
+
+    #[test]
+    fn no_bound_asks_no_question() {
+        assert!(within_max_age(Some(Duration::from_secs(86_400)), None));
+        assert!(within_max_age(None, None));
     }
 }

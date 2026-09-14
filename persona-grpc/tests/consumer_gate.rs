@@ -8,10 +8,9 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use persona_attestors::{
-    Attestor, AttestorError, Candidate, ChallengeSignature, Evidence, SelfAssertedDomain,
-    SignedAssertion,
-};
+use persona_attestors::{Attestor, AttestorError, Candidate, Evidence};
+
+mod common;
 use persona_core::{SvidSigner, TrustBundleStore};
 use persona_grpc::service::WorkloadApiService;
 use persona_grpc::workload::spiffe_workload_api_server::SpiffeWorkloadApi;
@@ -26,21 +25,14 @@ impl Attestor for ProvingAttestor {
         "test"
     }
     async fn enumerate(&self) -> Result<Vec<Candidate>, AttestorError> {
-        Ok(vec![Candidate::new(
-            "test",
-            SelfAssertedDomain::SshLocal,
-            "user/testuser",
-            "Test User",
-        )])
+        Ok(vec![common::candidate("test")])
     }
     async fn prove(
         &self,
-        _candidate: &Candidate,
+        candidate: &Candidate,
         challenge: &[u8],
     ) -> Result<Vec<Evidence>, AttestorError> {
-        Ok(vec![Evidence::Possession(ChallengeSignature::new(
-            SignedAssertion::new(challenge.to_vec(), "application/test"),
-        ))])
+        Ok(vec![common::possession(candidate, challenge)])
     }
 }
 
