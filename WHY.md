@@ -23,8 +23,7 @@ has no way to say which it got.
 
 ## Nobody can tell you how sure they are
 
-The formats differ, which is annoying. The missing part is worse: none of these
-answers carries its own provenance.
+The formats differ. Worse, none of these answers carries its own provenance.
 
 A Unix UID and a FIDO2 touch are not the same claim. One says a process is running
 under an account that was logged into at some point today, possibly by someone who
@@ -34,13 +33,14 @@ application as "the user is alice," and the application has no way to tell them
 apart, because there is no vocabulary in which to say it.
 
 So every application either treats a cached token as though someone were sitting
-there, or it re-prompts constantly and gets trained out of by its own users. Both
+there, or it re-prompts until its users learn to click straight through. Both
 failures come from the same missing thing: no way to ask how strong the answer is,
 and no way for the answer to say.
 
 The same goes the other direction. Nothing tells the application whether a human is
 present *right now*, as opposed to having been present when the laptop was unlocked
-this morning. Presence is not a property of a session. It decays.
+this morning. A session lasts until logout; presence starts decaying the moment it
+is observed.
 
 ## Why it stayed missing
 
@@ -68,10 +68,10 @@ It did not stall on feasibility. It stalled on the protocol argument. Enough of 
 involved held a favourite corner of the cryptographic space, and each wanted their part to
 be the foundation the rest was built on, so the wire format never closed.
 
-Two things follow from that. The first is that this is wanted and achievable: an
-organisation with considerable resources looked at the same gap and started building, and
-the parts worked. The second is the constraint this project treats as settled, which the next section
-is about.
+That is evidence the thing is both wanted and achievable: an organisation with
+considerable resources looked at the same gap and started building, and the parts worked.
+It also explains the constraint this project treats as settled, which the next section is
+about.
 
 > This account comes from the author, who was a Principal Engineer at Amazon at the time
 > and was not closely involved in that particular effort. It is roughly two years stale. No
@@ -81,8 +81,7 @@ is about.
 
 ## The API already exists
 
-The interesting part is that the hard design work is done, by someone else, for a
-different audience.
+The hard design work is already done, by someone else, for a different audience.
 
 SPIFFE solved this exact problem for workloads. A local socket, a standard gRPC
 API, short-lived signed credentials, an attestation model that keeps the trust
