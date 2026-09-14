@@ -62,49 +62,49 @@ impl Attestor for TestAttestor {
 // ── Helper: build a fresh socket path ─────────────────────────────────────────
 
 fn tmp_socket_path() -> String {
+    use std::sync::atomic::{AtomicU32, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
+    static SEQ: AtomicU32 = AtomicU32::new(0);
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .subsec_nanos();
-    format!("/tmp/persona-test-{nanos}.sock")
+    let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+    format!("/tmp/persona-test-{nanos}-{seq}.sock")
 }
 
-// ── Integration test ──────────────────────────────────────────────────────────
-
-#[tokio::test]
-async fn fetch_and_validate_jwt_svid() {
-    let socket_path = tmp_socket_path();
-
-    // Build service components.
+/// Start a daemon whose only attestor proves possession, and return a
+/// connected client plus a teardown handle.
+async fn start_daemon(
+    socket_path: &str,
+) -> (
+    SpiffeWorkloadApiClient<tonic::transport::Channel>,
+    tokio::task::JoinHandle<()>,
+) {
     let signer = Arc::new(SvidSigner::new().unwrap());
     let bundles = Arc::new(TrustBundleStore::new());
-    let local_bundle = TrustBundle::new(
+    bundles.upsert(TrustBundle::new(
         TrustDomain::SshLocal,
         vec![signer.public_key_der().to_vec()],
         serde_json::json!({ "keys": [] }),
-    );
-    bundles.upsert(local_bundle);
+    ));
 
     let service = WorkloadApiService::new(
-        Arc::clone(&signer),
-        Arc::clone(&bundles),
+        signer,
+        bundles,
         vec![Arc::new(TestAttestor) as Arc<dyn Attestor>],
     );
 
-    // Spawn the server.
-    let sock_for_server = socket_path.clone();
-    let server_handle = tokio::spawn(async move {
+    let sock_for_server = socket_path.to_owned();
+    let handle = tokio::spawn(async move {
         persona_grpc::server::serve(std::path::Path::new(&sock_for_server), service)
             .await
             .expect("server error");
     });
 
-    // Give the server a moment to bind.
     sleep(Duration::from_millis(100)).await;
 
-    // Connect a client via Unix socket.
-    let sock_for_client = socket_path.clone();
+    let sock_for_client = socket_path.to_owned();
     let channel = Endpoint::try_from("http://[::]:50051")
         .unwrap()
         .connect_with_connector(service_fn(move |_: Uri| {
@@ -117,7 +117,15 @@ async fn fetch_and_validate_jwt_svid() {
         .await
         .expect("client connect failed");
 
-    let mut client = SpiffeWorkloadApiClient::new(channel);
+    (SpiffeWorkloadApiClient::new(channel), handle)
+}
+
+// ── Integration test ──────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn fetch_and_validate_jwt_svid() {
+    let socket_path = tmp_socket_path();
+    let (mut client, server_handle) = start_daemon(&socket_path).await;
 
     const AUDIENCE: &str = "https://test.example.com";
 
@@ -183,5 +191,105 @@ async fn fetch_and_validate_jwt_svid() {
 
     // Teardown.
     server_handle.abort();
+    let _ = std::fs::remove_file(&socket_path);
+}
+
+// persona-5s4b.47: policy is per-audience, so the gate must see every audience.
+// Before the fix this issues a token: element [0] parses to PresenceLevel::None,
+// `None > None` is false, and both raw strings are signed into `aud`.
+#[tokio::test]
+async fn presence_requirement_is_taken_from_every_audience() {
+    for order in [
+        vec![
+            "https://harmless.example".to_owned(),
+            "https://bank.example?persona_require_presence=hardware".to_owned(),
+        ],
+        vec![
+            "https://bank.example?persona_require_presence=hardware".to_owned(),
+            "https://harmless.example".to_owned(),
+        ],
+    ] {
+        let socket_path = tmp_socket_path();
+        let (mut client, handle) = start_daemon(&socket_path).await;
+
+        let status = client
+            .fetch_jwtsvid(JwtsvidRequest {
+                audience: order,
+                spiffe_id: String::new(),
+            })
+            .await
+            .expect_err("a hardware requirement on any audience must gate the request");
+
+        assert_eq!(status.code(), tonic::Code::Unauthenticated);
+        assert!(
+            status.message().contains("presence"),
+            "must deny at the presence gate, got: {}",
+            status.message()
+        );
+
+        handle.abort();
+        let _ = std::fs::remove_file(&socket_path);
+    }
+}
+
+// persona-5s4b.71: a requirement the daemon does not understand is refused,
+// never downgraded to no requirement at all.
+#[tokio::test]
+async fn unrecognised_presence_requirement_is_refused_not_ignored() {
+    let socket_path = tmp_socket_path();
+    let (mut client, handle) = start_daemon(&socket_path).await;
+
+    for audience in [
+        "https://bank.example?persona_require_presence=biometric",
+        "https://bank.example?persona_require_presence=Hardware",
+        "https://bank.example?persona_max_age=60",
+    ] {
+        let status = client
+            .fetch_jwtsvid(JwtsvidRequest {
+                audience: vec![audience.to_owned()],
+                spiffe_id: String::new(),
+            })
+            .await
+            .expect_err("an unhonourable persona_ extension must not yield an SVID");
+        assert_eq!(
+            status.code(),
+            tonic::Code::InvalidArgument,
+            "audience {audience} must be refused"
+        );
+    }
+
+    handle.abort();
+    let _ = std::fs::remove_file(&socket_path);
+}
+
+// The token's `aud` names the relying party, not persona's policy language.
+#[tokio::test]
+async fn signed_audience_has_persona_params_stripped() {
+    let socket_path = tmp_socket_path();
+    let (mut client, handle) = start_daemon(&socket_path).await;
+
+    let resp = client
+        .fetch_jwtsvid(JwtsvidRequest {
+            audience: vec![
+                "https://app.example?persona_require_presence=none&tenant=acme".to_owned(),
+            ],
+            spiffe_id: String::new(),
+        })
+        .await
+        .expect("FetchJWTSVID RPC failed");
+
+    let svids = resp.into_inner().svids;
+    let parts: Vec<&str> = svids[0].svid.splitn(3, '.').collect();
+    let claims_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(parts[1])
+        .expect("base64url decode of JWT claims segment failed");
+    let claims: serde_json::Value =
+        serde_json::from_slice(&claims_bytes).expect("JWT claims are not valid JSON");
+
+    let aud = claims["aud"].as_array().expect("aud must be an array");
+    assert_eq!(aud.len(), 1);
+    assert_eq!(aud[0], "https://app.example?tenant=acme");
+
+    handle.abort();
     let _ = std::fs::remove_file(&socket_path);
 }

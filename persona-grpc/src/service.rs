@@ -126,12 +126,25 @@ impl SpiffeWorkloadApi for WorkloadApiService {
             return Err(Status::invalid_argument(reason));
         }
 
-        // Parse presence requirements from the first audience string.
-        let ext = AudienceExtensions::parse(&req.audience[0]).map_err(|e| {
-            let reason = e.to_string();
-            tracing::info!(event = "svid_denied", reason = %reason);
-            Status::invalid_argument(reason)
-        })?;
+        // Every audience carries its own policy, so every audience is parsed
+        // and the request is gated on the strictest requirement any of them
+        // names. `max` is commutative, so the outcome cannot depend on argument
+        // order, and `PresenceLevel::None` is the least element and is what an
+        // audience naming no policy contributes — so no audience an attacker
+        // adds, in any position, can lower the bar.
+        let exts = req
+            .audience
+            .iter()
+            .map(|a| AudienceExtensions::parse(a.as_str()))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| {
+                let reason = e.to_string();
+                tracing::info!(event = "svid_denied", reason = %reason);
+                Status::invalid_argument(reason)
+            })?;
+        let require_presence = exts
+            .iter()
+            .fold(PresenceLevel::None, |acc, e| acc.max(e.require_presence));
 
         let challenge = new_challenge()?;
 
@@ -182,11 +195,11 @@ impl SpiffeWorkloadApi for WorkloadApiService {
             Status::unauthenticated(reason)
         })?;
 
-        // Check presence requirement.
-        if ext.require_presence > claim.presence() {
+        // Presence gate. `require_presence` is the strictest level named by any
+        // audience, so satisfying it satisfies every audience the token names.
+        if require_presence > claim.presence() {
             let reason = format!(
-                "required presence level not satisfied (need {:?}, have {:?})",
-                ext.require_presence,
+                "required presence level not satisfied (need {require_presence:?}, have {:?})",
                 claim.presence()
             );
             tracing::info!(event = "svid_denied", reason = %reason);
@@ -214,7 +227,7 @@ impl SpiffeWorkloadApi for WorkloadApiService {
         });
 
         let spiffe_id_str = claim.spiffe_id().uri();
-        let audiences: Vec<&str> = req.audience.iter().map(String::as_str).collect();
+        let audiences: Vec<&str> = exts.iter().map(|e| e.audience.as_str()).collect();
 
         let token = self
             .signer
@@ -233,7 +246,7 @@ impl SpiffeWorkloadApi for WorkloadApiService {
             source = %claim.source(),
             assurance = %claim.assurance(),
             presence = ?claim.presence(),
-            audience = %req.audience[0],
+            audiences = ?audiences,
         );
 
         Ok(Response::new(JwtsvidResponse {

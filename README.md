@@ -33,7 +33,7 @@ identity claims it signs. Treat the assurance and presence levels below as targe
 | CLI (`whoami`, `enumerate`, `fetch-jwt`, ...) | works |
 | `prove()` -- cryptographic proof of possession | **not implemented in any attestor** -- so no SVID is issued on any platform |
 | Identity assurance levels | derived from evidence -- see below |
-| Presence levels | **not enforced correctly** -- the gate is bypassable |
+| Presence levels | enforced across every audience, and unknown requirements are refused rather than ignored |
 | Per-audience pseudonyms | implemented and test-vector verified, but **not wired into issuance** |
 | Consumer attestation (`SO_PEERCRED`) | implemented but **never invoked** |
 | Trust bundle / `ValidateJWTSVID` | **unusable** -- publishes an empty JWKS |

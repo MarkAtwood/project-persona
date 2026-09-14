@@ -238,7 +238,7 @@ Register `personad` as a FedCM identity provider. The browser handles the trust 
 
 - `FetchX509SVIDs` -- streaming; returns X.509-SVIDs, refreshes before expiry
 - `FetchX509Bundles` -- trust bundles for all active trust domains
-- `FetchJWTSVID` -- returns JWT-SVID for a given audience; triggers presence challenge if `require_presence` is set in the audience claim
+- `FetchJWTSVID` -- returns JWT-SVID for a given audience; triggers presence challenge if `persona_require_presence` is set in the audience claim
 - `FetchJWTBundles` -- JWKS endpoints for all trust domains
 - `ValidateJWTSVID` -- validates a JWT-SVID against the trust bundle
 
@@ -249,8 +249,20 @@ No new wire protocol is invented. Any SPIFFE-aware consumer (envoy, ghostunnel, 
 The `audience` string in `FetchJWTSVID` carries optional structured extensions:
 
 ```
-audience = "https://example.com?persona_require_presence=hardware&persona_max_age=300"
+audience = "https://example.com?persona_require_presence=hardware"
 ```
+
+A request may carry several audiences, each with its own extensions. The request
+is gated on the strictest `persona_require_presence` named by any of them, so an
+audience naming no requirement can never relax one another audience named. The
+issued token's `aud` claim carries the audience URLs with `persona_` parameters
+removed.
+
+The `persona_` query-parameter namespace is reserved and closed: a `persona_`
+parameter `personad` does not implement is rejected with `INVALID_ARGUMENT`
+rather than ignored. `persona_max_age` is currently in that category -- a claim
+carries no attestation timestamp, so the daemon cannot bound presence freshness
+and declines to accept a bound it would not enforce.
 
 If presence requirements are not met, `personad` triggers a presence challenge (FIDO2 touch prompt, Hello dialog, etc.) before issuing the SVID. If the challenge cannot be satisfied within the timeout, the RPC returns `UNAUTHENTICATED`.
 
@@ -485,7 +497,7 @@ Covered in detail in the Delegated Access section below. The gateway speaks real
 
 ### Component 4: ZT sudo PAM Module
 
-A PAM module that, instead of asking for a password on `sudo`, calls `personad` requiring `hardware` presence (`require_presence=hardware&max_age=60`). If presence is satisfied, `sudo` proceeds. If not, it triggers a FIDO2 touch challenge.
+A PAM module that, instead of asking for a password on `sudo`, calls `personad` requiring `hardware` presence (`persona_require_presence=hardware`). If presence is satisfied, `sudo` proceeds. If not, it triggers a FIDO2 touch challenge.
 
 Policy (from OPA, via the ZT control plane) determines which commands require hardware presence and which allow a stale session-level presence claim.
 
