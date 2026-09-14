@@ -1,0 +1,27 @@
+{
+  "id": "persona-5s4b.116",
+  "title": "Challenge is generated and passed to prove() but never verified against the assertion",
+  "description": "Found by the adversarial verifier during persona-okek, and left as a known limit of that change rather than fixed.\n\npersona-grpc/src/service.rs generates 32 random bytes per request and hands them to prove(). Nothing ever compares the returned SignedAssertion against them. Claim::derive(candidate, evidence) is not given the challenge, so it structurally cannot check the binding, and the SignedAssertion is not carried into the Claim either.\n\nChallengeSignature::new is a public constructor taking arbitrary bytes, unlike VerifiedToken and HardwareTouch which have no public constructor. So an attestor inside this workspace can self-assert Possession and reach Iaa1 with no presence. Iaa2 and Iaa3 remain unreachable, which bounds the damage to the floor tier.\n\nWhy it was left: no attestor implements prove(), so no real signature exists to verify, and the public constructor is what keeps persona-grpc/tests/e2e.rs able to exercise the whole issuance and validation path with its five assertions intact. Closing it now would mean either deleting that coverage or building verification against a signature format nobody has written.\n\nWhat closing it requires, for whoever implements the first real prove(): the challenge must reach the verifier alongside the assertion, the assertion must be checked against both the challenge and the candidate's key, and ChallengeSignature::new should then stop being public. Until then the honest statement is the one now in the code -- the binding is intended, not enforced.\n\nThe overclaiming comment at service.rs that said a proof is 'bound to this request' was corrected in 4698b8a.",
+  "status": "open",
+  "priority": 1,
+  "issue_type": "bug",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-14T04:17:22.212734015Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-14T04:17:22.212734015Z",
+  "labels": [
+    "crypto",
+    "security",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.116",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-14T04:17:22.2617595Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}
