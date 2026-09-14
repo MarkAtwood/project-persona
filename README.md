@@ -40,10 +40,10 @@ identity claims it signs. Treat the assurance and presence levels below as targe
 | Trust bundle / `ValidateJWTSVID` | works -- publishes a real JWKS, and validation reads only that bundle; an external verifier holding the bundle and nothing else is part of the test suite |
 | X.509-SVID, browser HTTPS gateway | stubs |
 
-The cause was structural. `enumerate()` returned the same `Claim` type `prove()`
-produces, so a discovery call could return an assurance level nothing established. A
-FIDO2 key that was merely plugged in yielded `iaa3` and hardware presence, claiming a
-touch that never happened.
+Until recently the type system let a cheap discovery call fabricate an attestation.
+`enumerate()` returned the same `Claim` type `prove()` produces, so a discovery call
+could return an assurance level nothing had established. A FIDO2 key that was merely
+plugged in yielded `iaa3` and hardware presence, claiming a touch that never happened.
 
 `enumerate()` now returns a `Candidate`, which carries no assurance and no presence.
 A `Claim` has private fields and one constructor, `Claim::derive(candidate, evidence)`,
@@ -51,8 +51,9 @@ whose signature takes no level: the tier is read off the evidence variants. No e
 means no claim, so the daemon declines instead of asserting. Because no attestor
 implements `prove()` yet, that is what happens everywhere today -- `personad` finds
 candidates, cannot prove any of them, and answers `UNAUTHENTICATED` with
-`no identity claims available`. The first prover to land will be ssh-agent
-`SSH2_AGENTC_SIGN_REQUEST`, which earns the floor tier.
+`no identity claims available`. The first `prove()` implementation will be
+ssh-agent's `SSH2_AGENTC_SIGN_REQUEST`; a signature from it establishes the floor tier,
+`iaa1`.
 
 Issues are tracked in-repo with [beads](https://github.com/gastownhall/beads) under
 `.beads/`.
@@ -86,11 +87,12 @@ persona (CLI)  -->  personad (daemon)  -->  identity sources
 - **Socket (fallback):** `/tmp/persona-{uid}/workload.sock` when the platform supplies no runtime directory
 - **Browser bridge:** localhost HTTPS gateway on `127.0.0.1:2443` + native messaging host
 
-The daemon implements the SPIFFE Workload API as-is. No new protocol is invented.
+The daemon implements the SPIFFE Workload API as-is. `personad` invents no protocol of its own.
 
 Consumer authentication uses OS-level process attestation to identify calling applications and derive per-consumer pseudonyms. The peer's credentials are read when the connection is accepted, and the consumer is the SHA-256 of its main executable -- `/proc/{pid}/exe` on Linux, `proc_pidpath` on macOS. A caller that cannot be attested receives no SVID; there is no unattested fallback, because a pid-keyed identity changes on every launch and a uid-keyed one is shared by everything the user runs. Richer signing identities (`SecCodeCopyGuestWithAttributes` on macOS, EXE signing on Windows) are not implemented.
 
-This buys unlinkability against honest-but-curious consumers. It is not authentication against a local adversary: a malicious same-uid process can exec the victim's binary, and pids are reusable. It also makes the *identifier* unlinkable, not the whole token -- `persona_ext` still carries `root_trust_domain`, `sources` and `auth_methods`, which are constants on a single-identity daemon and which two colluding consumers can join on unconditionally, plus a whole-second `attested_at` now derived from the observation rather than the request clock. That last one is a stronger join key than it was: two consumers served from one observation get the same integer for the whole presence window, not two integers a second apart. It is published anyway, because withholding it leaves a consumer unable to judge freshness for itself and forced to trust a TTL it cannot check.
+An honest-but-curious consumer therefore cannot link a user to that user's activity at
+another consumer. It is not authentication against a local adversary: a malicious same-uid process can exec the victim's binary, and pids are reusable. It also makes the *identifier* unlinkable, not the whole token -- `persona_ext` still carries `root_trust_domain`, `sources` and `auth_methods`, which are constants on a single-identity daemon and which two colluding consumers can join on unconditionally, plus a whole-second `attested_at` now derived from the observation rather than the request clock. That last one is a stronger join key than it was: two consumers served from one observation get the same integer for the whole presence window, not two integers a second apart. The daemon publishes it anyway: a consumer that cannot see `attested_at` cannot judge freshness for itself and has to trust a TTL it cannot check.
 
 ## Identity Sources
 

@@ -33,7 +33,7 @@ Every SPIFFE component maps directly to something the human-identity problem alr
 
 Nothing in this design requires changes to the SPIFFE spec. The SPIFFE Workload API is implemented as-is; only the attestor plugins are new.
 
-This is a deliberate strategic choice. By presenting the standard SPIFFE Workload API — a CNCF standard with gRPC proto definitions, client libraries in Go/Java/Python/Rust, and production deployment in every major service mesh — `personad` inherits the entire SPIFFE ecosystem. Any SPIFFE-aware consumer works unmodified. Any objection to the API is an objection to a CNCF standard, not to this project. Any platform that wants a different answer can implement the same API themselves.
+This is a deliberate strategic choice. By presenting the standard SPIFFE Workload API — a CNCF standard with gRPC proto definitions, client libraries in Go/Java/Python/Rust, and production deployment in every major service mesh — `personad` inherits the entire SPIFFE ecosystem. Any SPIFFE-aware consumer works unmodified, and a platform that wants a different answer can implement the same API itself.
 
 ---
 
@@ -84,7 +84,7 @@ There is deliberately no `for/{consumer-app-id}` tail. The opaque id is already 
 
 The consumer gets a stable identifier that it can correlate with this user, but cannot correlate with any other consumer's identifier. Linkability across consumers requires explicit user consent. This is Apple's Sign-In-with-Apple model lifted into the SPIFFE ID path.
 
-Stability is for the lifetime of the running daemon, not across restarts: the pseudonym key is generated at start and never persisted, so a consumer cannot recognise the same user after personad restarts. The ephemeral ES256 signing key already invalidates every issued SVID on restart. Unlinkability is the privacy guarantee and it survives a restart; cross-restart stability is a consumer convenience and does not. Persisting the key waits on the storage that enrollment introduces.
+Stability is for the lifetime of the running daemon, not across restarts: the pseudonym key is generated at start and never persisted, so a consumer cannot recognise the same user after personad restarts. The ephemeral ES256 signing key already invalidates every issued SVID on restart. Unlinkability is the privacy guarantee and it survives a restart; cross-restart stability is a consumer convenience and does not. Persisting the key needs somewhere to persist it, and nothing here writes to disk until enrollment is implemented.
 
 The derivation is keyed on the consumer application only, never on the JWT `aud`. One consumer therefore gets one pseudonym across every audience it ever requests.
 
@@ -106,7 +106,7 @@ for the life of a daemon process and change across restarts.
 The pseudonym is keyed on the consumer, not the audience. One consumer receives the
 same pseudonym for every audience it requests.
 
-Correlation that remains, and it grew rather than shrank. On a single-identity
+Correlation that remains. The `attested_at` change made this worse, not better. On a single-identity
 daemon `root_trust_domain`, `sources` and `auth_methods` are constants shared by
 every consumer, so a colluding pair can link on those alone. `attested_at` is
 now derived from the observation rather than from the request clock, which means
@@ -115,9 +115,10 @@ stays constant for the whole presence window, rather than two different integers
 a second apart. That is a stronger and longer-lived join key than before, and it
 is published deliberately: withholding it would leave a consumer unable to judge
 freshness for itself and forced to trust a TTL it cannot check. Whole seconds is
-the floor — finer resolution buys a JWT consumer nothing and multiplies the
-linkage — and `present_until` is `attested_at` plus a public constant, so it
-adds no bits of its own. Two colluding consumers still cannot recover the root
+the floor: a JWT consumer has no use for sub-second resolution, and every extra
+bit of precision is another bit two colluding consumers can join on.
+`present_until` is `attested_at` plus a public constant, so it adds no bits of
+its own. Two colluding consumers still cannot recover the root
 identity. Narrowing the three unconditional fields is tracked separately.
 
 Every `FetchJWTSVID` call derives the calling consumer's pseudonym. A consumer that cannot be attested is refused outright rather than served a weaker identity. A consumer with elevated scope (granted by the user at enrollment) can request the full-provenance ID; that path is not implemented and is gated on enrollment.
@@ -219,7 +220,7 @@ Browser cookie jars — per-origin OIDC session extraction from a live browser. 
 
 ## Consumer Authentication (App Attestation)
 
-**This is the security-critical decision.** If any process in the user session can call the socket without identification, then malware can enumerate the user's identities. The solution is per-consumer pseudonymity keyed off verified app identity.
+If any process in the user session can call the socket without identification, then malware can enumerate the user's identities. The solution is per-consumer pseudonymity keyed off verified app identity.
 
 On each `FetchJWTSVID` or `FetchX509SVID` call, `personad` attests the calling process and derives the pseudonym for that consumer. The user never sees a global identifier leave the daemon; each consumer gets its own.
 
@@ -258,7 +259,7 @@ A small native binary registered with Chrome/Firefox as a native messaging host.
 `personad` binds a localhost HTTPS server with a self-signed cert installed in the user trust store at first run. Consumers are identified by the `Origin` header, which is verified against an allowlist managed by `persona enroll origin`. This works without a browser extension but requires the user to approve the cert once.
 
 **3. FedCM IdP registration (future)**
-Register `personad` as a FedCM identity provider. The browser handles the trust UI; web pages call the FedCM API without a custom extension. Timeline: months to years, depending on FedCM standardisation velocity.
+Register `personad` as a FedCM identity provider. The browser handles the trust UI; web pages call the FedCM API without a custom extension. Timeline: months to years, depending on how fast FedCM standardises.
 
 ---
 
@@ -494,7 +495,7 @@ allow_ssh_cert {
 
 ### Component 2: SSH Bouncer
 
-**This is the hardest and most important gap.** SSH is where Zero Trust either becomes real or collapses into theater. There is no open-source ZT SSH solution that is FIDO2-rooted, presence-enforced, ephemeral, policy-driven, auditable, and scalable.
+**This is the hardest and most important gap.** SSH is where most Zero Trust deployments stop enforcing anything. The network perimeter moves, the SSH keys stay static on disk, and nothing about the user's presence is checked at connection time. There is no open-source ZT SSH solution that is FIDO2-rooted, presence-enforced, and policy-driven per connection.
 
 The architecture:
 ```
@@ -518,7 +519,7 @@ Target host
 - Record sessions: keystrokes, commands, timing, identity binding
 - Refuse any SSH connection not carrying a valid ZT-issued cert
 
-**What FIDO2 presence buys specifically for SSH:** SSH is dangerous because it enables unattended lateral movement. A static SSH key can be used by malware silently. An ephemeral cert whose issuance required FIDO2 touch proves a human was at the keyboard at session initiation. Malware cannot touch a hardware key; it cannot get a cert; it cannot SSH. This is the difference between "developer access" and "malware with a private key."
+**Why FIDO2 presence matters for SSH specifically:** SSH is dangerous because it enables unattended lateral movement. A static SSH key can be used by malware silently. An ephemeral cert whose issuance required FIDO2 touch proves a human was at the keyboard at session initiation. Malware cannot touch a hardware key, so it cannot get a cert, so it cannot SSH.
 
 **Scope:**
 - Command-level enforcement: `persona delegate ssh --commands "git,make,kubectl"` produces a cert whose extensions encode the allowed command set. The bouncer enforces this, not just logs it.
@@ -619,7 +620,7 @@ The hardest integration case is software that the user has authorized to act on 
 
 These tools need real protocol access (RFC-compliant IMAP and SMTP, not a webmail approximation), must send mail as the user's actual identity, and must work unattended in the background. They cannot be required to touch a FIDO2 key on every mail poll.
 
-This is not a special case to be exempted from ZT. It is the test case that determines whether a ZT framework is actually usable by engineers.
+If engineers cannot run `isync` against it, they will route around the framework, and the framework will protect nothing.
 
 ### The Delegation Grant
 
@@ -735,8 +736,7 @@ The SSH cert flow is identical in structure:
 
 The SSH bouncer validates this grant on connection, re-evaluates per OPA policy, and refuses any connection whose grant has expired or whose scope does not cover the requested target.
 
-FIDO2 touch at session initiation; the short-lived cert carries the presence claim forward; the bouncer enforces scope. No static SSH keys. No long-lived credentials.
-
+FIDO2 touch at session initiation; the short-lived cert carries the presence claim forward; the bouncer enforces scope. 
 ### `persona delegate` CLI
 
 ```
