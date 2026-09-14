@@ -58,7 +58,7 @@ worth removing once the consumers showed up.
 
 ## It has been tried
 
-Some years ago a large technology company was assembling a version of this internally. The
+Some years ago Amazon was assembling a version of this internally. The
 pieces were real. A hardware token with modified firmware handled workstation login, acted
 as the SSH agent, signed web logins, carried cloud credentials, and followed the user
 through jump hosts onto remote instances. One token, one human, and every consumer that
@@ -69,14 +69,15 @@ involved held a favourite corner of the cryptographic space, and each wanted the
 be the foundation the rest was built on, so the wire format never closed.
 
 Two things follow from that. The first is that this is wanted and achievable: an
-organisation with resources looked at the same gap and started building, and the parts
-worked. The second is the constraint this project treats as settled, which the next section
+organisation with considerable resources looked at the same gap and started building, and
+the parts worked. The second is the constraint this project treats as settled, which the next section
 is about.
 
-> This account is second-hand, roughly two years stale, and comes from someone who was not
-> closely involved. No documents or code left that company with it, and the current state of
-> that work is unknown. It is included because the shape of the failure is instructive, not
-> as a claim about anyone's engineering.
+> This account comes from the author, who was a Principal Engineer at Amazon at the time
+> and was not closely involved in that particular effort. It is roughly two years stale. No
+> documents or code left the company with it, and the current state of that work is unknown.
+> It is included because the shape of the failure is instructive, not as a claim about
+> anyone's engineering.
 
 ## The API already exists
 
