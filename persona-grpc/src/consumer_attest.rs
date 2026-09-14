@@ -1,4 +1,5 @@
 use persona_core::ConsumerIdentity;
+#[cfg(target_os = "linux")]
 use std::os::unix::io::AsRawFd;
 
 /// Attests a Unix socket peer and returns its ConsumerIdentity.
