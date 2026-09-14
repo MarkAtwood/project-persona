@@ -1,24 +1,29 @@
 <!-- SPDX-License-Identifier: CC-BY-4.0 -->
 # personad -- Human Identity Agent
 
-A user-session daemon that federates heterogeneous human-identity sources behind the standard SPIFFE Workload API socket. Applications call `FetchJWTSVID` on a local socket and receive a verifiable credential without caring whether identity came from Tailscale, FIDO2, PIV, OIDC, SSH agent, GPG, or DID. No new wire protocol -- just the CNCF-standard SPIFFE Workload API, extended to answer "who is the human at this keyboard, and are they present right now?"
+A user-session daemon that puts many human-identity sources behind one socket: the standard SPIFFE Workload API. Applications call `FetchJWTSVID` and get a verifiable credential, whether the identity came from Tailscale, FIDO2, PIV, OIDC, SSH agent, GPG, or DID. No new wire protocol.
 
 ## Why
 
-There is no standard local API for "who is this human." Every application invents its own answer from whichever signals it happens to have access to -- the OS login session, a browser cookie, a Tailscale node, a cached OIDC token -- without a common format, provenance model, or consumer authentication discipline.
+There is no standard local API for "who is this human." Every application invents its own answer from whatever signals it can reach: the OS login session, a browser cookie, a Tailscale node, a cached OIDC token. No common format, no provenance, no consumer authentication.
 
-SPIFFE/SPIRE solved exactly this problem for workloads, and solved it well enough to graduate in the CNCF. Nobody did it for people. The adjacent systems each cover a slice and stop: SPIRE is explicitly scoped to "what process is this," Kerberos handles one identity source with no presence model, `pam-fido2` proves a human is present but not who they are beyond a Unix UID, WebAuthn is browser-only and gives every relying party an unlinked credential, and the platform SSO stacks are locked to one OS apiece.
+SPIFFE/SPIRE solved this for workloads and graduated in the CNCF. Nobody did it for people. The nearby systems each stop short:
 
-The gap is a daemon answering **"who is the human at this keyboard, and are they present right now?"** over an API that already exists. `personad` aims to be that -- SPIRE's shape, pointed at the desk instead of the cluster. The full comparison table is in [SPEC-HIA.md](SPEC-HIA.md#prior-art-and-why-nothing-existing-solves-this).
+| System | Stops at |
+|---|---|
+| SPIRE | "what process is this," not who runs it |
+| Kerberos | one identity source, no presence model |
+| pam-fido2 | proves a human is present, not which human |
+| WebAuthn | browser only; every relying party gets an unlinked credential |
+| Windows SSPI, macOS ASAuth | one OS each |
+
+`personad` answers "who is the human at this keyboard, and are they present right now?" over the SPIFFE Workload API, which already exists and has clients. Longer comparison in [SPEC-HIA.md](SPEC-HIA.md#prior-art-and-why-nothing-existing-solves-this).
 
 ## Status
 
 **Early implementation. Do not deploy this.** The daemon builds, serves the SPIFFE
-Workload API over a Unix socket, and issues signed JWT-SVIDs -- but it currently
-*asserts* identity claims rather than verifying them, so the assurance and presence
-guarantees described below are design intent, not present behaviour.
-
-Concretely, as of this writing:
+Workload API over a Unix socket, and issues signed JWT-SVIDs. It does not verify the
+identity claims it signs. Treat the assurance and presence levels below as targets.
 
 | Area | State |
 |---|---|
@@ -34,23 +39,21 @@ Concretely, as of this writing:
 | Trust bundle / `ValidateJWTSVID` | **unusable** -- publishes an empty JWKS |
 | X.509-SVID, browser HTTPS gateway | stubs |
 
-The load-bearing problem is structural rather than a list of bugs: `enumerate()`
-returns the same `Claim` type that `prove()` was meant to produce, so a cheap
-discovery call can hand back an assurance level nothing ever established. A
-connected FIDO2 key currently yields `iaa3` plus hardware presence without anyone
-touching it. Fixing that by construction -- making the unproven state
-unrepresentable rather than merely discouraged -- is tracked as its own piece of
-work, and the individual defects hang off it.
+The cause is structural. `enumerate()` returns the same `Claim` type `prove()`
+produces, so a discovery call can return an assurance level nothing established. A
+FIDO2 key that is merely plugged in yields `iaa3` and hardware presence, claiming a
+touch that never happened. The fix is to make the unproven state impossible to
+construct, tracked as one item with the individual defects under it.
 
-Issues are tracked in-repo with [beads](https://github.com/gastownhall/beads)
-under `.beads/`.
+Issues are tracked in-repo with [beads](https://github.com/gastownhall/beads) under
+`.beads/`.
 
 ## Key Concepts
 
-Design intent. See [Status](#status) for what is actually implemented today.
+What the daemon is for. See [Status](#status) for what runs today.
 
 - **SPIFFE Workload API** -- the daemon implements the standard gRPC Workload API (`FetchJWTSVID`, `FetchX509SVIDs`, `FetchJWTBundles`, `FetchX509Bundles`, `ValidateJWTSVID`). Any SPIFFE-aware consumer (envoy, ghostunnel, go-spiffe, rust-spiffe) works unmodified.
-- **Per-audience pseudonymity** -- each consumer application is meant to receive a stable HKDF-derived pseudonym rather than the user's root identity, so cross-consumer linkage requires explicit consent. The derivation exists and is verified against externally computed vectors; it is not yet wired into issuance, and today every caller receives the root identity.
+- **Per-audience pseudonymity** -- each consumer gets a stable HKDF-derived pseudonym instead of the user's root identity, so linking one user across consumers takes explicit consent. The derivation is written and checked against external test vectors, but issuance never calls it. Today every caller gets the root identity.
 - **Identity assurance levels** -- `iaa1` (self-asserted: SSH key, GPG, DID), `iaa2` (IdP-verified: Tailscale OIDC, GNOME Online Accounts), `iaa3` (hardware-bound + IdP-verified: FIDO2, PIV, Windows Hello).
 - **Presence levels** -- `none`, `session` (screen unlocked at login), `software` (TOTP/password re-entry), `hardware` (FIDO2 touch, Windows Hello, TouchID, PIV PIN -- timestamped, hardware-backed).
 - **Attestor plugins** -- each identity source implements `enumerate()`, `prove()`, `freshness()`. Sources are probed at startup; missing sources are skipped, never fatal.
@@ -75,13 +78,12 @@ persona (CLI)  -->  personad (daemon)  -->  identity sources
 
 The daemon implements the SPIFFE Workload API as-is. No new protocol is invented.
 
-Consumer authentication is designed to use OS-level process attestation (`SO_PEERCRED` on Linux, `SecCodeCopyGuestWithAttributes` on macOS, EXE signing on Windows) to identify calling applications and derive per-consumer pseudonyms. The Linux path is implemented but is not yet called from the issuance path, so callers are currently not distinguished.
+Consumer authentication uses OS-level process attestation (`SO_PEERCRED` on Linux, `SecCodeCopyGuestWithAttributes` on macOS, EXE signing on Windows) to identify calling applications and derive per-consumer pseudonyms. The Linux path is written but never called, so callers are not distinguished today.
 
 ## Identity Sources
 
-Day-one attestor plugins. The assurance and presence columns are the **target** for
-each source once `prove()` exists; they are not what the daemon can currently
-substantiate. See [Status](#status).
+Day-one attestor plugins. The assurance and presence columns are targets for once
+`prove()` exists, not what the daemon substantiates today. See [Status](#status).
 
 | Source | Assurance | Presence | Platforms |
 |---|---|---|---|
@@ -114,10 +116,10 @@ Implementation is a single Rust binary with `#[cfg]` feature flags per platform.
 
 ## Installation
 
-> The shipped systemd units do not currently work together: `personad.socket`
-> declares socket activation, but the daemon binds its own socket at the same path
-> and removes it on shutdown, and `personad.service` has no dependency on the socket
-> unit. Run the binary directly until that is fixed.
+> The systemd units do not work together yet. `personad.socket` declares socket
+> activation, but the daemon binds its own socket at the same path and deletes it on
+> shutdown, and `personad.service` does not depend on the socket unit. Run the binary
+> directly for now.
 
 ### systemd (Linux)
 
