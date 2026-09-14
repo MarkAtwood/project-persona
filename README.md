@@ -153,17 +153,17 @@ expands nothing -- no `~`, no `$HOME`, no systemd-style specifiers -- so
 `persona install-service` substitutes your home directory and writes the result.
 Copying the template into place unedited will not work.
 
-Output is not redirected, so launchd routes it to the system log:
+Logs go to `~/Library/Logs/personad.log`.
 
-```bash
-log stream --predicate 'process == "personad"'
-```
+Redirection is required rather than a convenience. An agent with no
+`StandardOutPath` has its output discarded: on macOS 26.6.2 a test agent ran to
+completion and produced no unified-log entries for anything it printed. `~/Library`
+is mode 0700, so the file is unreadable by other local users even though launchd
+creates it 0644.
 
-To keep a file instead, add `StandardOutPath` and `StandardErrorPath` to the
-installed plist pointing somewhere in your home, such as
-`~/Library/Logs/personad.log`. Do not point them at `/tmp`: the daemon logs SPIFFE
-IDs, attestor sources and assurance levels, and a predictable name in a
-world-writable directory can be pre-created by another local user.
+Do not move it to `/tmp`. The daemon logs SPIFFE IDs, attestor sources and assurance
+levels, and a predictable name in a world-writable directory can be pre-created by
+another local user.
 
 ## Documents
 

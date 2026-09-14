@@ -14,12 +14,13 @@ const LAUNCHD_PLIST: &str = "\
   substitutes __HOME__ and writes the result to ~/Library/LaunchAgents/personad.plist.
   Copying this file into place unedited will not work.
 
-  Output is not redirected. launchd routes it to the system log:
-      log stream --predicate 'process == \"personad\"'
-  To keep a file instead, add StandardOutPath and StandardErrorPath pointing somewhere
-  in your home directory, for example __HOME__/Library/Logs/personad.log. Do not point
-  them at /tmp: the daemon logs SPIFFE IDs, attestor sources and assurance levels, and
-  a predictable name in a world-writable directory can be pre-created by another user.
+  Output goes to ~/Library/Logs/personad.log. launchd sends the stdout and stderr of
+  an agent with no StandardOutPath to /dev/null, not to the unified log -- measured on
+  macOS 26.6.2, where a test agent ran but produced no log entries. ~/Library is mode
+  0700, so the file is unreadable by other local users even though launchd creates it
+  0644. Do not move this to /tmp: the daemon logs SPIFFE IDs, attestor sources and
+  assurance levels, and a predictable name in a world-writable directory can be
+  pre-created by another user.
 -->
 <plist version=\"1.0\">
 <dict>
@@ -33,6 +34,10 @@ const LAUNCHD_PLIST: &str = "\
     <true/>
     <key>KeepAlive</key>
     <true/>
+    <key>StandardOutPath</key>
+    <string>__HOME__/Library/Logs/personad.log</string>
+    <key>StandardErrorPath</key>
+    <string>__HOME__/Library/Logs/personad.log</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>RUST_LOG</key>
@@ -504,7 +509,8 @@ async fn install_service() -> Result<()> {
         let plist = LAUNCHD_PLIST.replace("__HOME__", &home);
         std::fs::write(&dest, plist)?;
         println!("installed personad.plist");
-        println!("logs: log stream --predicate 'process == \"personad\"'");
+        std::fs::create_dir_all(std::path::PathBuf::from(&home).join("Library/Logs"))?;
+        println!("logs: ~/Library/Logs/personad.log");
         println!("run: launchctl load ~/Library/LaunchAgents/personad.plist");
         return Ok(());
     }
@@ -544,16 +550,23 @@ mod tests {
     }
 
     #[test]
-    fn launchd_plist_does_not_write_identity_logs_to_a_shared_directory() {
-        // The daemon logs SPIFFE IDs, attestor sources and assurance levels. A
-        // predictable name under /tmp can be pre-created by another local user.
+    fn launchd_plist_logs_under_the_home_library_and_never_to_tmp() {
+        // The daemon logs SPIFFE IDs, attestor sources and assurance levels, so the
+        // log must not sit in a world-writable directory under a predictable name.
+        // ~/Library is mode 0700 on macOS, which is what protects the file; launchd
+        // itself creates it 0644.
+        //
+        // Redirection is required, not optional: an agent with no StandardOutPath has
+        // its output discarded rather than routed to the unified log. Measured on
+        // macOS 26.6.2 -- a test agent ran to completion and logged nothing.
         let filled = LAUNCHD_PLIST.replace("__HOME__", "/Users/example");
-        for key in ["<key>StandardOutPath</key>", "<key>StandardErrorPath</key>"] {
+        assert!(!filled.contains("/tmp/"), "no path under /tmp");
+        for key in ["StandardOutPath", "StandardErrorPath"] {
             assert!(
-                !filled.contains(key),
-                "{key} is set; output should go to the system log"
+                filled.contains(key),
+                "{key} must be set or launchd discards the output"
             );
         }
-        assert!(!filled.contains("/tmp/"), "no path under /tmp");
+        assert!(filled.contains("<string>/Users/example/Library/Logs/personad.log</string>"));
     }
 }
