@@ -1,0 +1,27 @@
+{
+  "id": "persona-5s4b.114",
+  "title": "macOS has no identity sources: SPEC promises Keychain and TouchID attestors that do not exist",
+  "description": "Measured on mark-mac, macOS 26.6.2, running a real personad built from a fresh clone of the public repo.\n\nThe daemon starts, binds, serves and fails closed. It also produces nothing:\n  persona whoami     -\u003e personad: no identity claims available\n  persona fetch-jwt  -\u003e error: personad: no identity claims available\n  daemon log         -\u003e event=svid_denied reason=\"no identity claims available\"\n\nprobe_sources() reports count=1, and that one source is the OIDC cached attestor, which is the only attestor with no is_available() at all (persona-attestors/src/oidc.rs) and so registers unconditionally. Confirmed by elimination on that machine: SSH_AUTH_SOCK unset, no gpg binary, no /var/run/tailscale/tailscaled.sock, and the count stayed 1 with SSH_AUTH_SOCK explicitly scrubbed. It then finds no token caches and yields no claims.\n\nSPEC-HIA.md:725 and DESIGN.md:725 promise for macOS: 'Tailscale, Keychain, OIDC cached, SSH agent, GPG, DID, PIV' with 'TouchID (CryptoTokenKit), libfido2'. persona-attestors/src contains did_key, fido2, goa, gpg, oidc, piv, ssh, tailscale. There is no Keychain attestor and no TouchID/Secure Enclave attestor, on any platform. The two sources the docs single out as the macOS story are the two that were never written.\n\nOf the attestors that do exist, on a stock Mac: goa is D-Bus/GNOME, tailscale probes a Linux socket path that the macOS GUI client does not create, gpg needs a binary that is not installed by default, fido2 and piv are feature-gated off.\n\nNot a regression and not a crash. The daemon behaves correctly for a platform where nothing can attest -- it declines rather than fabricating, which is better than the Linux path does today (see .30, .49). The defect is that the documentation describes macOS support that does not exist.\n\nFix is either implementing a Keychain/TouchID attestor or correcting the two platform tables to say which sources are actually available today.",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "bug",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-14T03:23:58.264816649Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-14T03:23:58.264816649Z",
+  "labels": [
+    "macos",
+    "attestors",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.114",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-14T03:23:58.285656745Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

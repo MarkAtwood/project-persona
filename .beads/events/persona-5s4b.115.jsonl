@@ -1,0 +1,4 @@
+{"id":"01a09df1-6603-7630-ab0b-bf540158bea5","issue_id":"persona-5s4b.115","event_type":"created","actor":"agent","old_value":"","new_value":"","created_at":"2026-09-14T03:23:58.33940625Z"}
+{"id":"01a09df1-6605-7d14-a204-d4762c895ee6","issue_id":"persona-5s4b.115","event_type":"label_added","actor":"agent","comment":"Added label: macos","created_at":"2026-09-14T03:23:58.341857816Z"}
+{"id":"01a09df1-6608-73f1-acaa-907df649fa07","issue_id":"persona-5s4b.115","event_type":"label_added","actor":"agent","comment":"Added label: cli","created_at":"2026-09-14T03:23:58.344258916Z"}
+{"id":"01a09df1-660a-7a7a-b588-220e99899a60","issue_id":"persona-5s4b.115","event_type":"label_added","actor":"agent","comment":"Added label: review","created_at":"2026-09-14T03:23:58.346687009Z"}
