@@ -2,7 +2,12 @@
 # SPEC-HIA: Human Identity Agent (personad)
 
 **Status:** Draft
-**Date:** 2026-04-28
+**Last updated:** 2026-09-14
+
+> This document absorbed `DESIGN.md`, which had been a reworded copy of the same
+> content. Sections describing delivery — the Zero Trust stack components, the build
+> order, the coverage map — are context rather than normative requirements, and would
+> be dropped from any version submitted to a standards body.
 
 ---
 
@@ -395,7 +400,7 @@ Contacts: Evan Gilman (original SPIFFE/SPIRE author), SPIFFE Technical Steering 
 
 ---
 
-## Position in the Total ZT Desktop Stack
+## Position in the Zero Trust Desktop Stack
 
 `personad` is the **identity leaf** of a Zero Trust desktop framework — roughly 20–25% of the total system. It is the necessary foundation: every other component depends on having a standard local API that answers "who is this human and are they present." Without `personad`, each enforcement point invents its own identity answer at varying quality.
 
@@ -802,7 +807,7 @@ The startup probe order:
 
 ---
 
-## Prior Art (and why nothing existing solves this)
+## Prior Art
 
 | System | What it does | What it doesn't do |
 |---|---|---|

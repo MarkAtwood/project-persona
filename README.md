@@ -182,7 +182,6 @@ another local user.
 
 - [MOTIVATIONS.md](MOTIVATIONS.md) -- why this needs to exist at all
 - [SPEC-HIA.md](SPEC-HIA.md) -- normative specification: SPIFFE ID schema, trust domains, assurance levels, prior art
-- [DESIGN.md](DESIGN.md) -- technical design and architecture
 - [PRFAQ.md](PRFAQ.md) -- press release and anticipated questions
 
 ## License

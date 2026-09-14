@@ -134,4 +134,3 @@ runs today, and the gap between the two is large. Read both.
   domain model, and a full comparison against Kerberos, SPIRE, WebAuthn, platform
   SSO and the rest
 - [PRFAQ.md](PRFAQ.md) — the launch framing and anticipated objections
-- [DESIGN.md](DESIGN.md) — architecture and technical design
