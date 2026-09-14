@@ -106,11 +106,19 @@ for the life of a daemon process and change across restarts.
 The pseudonym is keyed on the consumer, not the audience. One consumer receives the
 same pseudonym for every audience it requests.
 
-Correlation that remains: the `persona` claim block still carries `root_trust_domain`,
-`sources`, `auth_methods` and a whole-second `attested_at`, and those are identical
-for consumers served in the same window. Two colluding consumers cannot recover the
-root identity, but they can still infer they are talking to the same person from that
-tuple. Narrowing it is tracked separately.
+Correlation that remains, and it grew rather than shrank. On a single-identity
+daemon `root_trust_domain`, `sources` and `auth_methods` are constants shared by
+every consumer, so a colluding pair can link on those alone. `attested_at` is
+now derived from the observation rather than from the request clock, which means
+two consumers served from one observation receive a byte-identical value that
+stays constant for the whole presence window, rather than two different integers
+a second apart. That is a stronger and longer-lived join key than before, and it
+is published deliberately: withholding it would leave a consumer unable to judge
+freshness for itself and forced to trust a TTL it cannot check. Whole seconds is
+the floor -- finer resolution buys a JWT consumer nothing and multiplies the
+linkage -- and `present_until` is `attested_at` plus a public constant, so it
+adds no bits of its own. Two colluding consumers still cannot recover the root
+identity. Narrowing the three unconditional fields is tracked separately.
 
 Every `FetchJWTSVID` call derives the calling consumer's pseudonym. A consumer that cannot be attested is refused outright rather than served a weaker identity. A consumer with elevated scope (granted by the user at enrollment) can request the full-provenance ID; that path is not implemented and is gated on enrollment.
 
@@ -282,9 +290,23 @@ removed.
 
 The `persona_` query-parameter namespace is reserved and closed: a `persona_`
 parameter `personad` does not implement is rejected with `INVALID_ARGUMENT`
-rather than ignored. `persona_max_age` is currently in that category -- a claim
-carries no attestation timestamp, so the daemon cannot bound presence freshness
-and declines to accept a bound it would not enforce.
+rather than ignored.
+
+`persona_max_age=<seconds>` bounds the age of the observation behind the claim.
+A claim is served only if its observation is *strictly younger* than the bound,
+so `persona_max_age=0` accepts nothing; a non-integer, negative or overflowing
+value is `INVALID_ARGUMENT`, never a default. A repeat within one audience takes
+the smallest, and across audiences the daemon takes the smallest any of them
+names -- for an age bound the strictest is the least, the mirror of
+`persona_require_presence` and its strictest-wins maximum. Because the bound is
+folded with a minimum and an audience naming no bound contributes nothing, no
+audience an attacker appends can relax a bound another audience named.
+
+Independently of any caller bound, `personad` applies a fixed daemon-wide
+presence TTL of 300 seconds to the observation. Past it the claim asserts no
+presence at all, so it stops satisfying `persona_require_presence` -- the decay
+runs through the ordinary presence gate rather than through a second refusal
+path.
 
 If presence requirements are not met, `personad` triggers a presence challenge (FIDO2 touch prompt, Hello dialog, etc.) before issuing the SVID. If the challenge cannot be satisfied within the timeout, the RPC returns `UNAUTHENTICATED`.
 
@@ -324,8 +346,8 @@ The JWT-SVID payload carries standard SPIFFE claims plus a `persona` extension o
     "presence": {
       "present": true,
       "attested_by": "fido2_up",
-      "attested_at": "2026-04-28T14:31:48Z",
-      "present_until": "2026-04-28T14:36:48Z"
+      "attested_at": 1745999640,
+      "present_until": 1745999940
     },
     "auth_methods": ["tailscale_oidc", "fido2_up"]
   }
@@ -850,7 +872,7 @@ This also means kith works without Tailscale: on a machine with `personad` and a
 
 4. **Presence challenge UX**: when a consumer requests `hardware` presence and none is available, who owns the prompt? A `personad`-owned tray notification or polkit dialog is cleanest -- it avoids requiring every consumer to build its own FIDO2 touch UI.
 
-5. **Presence decay**: `present_until` should be a fixed TTL from the last hardware attestation, not extended by keyboard/mouse activity. Soft presence signals (input activity) are not hardware-backed and should not extend hardware-presence claims.
+5. **Presence decay** -- *implemented*: `present_until` is a fixed 300-second TTL measured from the observation the claim rests on, not from the clock at request time, so re-requesting cannot extend it. Nothing a caller does extends the window; soft presence signals do not exist and could not extend a hardware-presence claim if they did. What remains open is whether the TTL should be per-attestor rather than daemon-wide.
 
 6. **Cross-machine presence propagation**: if Alice's `kithd` sends a message, can Bob's `kithd` verify that Alice was hardware-present at send time? Options: (a) include a signed HVID attachment in the message envelope; (b) Alice's `personad` issues a per-message presence assertion. The SPIFFE JWT-SVID shape already handles this -- the JWT is the signed assertion, the audience is the message ID.
 

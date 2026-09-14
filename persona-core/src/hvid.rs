@@ -10,10 +10,12 @@ pub struct PresenceInfo {
     pub present: bool,
     /// Attestation mechanism, e.g. `"fido2_up"`, `"windows_hello"`, `"touchid"`, `"piv_pin"`.
     pub attested_by: String,
-    /// RFC 3339 timestamp when presence was attested.
-    pub attested_at: String,
-    /// RFC 3339 timestamp when the hardware presence attestation expires.
-    pub present_until: String,
+    /// Unix seconds when the daemon observed the evidence behind the presence
+    /// level. Not a proof that a human was verifiably at the keyboard then.
+    pub attested_at: u64,
+    /// Unix seconds after which the observation asserts no presence.
+    /// [`PresenceInfo::attested_at`] plus the daemon's fixed presence TTL.
+    pub present_until: u64,
 }
 
 /// The `persona` extension object carried in a JWT-SVID payload.
@@ -47,8 +49,8 @@ mod tests {
             presence: PresenceInfo {
                 present: true,
                 attested_by: "fido2_up".into(),
-                attested_at: "2026-06-19T00:00:00Z".into(),
-                present_until: "2026-06-19T01:00:00Z".into(),
+                attested_at: 1_750_291_200,
+                present_until: 1_750_291_500,
             },
             auth_methods: vec!["fido2".into()],
         };
@@ -68,8 +70,8 @@ mod tests {
             presence: PresenceInfo {
                 present: false,
                 attested_by: "".into(),
-                attested_at: "".into(),
-                present_until: "".into(),
+                attested_at: 0,
+                present_until: 0,
             },
             auth_methods: vec![],
         };

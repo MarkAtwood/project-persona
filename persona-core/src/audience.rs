@@ -1,6 +1,7 @@
 //! Audience string parsing with optional `persona_` extension parameters.
 
 use std::str::FromStr;
+use std::time::Duration;
 
 use crate::PresenceLevel;
 
@@ -23,6 +24,13 @@ pub struct AudienceExtensions {
     /// Required presence level. Defaults to [`PresenceLevel::None`] when absent.
     /// An unrecognised value is a parse error, never a default.
     pub require_presence: PresenceLevel,
+    /// Upper bound on the age of the presence observation this audience
+    /// accepts. `None` names no bound.
+    ///
+    /// `None` is the identity element of the across-audience `min` fold, so an
+    /// audience naming no bound can never relax one another audience named —
+    /// the mirror of [`AudienceExtensions::require_presence`] and its `max`.
+    pub max_age: Option<Duration>,
 }
 
 /// Error returned when an audience string cannot be parsed.
@@ -36,6 +44,10 @@ pub enum AudienceParseError {
     #[error("{0} must be written persona_{0}; refusing to ignore a presence requirement")]
     UnprefixedExtension(String),
 
+    /// `persona_max_age` was not a whole number of seconds.
+    #[error("persona_max_age must be a whole number of seconds: {0}")]
+    InvalidMaxAge(String),
+
     /// A `persona_` parameter this daemon does not implement was present.
     #[error("unsupported persona extension: {0}")]
     UnsupportedExtension(String),
@@ -45,6 +57,10 @@ pub enum AudienceParseError {
 ///
 /// Written bare they would be treated as ordinary query parameters and gate
 /// nothing, so they are refused rather than kept.
+///
+/// `max_age` keeps its place here now that the prefixed spelling gates
+/// something: the bare spelling shadows a live gate, so refusing it matters
+/// more, not less.
 fn is_unprefixed_policy_name(param: &str) -> bool {
     let name = param.split_once('=').map_or(param, |(n, _)| n);
     matches!(name, "require_presence" | "max_age")
@@ -68,10 +84,13 @@ impl AudienceExtensions {
     /// - [`AudienceParseError::UnprefixedExtension`] if a policy name appears
     ///   without its `persona_` prefix, which would otherwise be kept as an
     ///   ordinary query parameter and silently gate nothing.
+    /// - [`AudienceParseError::InvalidMaxAge`] if `persona_max_age` is not a
+    ///   whole number of seconds. The value bounds the age of the observation
+    ///   behind the claim: a claim is served only if strictly younger than the
+    ///   bound, so `persona_max_age=0` accepts nothing. A repeat takes the
+    ///   smallest, since for an age bound the strictest is the least.
     /// - [`AudienceParseError::UnsupportedExtension`] for any other `persona_`
-    ///   parameter. `persona_max_age` is refused here: a [`crate::PresenceLevel`]
-    ///   arrives with no attestation timestamp, so the daemon cannot bound
-    ///   presence freshness and will not accept a parameter it would ignore.
+    ///   parameter; the namespace stays closed.
     // ponytail: string split is sufficient | upgrade to url crate if multi-value params needed
     pub fn parse(raw: &str) -> Result<Self, AudienceParseError> {
         let (base, query) = match raw.split_once('?') {
@@ -80,6 +99,7 @@ impl AudienceExtensions {
         };
 
         let mut require_presence = PresenceLevel::None;
+        let mut max_age: Option<Duration> = None;
         let mut kept_params: Vec<&str> = Vec::new();
 
         if let Some(q) = query {
@@ -88,6 +108,21 @@ impl AudienceExtensions {
                     let level = PresenceLevel::from_str(val)
                         .map_err(|_| AudienceParseError::UnknownPresence(val.to_owned()))?;
                     require_presence = require_presence.max(level);
+                } else if let Some(val) = param.strip_prefix("persona_max_age=") {
+                    // Seconds, matching OIDC `max_age` and RFC 7519 NumericDate.
+                    // `u64::from_str` is the whole validator: it rejects "",
+                    // "-1", "3.5" and anything that would overflow, so there is
+                    // no saturating path to a bound of forever and no default on
+                    // a malformed value.
+                    let secs: u64 = val
+                        .parse()
+                        .map_err(|_| AudienceParseError::InvalidMaxAge(val.to_owned()))?;
+                    let named = Duration::from_secs(secs);
+                    // A repeat tightens and never relaxes, the same within-string
+                    // rule as require_presence. For an age bound the strictest is
+                    // the smallest — `min`, not `max`. Backwards here is a silent
+                    // fail-open.
+                    max_age = Some(max_age.map_or(named, |cur: Duration| cur.min(named)));
                 } else if param.starts_with("persona_") {
                     let name = param.split_once('=').map_or(param, |(n, _)| n);
                     return Err(AudienceParseError::UnsupportedExtension(name.to_owned()));
@@ -115,6 +150,7 @@ impl AudienceExtensions {
         Ok(AudienceExtensions {
             audience,
             require_presence,
+            max_age,
         })
     }
 }
@@ -128,6 +164,7 @@ mod tests {
         let ext = AudienceExtensions::parse("https://example.com").unwrap();
         assert_eq!(ext.audience, "https://example.com");
         assert_eq!(ext.require_presence, PresenceLevel::None);
+        assert_eq!(ext.max_age, None);
     }
 
     #[test]
@@ -187,9 +224,63 @@ mod tests {
     }
 
     #[test]
-    fn max_age_is_refused_as_unsupported() {
-        let err = AudienceExtensions::parse("https://example.com?persona_max_age=300").unwrap_err();
-        assert!(matches!(err, AudienceParseError::UnsupportedExtension(_)));
+    fn max_age_is_parsed_as_a_bound() {
+        let ext = AudienceExtensions::parse("https://example.com?persona_max_age=300").unwrap();
+        assert_eq!(ext.audience, "https://example.com");
+        assert_eq!(ext.max_age, Some(Duration::from_secs(300)));
+    }
+
+    #[test]
+    fn max_age_zero_is_parsed_not_rejected() {
+        // The parser records; the gate decides what zero means.
+        let ext = AudienceExtensions::parse("https://example.com?persona_max_age=0").unwrap();
+        assert_eq!(ext.max_age, Some(Duration::ZERO));
+    }
+
+    #[test]
+    fn non_numeric_max_age_is_rejected() {
+        let err =
+            AudienceExtensions::parse("https://example.com?persona_max_age=soon").unwrap_err();
+        assert!(
+            matches!(err, AudienceParseError::InvalidMaxAge(_)),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn negative_max_age_is_rejected() {
+        // Pin it: a later slip to a signed type makes every claim fresh forever.
+        let err = AudienceExtensions::parse("https://example.com?persona_max_age=-1").unwrap_err();
+        assert!(
+            matches!(err, AudienceParseError::InvalidMaxAge(_)),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn overflowing_max_age_is_rejected() {
+        // Not a panic, and not a saturate-to-forever.
+        let err =
+            AudienceExtensions::parse("https://example.com?persona_max_age=99999999999999999999")
+                .unwrap_err();
+        assert!(
+            matches!(err, AudienceParseError::InvalidMaxAge(_)),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn repeated_max_age_key_takes_the_strictest() {
+        let loose_last = AudienceExtensions::parse(
+            "https://example.com?persona_max_age=60&persona_max_age=3600",
+        )
+        .unwrap();
+        let loose_first = AudienceExtensions::parse(
+            "https://example.com?persona_max_age=3600&persona_max_age=60",
+        )
+        .unwrap();
+        assert_eq!(loose_last.max_age, Some(Duration::from_secs(60)));
+        assert_eq!(loose_first.max_age, Some(Duration::from_secs(60)));
     }
 
     #[test]

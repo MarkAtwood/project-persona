@@ -34,6 +34,7 @@ identity claims it signs. Treat the assurance and presence levels below as targe
 | `prove()` -- cryptographic proof of possession | **not implemented in any attestor** -- so no SVID is issued on any platform |
 | Identity assurance levels | derived from evidence -- see below |
 | Presence levels | enforced across every audience, and unknown requirements are refused rather than ignored |
+| Presence freshness (`persona_max_age`, 300s presence TTL) | enforced -- but **while `prove()` is unimplemented in every attestor, no real observation reaches the daemon on any platform**, so this is live code on a synthetic input |
 | Per-consumer pseudonyms | wired into issuance -- every caller receives a pseudonym, never the root identity |
 | Consumer attestation | attested once per connection; a caller that cannot be attested is refused |
 | Trust bundle / `ValidateJWTSVID` | works -- publishes a real JWKS, and validation reads only that bundle; an external verifier holding the bundle and nothing else is part of the test suite |
@@ -89,7 +90,7 @@ The daemon implements the SPIFFE Workload API as-is. No new protocol is invented
 
 Consumer authentication uses OS-level process attestation to identify calling applications and derive per-consumer pseudonyms. The peer's credentials are read when the connection is accepted, and the consumer is the SHA-256 of its main executable -- `/proc/{pid}/exe` on Linux, `proc_pidpath` on macOS. A caller that cannot be attested receives no SVID; there is no unattested fallback, because a pid-keyed identity changes on every launch and a uid-keyed one is shared by everything the user runs. Richer signing identities (`SecCodeCopyGuestWithAttributes` on macOS, EXE signing on Windows) are not implemented.
 
-This buys unlinkability against honest-but-curious consumers. It is not authentication against a local adversary: a malicious same-uid process can exec the victim's binary, and pids are reusable. It also makes the *identifier* unlinkable, not the whole token -- `persona_ext` still carries `root_trust_domain`, `sources`, `auth_methods` and a raw-second `attested_at`, which two colluding consumers served in the same window can still join on.
+This buys unlinkability against honest-but-curious consumers. It is not authentication against a local adversary: a malicious same-uid process can exec the victim's binary, and pids are reusable. It also makes the *identifier* unlinkable, not the whole token -- `persona_ext` still carries `root_trust_domain`, `sources` and `auth_methods`, which are constants on a single-identity daemon and which two colluding consumers can join on unconditionally, plus a whole-second `attested_at` now derived from the observation rather than the request clock. That last one is a stronger join key than it was: two consumers served from one observation get the same integer for the whole presence window, not two integers a second apart. It is published anyway, because withholding it leaves a consumer unable to judge freshness for itself and forced to trust a TTL it cannot check.
 
 ## Identity Sources
 

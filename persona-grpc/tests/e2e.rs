@@ -75,6 +75,61 @@ fn tmp_socket_path() -> String {
     format!("/tmp/persona-test-{nanos}-{seq}.sock")
 }
 
+/// An attestor that observes once, at construction, and hands back a clone of
+/// that same observation on every `prove()`.
+///
+/// This is the only way in the workspace to put a genuinely *aged* observation
+/// in front of the gate: `ChallengeSignature::new` stamps the instant it is
+/// called, `HardwareTouch` has no public constructor, and adding one to buy test
+/// coverage would make `PresenceLevel::Hardware` and Iaa3 reachable from outside
+/// `persona-attestors::claim`, which is the property that module's placement
+/// exists to hold.
+///
+/// It is also the shape named as a risk: a real attestor that cached an
+/// assertion and re-stamped it per request would reintroduce persona-ogiv's
+/// defect one layer down. This double deliberately does the honest half of that
+/// — cache the assertion, keep its original instant — and the tests below are
+/// what prove the daemon no longer re-dates it.
+#[derive(Debug)]
+struct CachedProofAttestor {
+    observed: Evidence,
+}
+
+impl CachedProofAttestor {
+    fn new() -> Self {
+        Self {
+            observed: Evidence::Possession(ChallengeSignature::new(SignedAssertion::new(
+                b"cached".to_vec(),
+                "application/test",
+            ))),
+        }
+    }
+}
+
+#[async_trait]
+impl Attestor for CachedProofAttestor {
+    fn name(&self) -> &str {
+        "cached"
+    }
+
+    async fn enumerate(&self) -> Result<Vec<Candidate>, AttestorError> {
+        Ok(vec![Candidate::new(
+            "cached",
+            SelfAssertedDomain::SshLocal,
+            "user/testuser",
+            "Test User",
+        )])
+    }
+
+    async fn prove(
+        &self,
+        _candidate: &Candidate,
+        _challenge: &[u8],
+    ) -> Result<Vec<Evidence>, AttestorError> {
+        Ok(vec![self.observed.clone()])
+    }
+}
+
 /// Start a daemon whose only attestor proves possession, and return a
 /// connected client plus a teardown handle.
 async fn start_daemon(
@@ -83,15 +138,22 @@ async fn start_daemon(
     SpiffeWorkloadApiClient<tonic::transport::Channel>,
     tokio::task::JoinHandle<()>,
 ) {
+    start_daemon_with(socket_path, Arc::new(TestAttestor) as Arc<dyn Attestor>).await
+}
+
+/// Start a daemon with a specific attestor.
+async fn start_daemon_with(
+    socket_path: &str,
+    attestor: Arc<dyn Attestor>,
+) -> (
+    SpiffeWorkloadApiClient<tonic::transport::Channel>,
+    tokio::task::JoinHandle<()>,
+) {
     let signer = Arc::new(SvidSigner::new().unwrap());
     let bundles = Arc::new(TrustBundleStore::new());
     bundles.upsert(TrustBundle::local(TrustDomain::SshLocal, &signer));
 
-    let service = WorkloadApiService::new(
-        signer,
-        bundles,
-        vec![Arc::new(TestAttestor) as Arc<dyn Attestor>],
-    );
+    let service = WorkloadApiService::new(signer, bundles, vec![attestor]);
 
     let sock_for_server = socket_path.to_owned();
     let handle = tokio::spawn(async move {
@@ -256,7 +318,6 @@ async fn unrecognised_presence_requirement_is_refused_not_ignored() {
     for audience in [
         "https://bank.example?persona_require_presence=biometric",
         "https://bank.example?persona_require_presence=Hardware",
-        "https://bank.example?persona_max_age=60",
     ] {
         let status = client
             .fetch_jwtsvid(JwtsvidRequest {
@@ -511,4 +572,237 @@ fn verify(dir: &std::path::Path, token: &str) -> std::process::ExitStatus {
         .arg(dir)
         .status()
         .expect("python3 is required by the persona test suite (see tests/verify_jwt_svid.py)")
+}
+
+// persona-ogiv: `persona_max_age` is enforced rather than refused. The status
+// code discriminates: `InvalidArgument` was the old parser refusal,
+// `Unauthenticated` is the gate doing the work.
+//
+// TestAttestor returns Evidence::Possession, whose observation instant is
+// stamped inside prove(), so the claim under test is dated at prove time.
+#[tokio::test]
+async fn a_zero_max_age_refuses_a_claim_dated_this_instant() {
+    let socket_path = tmp_socket_path();
+    let (mut client, handle) = start_daemon(&socket_path).await;
+
+    let status = client
+        .fetch_jwtsvid(JwtsvidRequest {
+            audience: vec!["https://bank.example?persona_max_age=0".to_owned()],
+            spiffe_id: String::new(),
+        })
+        .await
+        .expect_err("a zero age bound accepts nothing, strictly-younger-than");
+
+    assert_eq!(status.code(), tonic::Code::Unauthenticated);
+    assert!(
+        status.message().contains("persona_max_age"),
+        "must deny at the freshness gate, got: {}",
+        status.message()
+    );
+
+    handle.abort();
+    let _ = std::fs::remove_file(&socket_path);
+}
+
+// Mandatory pair with the above: without it, a gate that denies everything
+// passes the zero-bound test.
+#[tokio::test]
+async fn a_generous_max_age_issues_a_token() {
+    let socket_path = tmp_socket_path();
+    let (mut client, handle) = start_daemon(&socket_path).await;
+
+    let resp = client
+        .fetch_jwtsvid(JwtsvidRequest {
+            audience: vec!["https://bank.example?persona_max_age=3600".to_owned()],
+            spiffe_id: String::new(),
+        })
+        .await
+        .expect("an observation younger than the bound must be served");
+    assert_eq!(resp.into_inner().svids.len(), 1);
+
+    handle.abort();
+    let _ = std::fs::remove_file(&socket_path);
+}
+
+// The `min` fold over audiences, closed end to end in both argument orders —
+// the mirror of presence_requirement_is_taken_from_every_audience.
+#[tokio::test]
+async fn max_age_is_taken_from_every_audience() {
+    for order in [
+        vec![
+            "https://harmless.example".to_owned(),
+            "https://bank.example?persona_max_age=0".to_owned(),
+        ],
+        vec![
+            "https://bank.example?persona_max_age=0".to_owned(),
+            "https://harmless.example".to_owned(),
+        ],
+    ] {
+        let socket_path = tmp_socket_path();
+        let (mut client, handle) = start_daemon(&socket_path).await;
+
+        let status = client
+            .fetch_jwtsvid(JwtsvidRequest {
+                audience: order,
+                spiffe_id: String::new(),
+            })
+            .await
+            .expect_err("an age bound on any audience must gate the request");
+        assert_eq!(status.code(), tonic::Code::Unauthenticated);
+
+        handle.abort();
+        let _ = std::fs::remove_file(&socket_path);
+    }
+}
+
+// The published window is a function of the observation, not of the clock at
+// request time. `attested_at <= iat` is the load-bearing assertion: `iat` is
+// read in the signer, after prove() and after pseudonym derivation, so under a
+// request-time clock read the two are equal only by luck, while under an
+// observation-derived value it holds by construction.
+#[tokio::test]
+async fn the_token_publishes_the_observation_and_its_window() {
+    let socket_path = tmp_socket_path();
+    let (mut client, handle) = start_daemon(&socket_path).await;
+
+    let claims = fetch_claims(&mut client, AUDIENCE).await;
+    let presence = &claims["persona"]["presence"];
+
+    let attested_at = presence["attested_at"]
+        .as_u64()
+        .expect("attested_at must be whole Unix seconds, not an RFC 3339 string");
+    let present_until = presence["present_until"]
+        .as_u64()
+        .expect("present_until must be whole Unix seconds, not an RFC 3339 string");
+    let iat = claims["iat"].as_u64().expect("iat must be an integer");
+
+    assert_eq!(
+        present_until,
+        attested_at + 300,
+        "the window is the observation plus the daemon's fixed presence TTL"
+    );
+    assert!(
+        attested_at <= iat,
+        "the observation cannot post-date the token minted from it: \
+         attested_at {attested_at} > iat {iat}"
+    );
+
+    handle.abort();
+    let _ = std::fs::remove_file(&socket_path);
+}
+
+/// Fetch one SVID for `audience` and return its decoded claims segment.
+async fn fetch_claims(
+    client: &mut SpiffeWorkloadApiClient<tonic::transport::Channel>,
+    audience: &str,
+) -> serde_json::Value {
+    let resp = client
+        .fetch_jwtsvid(JwtsvidRequest {
+            audience: vec![audience.to_owned()],
+            spiffe_id: String::new(),
+        })
+        .await
+        .expect("FetchJWTSVID RPC failed");
+    let svids = resp.into_inner().svids;
+    let parts: Vec<&str> = svids[0].svid.splitn(3, '.').collect();
+    let claims_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(parts[1])
+        .expect("base64url decode of JWT claims segment failed");
+    serde_json::from_slice(&claims_bytes).expect("claims segment is not JSON")
+}
+
+// ── persona-ogiv: one observation, aged, put to two bounds ────────────────────
+
+/// Fetch one SVID for `audience`, returning the RPC result unchanged.
+async fn try_fetch(
+    client: &mut SpiffeWorkloadApiClient<tonic::transport::Channel>,
+    audience: &str,
+) -> Result<tonic::Response<persona_grpc::workload::JwtsvidResponse>, tonic::Status> {
+    client
+        .fetch_jwtsvid(JwtsvidRequest {
+            audience: vec![audience.to_owned()],
+            spiffe_id: String::new(),
+        })
+        .await
+}
+
+// The same observation, aged past a tight bound and still inside a loose one.
+// The two requests are served from one cached observation, so the only variable
+// between them is the bound the caller named.
+//
+// The sleep is real elapsed time and is the point: there is no other way to age
+// a genuine observation without a clock seam or a production constructor added
+// for a test. Every other freshness test in this workspace is arithmetic over
+// fixed constants (persona-attestors/src/claim.rs).
+#[tokio::test]
+async fn one_aged_observation_fails_a_tight_bound_and_passes_a_loose_one() {
+    let socket_path = tmp_socket_path();
+    let (mut client, handle) =
+        start_daemon_with(&socket_path, Arc::new(CachedProofAttestor::new())).await;
+
+    // Age the cached observation well past the tight bound of 1 second.
+    sleep(Duration::from_millis(2_200)).await;
+
+    let refused = try_fetch(&mut client, "https://bank.example?persona_max_age=1")
+        .await
+        .expect_err("an observation older than the bound must not be served");
+    assert_eq!(refused.code(), tonic::Code::Unauthenticated);
+    assert!(
+        refused.message().contains("persona_max_age"),
+        "must deny at the freshness gate, got: {}",
+        refused.message()
+    );
+
+    let served = try_fetch(&mut client, "https://bank.example?persona_max_age=3600")
+        .await
+        .expect("the same observation is well inside a one-hour bound");
+    assert_eq!(served.into_inner().svids.len(), 1);
+
+    handle.abort();
+    let _ = std::fs::remove_file(&socket_path);
+}
+
+// Re-requesting does not move the presence window. Under the old code both
+// published values were `SystemTime::now()` at request-handling time, so the
+// second request would report a window starting a second later and ending a
+// second later — presence held open indefinitely by anyone willing to ask again.
+#[tokio::test]
+async fn re_requesting_does_not_extend_the_presence_window() {
+    let socket_path = tmp_socket_path();
+    let (mut client, handle) =
+        start_daemon_with(&socket_path, Arc::new(CachedProofAttestor::new())).await;
+
+    let first = fetch_claims(&mut client, AUDIENCE).await;
+    sleep(Duration::from_millis(1_500)).await;
+    let second = fetch_claims(&mut client, AUDIENCE).await;
+
+    let window = |c: &serde_json::Value| {
+        (
+            c["persona"]["presence"]["attested_at"]
+                .as_u64()
+                .expect("attested_at must be whole Unix seconds"),
+            c["persona"]["presence"]["present_until"]
+                .as_u64()
+                .expect("present_until must be whole Unix seconds"),
+        )
+    };
+    let (a1, u1) = window(&first);
+    let (a2, u2) = window(&second);
+
+    assert_eq!(a1, a2, "re-requesting must not re-date the observation");
+    assert_eq!(u1, u2, "re-requesting must not extend the presence window");
+    assert_eq!(u1, a1 + 300, "the window is the observation plus the TTL");
+
+    // The token around it did move on, which is what makes the equality above
+    // evidence rather than a tautology: the clock advanced, the observation did
+    // not. This is also the first time a consumer can see present_until < exp.
+    let iat1 = first["iat"].as_u64().expect("iat");
+    let iat2 = second["iat"].as_u64().expect("iat");
+    assert!(
+        iat2 > iat1,
+        "the request clock must have advanced across the two calls: {iat1} then {iat2}"
+    );
+
+    handle.abort();
+    let _ = std::fs::remove_file(&socket_path);
 }

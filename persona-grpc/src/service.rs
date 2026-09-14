@@ -1,5 +1,6 @@
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tonic::{Request, Response, Status};
 
@@ -33,6 +34,24 @@ impl WorkloadApiService {
         }
     }
 }
+
+/// How long a presence observation is honoured before it asserts nothing.
+///
+/// Fixed, daemon-wide, and not extendable by anything a caller does — SPEC-HIA
+/// "a fixed TTL from the last hardware attestation, not extended by
+/// keyboard/mouse activity".
+///
+/// Deliberately NOT the same quantity as the JWT `exp` in
+/// `persona-core/src/signer.rs`, which bounds how long a credential may be
+/// replayed. The two are equal today by coincidence and must not be folded into
+/// one constant; after persona-ogiv they diverge for the first time, and a
+/// consumer will see `present_until < exp` for an aged observation.
+///
+/// ponytail: one daemon-wide TTL | ceiling: not per-attestor and not
+/// configurable, so a source that knows its own hardware TTL is shorter cannot
+/// say so | upgrade path: `Attestor::presence_ttl()`, consulted where the
+/// evidence is produced.
+const PRESENCE_TTL: Duration = Duration::from_secs(300);
 
 type BoxStream<T> = Pin<Box<dyn tokio_stream::Stream<Item = Result<T, Status>> + Send + 'static>>;
 
@@ -181,6 +200,13 @@ impl SpiffeWorkloadApi for WorkloadApiService {
             .iter()
             .fold(PresenceLevel::None, |acc, e| acc.max(e.require_presence));
 
+        // The tightest bound any audience names. `min` is commutative, so the
+        // outcome cannot depend on argument order, and an audience naming no
+        // bound contributes nothing — so no audience an attacker adds, in any
+        // position, can loosen a bound another audience named. Mirror image of
+        // the `max` fold over require_presence.
+        let max_age = exts.iter().filter_map(|e| e.max_age).min();
+
         let challenge = new_challenge()?;
 
         // Discover candidates, then ask each attestor to prove one. Assurance
@@ -230,32 +256,92 @@ impl SpiffeWorkloadApi for WorkloadApiService {
             Status::unauthenticated(reason)
         })?;
 
+        // ponytail: no clock seam. Unit tests pass `now` explicitly to
+        //   Claim::age_at, so the fold and the age arithmetic are exercised
+        //   against fixed constants. The end-to-end tests cannot do that — the
+        //   clock is read here, inside the RPC — so they hold one observation
+        //   and wait for it to genuinely age, which costs a few seconds of
+        //   wall time in persona-grpc/tests/e2e.rs.
+        //   | ceiling: those waits are real sleeps, so the suite is that much
+        //   slower and is sensitive to a heavily loaded machine; and nothing
+        //   tests an actual NTP step or a suspend/resume
+        //   | upgrade path: a `now: fn() -> SystemTime` field on
+        //   WorkloadApiService defaulting to SystemTime::now, which would let
+        //   those tests move the clock instead of waiting. Not worth a field on
+        //   a production type until the waits actually hurt.
+        let now = SystemTime::now();
+        let age = claim.age_at(now);
+
+        // The caller's bound, refused outright rather than decayed, so a named
+        // parameter is never silently a no-op. Strictly younger, so
+        // `persona_max_age=0` is a deterministic refusal with no special case
+        // for zero. An unmeasurable age (`None`) satisfies no bound.
+        if let Some(max_age) = max_age {
+            if !age.is_some_and(|age| age < max_age) {
+                // The measured age is not in the reason: it is a per-human value
+                // and this string goes to the consumer. The bound is the
+                // caller's own parameter, so naming it tells a colluder nothing.
+                let reason = "presence observation is older than the requested persona_max_age";
+                tracing::info!(event = "svid_denied", reason);
+                return Err(Status::unauthenticated(reason));
+            }
+        }
+
+        // The daemon's own TTL, applied as decay rather than as a second refusal
+        // path: past the TTL the claim asserts no presence, and the gate below —
+        // and the `Ord` on PresenceLevel it rests on — keeps doing all the work.
+        let presence = if age.is_some_and(|age| age < PRESENCE_TTL) {
+            claim.presence()
+        } else {
+            PresenceLevel::None
+        };
+
         // Presence gate. `require_presence` is the strictest level named by any
         // audience, so satisfying it satisfies every audience the token names.
-        if require_presence > claim.presence() {
+        if require_presence > presence {
             let reason = format!(
-                "required presence level not satisfied (need {require_presence:?}, have {:?})",
-                claim.presence()
+                "required presence level not satisfied (need {require_presence:?}, have {presence:?})"
             );
             tracing::info!(event = "svid_denied", reason = %reason);
             return Err(Status::unauthenticated(reason));
         }
 
-        // ponytail: timestamps as Unix seconds | upgrade to RFC 3339 strings when chrono added
-        let now_secs = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
+        // Both published instants are whole Unix seconds and both are functions
+        // of the observation, not of the clock at request time, so re-requesting
+        // cannot move them. Truncation is the fail-closed direction: attested_at
+        // reads up to a second older than it was and present_until up to a
+        // second shorter, never the reverse. A pre-epoch observation publishes
+        // as 0, which is honestly "maximally old" — unlike the
+        // `unwrap_or_default()` this replaces, where zero meant "now".
+        //
+        // persona-5s4b.118, accepted and bounded: two consumers served from one
+        // observation receive byte-identical values here, so this is a join key
+        // across their distinct pseudonyms, stable for the whole presence
+        // window. It is published anyway. Withholding it leaves a consumer
+        // unable to judge freshness for itself and forced to trust a TTL it
+        // cannot check, which is hearsay one layer down. Whole seconds is the
+        // floor: finer resolution buys a JWT consumer nothing and multiplies the
+        // linkage.
+        //
+        // ponytail: Unix seconds rather than the RFC 3339 strings the spec
+        // example showed | ceiling: no date formatting exists in the workspace |
+        // upgrade path: emit `persona_core::PresenceInfo` once a date crate is
+        // justified by something other than cosmetics.
+        let attested_at = claim
+            .attested_at()
+            .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        let present_until = now_secs + 300; // 5 min presence TTL
+        let present_until = attested_at.saturating_add(PRESENCE_TTL.as_secs());
 
         let persona_ext = serde_json::json!({
             "root_trust_domain": claim.spiffe_id().trust_domain.to_string(),
             "sources": [claim.source()],
             "identity_assurance": claim.assurance().to_string(),
             "presence": {
-                "present": claim.presence() != PresenceLevel::None,
+                "present": presence != PresenceLevel::None,
                 "attested_by": claim.source(),
-                "attested_at": now_secs,
+                "attested_at": attested_at,
                 "present_until": present_until,
             },
             "auth_methods": [claim.source()],
@@ -291,7 +377,7 @@ impl SpiffeWorkloadApi for WorkloadApiService {
             spiffe_id = %spiffe_id_str,
             source = %claim.source(),
             assurance = %claim.assurance(),
-            presence = ?claim.presence(),
+            presence = ?presence,
             audiences = ?audiences,
         );
 

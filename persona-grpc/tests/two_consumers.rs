@@ -15,6 +15,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use base64::Engine as _;
 use hyper_util::rt::TokioIo;
 use tokio::net::UnixStream;
 use tokio::time::sleep;
@@ -60,7 +61,10 @@ impl Attestor for ProvingAttestor {
     }
 }
 
-/// Connect to `sock`, fetch one SVID, write its SPIFFE ID to `out`.
+/// Connect to `sock`, fetch one SVID, write its raw JWT to `out`.
+///
+/// The whole token, not just the SPIFFE ID: persona-5s4b.118 is about what the
+/// claim block around the pseudonym reveals, so the parent needs to read it.
 async fn run_as_consumer(sock: String, out: String) {
     let channel = Endpoint::try_from("http://[::]:50051")
         .unwrap()
@@ -79,8 +83,17 @@ async fn run_as_consumer(sock: String, out: String) {
         .await
         .expect("child FetchJWTSVID failed");
 
-    let id = resp.into_inner().svids[0].spiffe_id.clone();
-    std::fs::write(out, id).expect("child could not write its result");
+    let token = resp.into_inner().svids[0].svid.clone();
+    std::fs::write(out, token).expect("child could not write its result");
+}
+
+/// The decoded claims segment of a compact JWS.
+fn claims_of(token: &str) -> serde_json::Value {
+    let parts: Vec<&str> = token.splitn(3, '.').collect();
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(parts[1])
+        .expect("base64url decode of JWT claims segment failed");
+    serde_json::from_slice(&bytes).expect("claims segment is not JSON")
 }
 
 /// A copy of this test binary at `dest`, with `tag` appended so its hash differs.
@@ -94,7 +107,7 @@ fn distinct_copy(dest: &std::path::Path, tag: &[u8]) {
     f.write_all(tag).expect("append tag");
 }
 
-/// Run `exe` as a consumer against `sock` and return the SPIFFE ID it received.
+/// Run `exe` as a consumer against `sock` and return the raw JWT it received.
 ///
 /// `tokio::process`, not `std::process`: the daemon under test is a task on this
 /// same runtime, so blocking the thread on a child that is trying to connect to
@@ -154,9 +167,13 @@ async fn two_consumers_get_two_pseudonyms() {
     distinct_copy(&app_b, b"\n# persona test consumer B\n");
 
     let out = dir.join("result");
-    let a1 = consumer_run(&app_a, &sock_str, &out).await;
-    let b = consumer_run(&app_b, &sock_str, &out).await;
-    let a2 = consumer_run(&app_a, &sock_str, &out).await;
+    let tok_a1 = consumer_run(&app_a, &sock_str, &out).await;
+    let tok_b = consumer_run(&app_b, &sock_str, &out).await;
+    let tok_a2 = consumer_run(&app_a, &sock_str, &out).await;
+
+    let (ca1, cb, ca2) = (claims_of(&tok_a1), claims_of(&tok_b), claims_of(&tok_a2));
+    let id_of = |c: &serde_json::Value| c["sub"].as_str().expect("sub").to_owned();
+    let (a1, b, a2) = (id_of(&ca1), id_of(&cb), id_of(&ca2));
 
     let prefix = "spiffe://ssh.local/pseudonym/";
     assert!(a1.starts_with(prefix), "A got {a1}");
@@ -167,6 +184,37 @@ async fn two_consumers_get_two_pseudonyms() {
         a2, a1,
         "one application must keep its pseudonym across runs"
     );
+
+    // persona-5s4b.118, accepted and bounded, pinned here so nobody later
+    // "fixes" it silently and nobody later re-argues it. The pseudonyms differ,
+    // but on a single-identity daemon these three fields are constants shared by
+    // every consumer, so a colluding pair can already link on them alone.
+    for field in ["root_trust_domain", "sources", "auth_methods"] {
+        assert_eq!(
+            ca1["persona"][field], cb["persona"][field],
+            "{field} is identical across consumers and is the unconditional join key"
+        );
+    }
+
+    // `attested_at` is published on purpose: withholding it leaves a consumer
+    // unable to judge freshness for itself. It is a whole-second value derived
+    // from the observation, and the window is derived from it in turn — so
+    // neither is the request clock, and two consumers served from ONE
+    // observation would receive byte-identical values. That case is not
+    // reachable end to end today, because every request re-runs prove() and
+    // makes its own observation; a second-granularity equality assertion here
+    // would be a coin flip, so the equality is pinned at unit level in
+    // persona-attestors/src/claim.rs instead.
+    for c in [&ca1, &cb, &ca2] {
+        let attested_at = c["persona"]["presence"]["attested_at"]
+            .as_u64()
+            .expect("attested_at must be whole Unix seconds");
+        let present_until = c["persona"]["presence"]["present_until"]
+            .as_u64()
+            .expect("present_until must be whole Unix seconds");
+        assert_eq!(present_until, attested_at + 300);
+        assert!(attested_at <= c["iat"].as_u64().expect("iat"));
+    }
 
     handle.abort();
     let _ = std::fs::remove_dir_all(&dir);
