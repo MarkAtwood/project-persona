@@ -1,0 +1,28 @@
+{
+  "id": "persona-3tly.1",
+  "title": "Presence is hearsay: the authenticator's assertion never reaches the consumer",
+  "description": "The intended chain is: a FIDO2 key signs a challenge, personad verifies it, personad then writes \"presence\": \"hardware\" into a JWT signed with its OWN key. The SignedAssertion never leaves the daemon — grep persona-grpc/src/service.rs and the only mention is a comment.\n\nSo the consumer is trusting personad's word, not the authenticator's proof. Presence becomes the one claim a consumer cannot independently check. Identity can at least be cross-referenced against an IdP; presence has no second source.\n\nContrast WebAuthn, which hands the relying party the authenticator's actual signature together with the UP and UV flags, and the RP verifies it itself. persona strips that and substitutes an assertion.\n\nConsequences: compromise personad and presence is whatever the attacker says, with no artifact anyone can audit afterwards. It also compounds .60 and .82 — the trust bundle ships an empty JWKS and ValidateJWTSVID checks against the local ephemeral key, so a consumer cannot even verify personad's own signature, let alone the authenticator's.\n\nFix direction: carry the authenticator's assertion through to the consumer so the chain is end to end, or state plainly in the spec that presence is an assertion by the daemon and scope the trust model accordingly. The first is the honest engineering answer; the second is the honest documentation answer if the first is not wanted.",
+  "status": "open",
+  "priority": 1,
+  "issue_type": "bug",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-14T05:44:13.039955533Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-14T05:44:13.039955533Z",
+  "labels": [
+    "presence",
+    "architecture",
+    "crypto",
+    "design"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-3tly.1",
+      "depends_on_id": "persona-3tly",
+      "type": "parent-child",
+      "created_at": "2026-09-14T05:44:13.072291584Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

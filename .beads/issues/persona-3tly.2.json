@@ -1,0 +1,27 @@
+{
+  "id": "persona-3tly.2",
+  "title": "PresenceLevel collapses user presence and user verification",
+  "description": "FIDO2 distinguishes two flags that mean very different things. UP, user presence, is a capacitive tap: it proves a finger touched the key, not whose. UV, user verification, is a PIN or an on-device biometric: it proves the enrolled user, to the authenticator's satisfaction.\n\nPresenceLevel::Hardware collapses both into one value, and the enum has no way to express the difference. So a token saying hardware presence may mean a PIN was entered, or may mean anyone standing at the desk brushed the key. Those should not be the same claim to a consumer deciding whether to authorise sudo.\n\nA bare tap is also satisfiable by a mechanical device — servo-style YubiKey touch automators exist precisely to defeat touch requirements — and by anyone who happens to be at the machine.\n\nThis is the same shape of defect as persona-okek: a level asserted more strongly than the evidence supports. The difference is that the fix is in the vocabulary rather than in the construction — PresenceLevel needs to distinguish the two, and Evidence::HardwarePresence needs to carry which flag was set.\n\nNote SPEC-HIA's presence table describes hardware as 'FIDO2 touch, Windows Hello, TouchID, PIV PIN', which silently mixes a bare tap (FIDO2 touch) with verified interactions (PIV PIN, Windows Hello). The spec has the same conflation.",
+  "status": "open",
+  "priority": 1,
+  "issue_type": "bug",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-14T05:44:13.126314214Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-14T05:44:13.126314214Z",
+  "labels": [
+    "presence",
+    "fido2",
+    "design"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-3tly.2",
+      "depends_on_id": "persona-3tly",
+      "type": "parent-child",
+      "created_at": "2026-09-14T05:44:13.15279365Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

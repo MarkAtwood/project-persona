@@ -1,0 +1,4 @@
+{"id":"01a09e89-3877-7855-ab53-6a3209fe2a2e","issue_id":"persona-5s4b.118","event_type":"created","actor":"agent","old_value":"","new_value":"","created_at":"2026-09-14T06:09:48.151547323Z"}
+{"id":"01a09e89-387c-78e9-ab17-5fa36310d1fe","issue_id":"persona-5s4b.118","event_type":"label_added","actor":"agent","comment":"Added label: privacy","created_at":"2026-09-14T06:09:48.15658466Z"}
+{"id":"01a09e89-3881-7545-97af-dfaaaf40f691","issue_id":"persona-5s4b.118","event_type":"label_added","actor":"agent","comment":"Added label: pseudonymity","created_at":"2026-09-14T06:09:48.161346849Z"}
+{"id":"01a09e89-3886-7254-951f-191ad86300e7","issue_id":"persona-5s4b.118","event_type":"label_added","actor":"agent","comment":"Added label: review","created_at":"2026-09-14T06:09:48.166153813Z"}

@@ -1,0 +1,16 @@
+{
+  "id": "persona-3tly",
+  "title": "The presence model claims more than it can establish",
+  "description": "persona's distinctive claim is answering 'is a human present right now'. The daemon cannot currently establish that, and parts of the sentence are not establishable by any implementation. Grouping the tractable defects and the honest limits so they are decided together rather than discovered one at a time.\n\nWhat the daemon could defensibly say today: 'at time T, an authenticator enrolled to this identity produced a signature requiring physical interaction, and personad verified it.' What README, SPEC-HIA and PRFAQ currently promise is the strong reading. The gap between those two sentences is what this epic is about.\n\nChildren cover: the assertion never reaching the consumer (hearsay), user-presence versus user-verification being collapsed into one level, the absence of any surface where a human sees what they are approving, and a spec section recording the limits that cannot be engineered away. The timestamp half is persona-ogiv, filed earlier and not duplicated here.",
+  "status": "open",
+  "priority": 1,
+  "issue_type": "epic",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-14T05:44:12.898659894Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-14T05:44:12.898659894Z",
+  "labels": [
+    "presence",
+    "design"
+  ]
+}

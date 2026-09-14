@@ -1,0 +1,28 @@
+{
+  "id": "persona-3tly.3",
+  "title": "No surface exists where a human sees what they are approving",
+  "description": "Presence is not bound to intent. A human touches the key to approve one request; a malicious local process racing them has a DIFFERENT request satisfied by the same touch. Nothing in the design shows the human what they are consenting to, so consent is to 'something', not to anything specific.\n\npersona-5s4b.116 (verify the challenge against the assertion) narrows the window — it binds a proof to a request — but it does not close this, because the human still cannot see which request they are proving. Binding without display means the daemon knows what was approved and the person does not.\n\nToday this is unreachable: no attestor implements prove(), so nothing prompts at all. It becomes live with the first real prove(), which makes it a prerequisite for that work rather than a follow-up to it.\n\nThis is a design gap rather than a bug — there is no prompt, no consent text and no approval UI anywhere in the repo, and none is specified. Decide deliberately: either a consent surface is in scope, in which case it needs designing before the first prove(), or presence explicitly means 'a human interacted with an authenticator', not 'a human approved this request', and the spec says so.\n\nRelated, on the browser path: persona-nmh forwards requests from an extension over stdio. A web page driving an extension driving nmh is several steps removed from anything the human sees.",
+  "status": "open",
+  "priority": 1,
+  "issue_type": "feature",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-14T05:44:13.206250647Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-14T05:44:13.206250647Z",
+  "labels": [
+    "presence",
+    "consent",
+    "ux",
+    "design"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-3tly.3",
+      "depends_on_id": "persona-3tly",
+      "type": "parent-child",
+      "created_at": "2026-09-14T05:44:13.237645778Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}
