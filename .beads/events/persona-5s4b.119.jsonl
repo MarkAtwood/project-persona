@@ -1,0 +1,5 @@
+{"id":"01a0a1d6-c6c5-73a9-bb38-706bc052e651","issue_id":"persona-5s4b.119","event_type":"created","actor":"agent","old_value":"","new_value":"","created_at":"2026-09-14T21:33:22.501240744Z"}
+{"id":"01a0a1d6-c6cb-702d-ab99-38f9d8243d5c","issue_id":"persona-5s4b.119","event_type":"label_added","actor":"agent","comment":"Added label: attestors","created_at":"2026-09-14T21:33:22.507012362Z"}
+{"id":"01a0a1d6-c6d2-7bba-b923-9570f5d38833","issue_id":"persona-5s4b.119","event_type":"label_added","actor":"agent","comment":"Added label: tailscale","created_at":"2026-09-14T21:33:22.514769605Z"}
+{"id":"01a0a1d6-c6d9-70dc-94ef-0fb1618d0ea0","issue_id":"persona-5s4b.119","event_type":"label_added","actor":"agent","comment":"Added label: review","created_at":"2026-09-14T21:33:22.521057659Z"}
+{"id":"01a0a1d9-bb97-7b00-8297-4bb922ceacbb","issue_id":"persona-5s4b.119","event_type":"closed","actor":"agent","old_value":"","new_value":"Fixed in the commit above: chunked body decoder plus the Self.UserID -\u003e User[id].LoginName lookup. Tailscale now enumerates cleanly against a live tailscaled 1.102.2.","created_at":"2026-09-14T21:36:36.247722861Z"}

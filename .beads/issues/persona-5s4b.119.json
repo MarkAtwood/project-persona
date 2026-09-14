@@ -1,0 +1,29 @@
+{
+  "id": "persona-5s4b.119",
+  "title": "Tailscale attestor cannot parse a chunked LocalAPI response",
+  "description": "The Tailscale attestor cannot read a live tailscaled. Observed by running personad on the developer box with Tailscale up:\n\n  WARN persona_grpc::service: attestor enumerate failed name=\"tailscale\"\n       err=source unavailable: trailing characters at line 1 column 2\n\nCAUSE. persona-attestors/src/tailscale.rs fetch_status() finds the end of the HTTP headers, then hands everything after it to serde_json. tailscaled answers with Transfer-Encoding: chunked, so the bytes after the header block are not JSON, they are a chunked body:\n\n  Transfer-Encoding: chunked\n  \u003cblank\u003e\n  6cfb\n  {...\n\nserde_json reads \"6\" as a number, meets \"c\", and reports trailing characters at column 2. Verified against the real socket with nc: tailscaled 1.102.2 sends Content-Type: application/json and Transfer-Encoding: chunked together, and does so even though the request sets Connection: close.\n\nWHY NO TEST CAUGHT IT. Nothing in the suite drives a live tailscaled, and the unit tests feed fetch_status a hand-written unchunked response. The bug lives in the gap between the fixture and the wire.\n\nIMPACT TODAY. Tailscale is the only attestor on this machine that finds a source to talk to at all. It is also the only one that could return a Candidate without new code. So this single parse error is the difference between enumerate() finding one identity and finding none. It does not change whether a credential is issued, because no attestor implements prove().\n\nFIX. Either decode the chunked body, which is about fifteen lines, or take the upgrade path already named in the file's ponytail comment: \"upgrade to hyper with UDS connector when full LocalAPI coverage needed\". The de-chunker is the smaller change and keeps hyper out of persona-attestors; the hyper route earns its keep only when more of the LocalAPI is needed. Whichever is chosen, a test must feed fetch_status a chunked body, since that is what the server actually sends.",
+  "status": "closed",
+  "priority": 1,
+  "issue_type": "bug",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-14T21:33:22.493112755Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-14T21:36:36.241203167Z",
+  "closed_at": "2026-09-14T21:36:36.241203167Z",
+  "close_reason": "Fixed in the commit above: chunked body decoder plus the Self.UserID -\u003e User[id].LoginName lookup. Tailscale now enumerates cleanly against a live tailscaled 1.102.2.",
+  "labels": [
+    "attestors",
+    "tailscale",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.119",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-14T21:33:22.535346867Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

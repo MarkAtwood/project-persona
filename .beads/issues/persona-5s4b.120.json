@@ -1,0 +1,27 @@
+{
+  "id": "persona-5s4b.120",
+  "title": "GPG attestor offers every public key in the keyring as the user's identity",
+  "description": "The GPG attestor enumerates the PUBLIC keyring and offers every key in it as an identity for the user.\n\npersona-attestors/src/gpg.rs runs `gpg --list-keys --with-colons`. That lists public keys: everyone whose key you have ever imported. Observed on the developer box, `persona enumerate` returned, among others:\n\n  gpg | spiffe://ssh.local/gpg/1725abc2 | Freenode Staff (group key shared by senior staff) \u003cstaff@freenode.net\u003e\n  gpg | spiffe://ssh.local/gpg/d12e351d | Fedora Legacy \u003csecnotice@fedoralegacy.org\u003e\n  gpg | spiffe://ssh.local/gpg/0498e76a | Charlie Stross \u003ccharlie@antipope.org\u003e\n\nNone of those is the operator. Holding somebody's public key says you can verify their signatures; it says nothing about who you are.\n\nTHE CORRECT COMMAND IS `gpg --list-secret-keys`. Possession of a private key is what ties a GPG identity to the person at the keyboard. On the box where this was observed the difference is large: 17 secret keys against a public keyring holding many more.\n\nSEVERITY. Today this cannot mint a credential, because gpg.rs implements no prove() and Claim::derive refuses to produce a Claim without evidence, so these are Candidates that go nowhere. It becomes serious the moment any GPG prove() lands, because the candidate list is what prove() is asked to prove, and the daemon would be offering to attest identities the user does not hold. It also already pollutes `persona enumerate`, which a user reads to understand what the daemon can see.\n\nRELATED BUT DISTINCT. persona-5s4b.79 says the same file takes the last subkey fingerprint instead of the primary key's. That is about which fingerprint identifies a key the user does hold; this is about keys the user does not hold at all. Fixing .79 does not fix this, and both live in parse_gpg_colons.\n\nFound by running the daemon, not by the test suite: the gpg fixtures are hand-written colon records, so they contain exactly the keys the test author intended and never a stranger's.",
+  "status": "open",
+  "priority": 1,
+  "issue_type": "bug",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-14T21:36:36.13958307Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-14T21:36:36.13958307Z",
+  "labels": [
+    "attestors",
+    "gpg",
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.120",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-14T21:36:36.181898929Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}
