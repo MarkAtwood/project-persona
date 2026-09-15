@@ -31,10 +31,13 @@ impl Default for DidKeyAttestor {
     }
 }
 
-/// Returns the first 8 bytes of SHA-256(did) as a 16-char hex string.
-fn did_short_id(did: &str) -> String {
+/// Returns SHA-256(did) as a 64-char hex string.
+///
+/// The whole digest: this is the authorization subject, and a truncation to 8
+/// bytes puts a birthday collision at 2^32.
+fn did_id(did: &str) -> String {
     let hash = Sha256::digest(did.as_bytes());
-    hash[..8].iter().map(|b| format!("{b:02x}")).collect()
+    hash.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 /// Parses a whitespace-separated list of DIDs, returning only valid did:key URIs.
@@ -63,11 +66,11 @@ impl Attestor for DidKeyAttestor {
         let candidates = parse_did_keys()
             .into_iter()
             .map(|did| {
-                let short = did_short_id(&did);
+                let id = did_id(&did);
                 Candidate::new(
                     "did:key",
                     SelfAssertedDomain::SshLocal,
-                    format!("did/{short}"),
+                    format!("did/{id}"),
                     did.clone(),
                 )
             })
@@ -109,17 +112,23 @@ mod tests {
     }
 
     #[test]
-    fn did_short_id_is_stable() {
-        let a = did_short_id("did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK");
-        let b = did_short_id("did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK");
+    fn did_id_is_stable() {
+        let a = did_id("did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK");
+        let b = did_id("did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK");
         assert_eq!(a, b);
-        assert_eq!(a.len(), 16); // 8 bytes = 16 hex chars
+        assert_eq!(a.len(), 64); // 32 bytes = 64 hex chars
+                                 // Oracle: printf '%s' "<did>" | sha256sum, cross-checked against
+                                 // openssl dgst -sha256.
+        assert_eq!(
+            a,
+            "8551f404ecfe6403c2fe960ab267cd8c74a9a0701628ce24b1753946f2ebb16e"
+        );
     }
 
     #[test]
-    fn did_short_id_differs_for_different_dids() {
-        let a = did_short_id("did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK");
-        let b = did_short_id("did:key:z6MkiTBz1234");
+    fn did_id_differs_for_different_dids() {
+        let a = did_id("did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK");
+        let b = did_id("did:key:z6MkiTBz1234");
         assert_ne!(a, b);
     }
 }
