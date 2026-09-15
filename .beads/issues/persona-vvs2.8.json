@@ -1,0 +1,35 @@
+{
+  "id": "persona-vvs2.8",
+  "title": "Signal handling: SIGTERM/SIGINT to a service control handler",
+  "description": "hired/src/main.rs:9 imports tokio::signal::unix and :52-53 install SIGTERM and SIGINT handlers for graceful shutdown. Neither exists on Windows.\n\nTwo cases and they are not the same:\n  - run interactively: tokio::signal::ctrl_c covers it, a near-direct swap.\n  - run as a service: Windows delivers stop requests through a SERVICE CONTROL\n    HANDLER registered with the SCM, not as a signal. Ignoring that means the\n    service cannot be stopped cleanly and the SCM kills it instead.\n\nWhich matters for the same reason as persona-vvs2.7: an unclean exit leaves the ephemeral signing key and pseudonym_ikm behind with no orderly handover, and consumers discover it as tokens signed by a kid the JWKS no longer carries.\n\nDepends on the service lifecycle question in persona-vvs2.9 -- whether hired runs as a Windows service at all is that bead's decision, and this one is only interesting if the answer is yes.",
+  "acceptance_criteria": "Graceful shutdown on Windows both interactively and under the SCM, or a recorded decision that only interactive is supported and why.",
+  "status": "open",
+  "priority": 3,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T21:01:31.023648043Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T21:02:42.917694454Z",
+  "labels": [
+    "windows",
+    "portability"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-vvs2.8",
+      "depends_on_id": "persona-vvs2",
+      "type": "parent-child",
+      "created_at": "2026-09-15T21:01:31.050679183Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    },
+    {
+      "issue_id": "persona-vvs2.8",
+      "depends_on_id": "persona-vvs2.9",
+      "type": "blocks",
+      "created_at": "2026-09-15T21:02:58.493905827Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

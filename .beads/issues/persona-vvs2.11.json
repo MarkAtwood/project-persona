@@ -1,0 +1,36 @@
+{
+  "id": "persona-vvs2.11",
+  "title": "tailscale and ssh attestors assume Unix sockets",
+  "description": "Two attestor modules are Unix-only in their transport even though the services they talk to exist on Windows.\n\nhire-attestors/src/tailscale.rs hardcodes the tailscaled socket path -- which is also why it never activates on macOS, recorded in the platform-docs-describe-the-design memory. On Windows the LocalAPI is not at a Unix socket path at all.\n\nhire-attestors/src/ssh.rs connects to SSH_AUTH_SOCK as a Unix socket (5 Unix-specific sites). Windows OpenSSH exposes the agent as a NAMED PIPE, so the variable's contents are not a socket path there. This is the attestor that currently does the only real cryptographic prove() in the tree, so it is the one most worth having work.\n\nBoth become tractable once persona-vvs2.3 gives a transport abstraction, and both are then small. Note that the macOS tailscale path is broken for a related-but-different reason and fixing it does not require any of this -- worth doing separately rather than waiting for Windows.",
+  "acceptance_criteria": "Both attestors reach their services on Windows through the transport abstraction; the macOS tailscale path is tracked separately rather than bundled.",
+  "status": "open",
+  "priority": 3,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T21:01:56.840525243Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T21:02:42.983345348Z",
+  "labels": [
+    "windows",
+    "attestor",
+    "portability"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-vvs2.11",
+      "depends_on_id": "persona-vvs2",
+      "type": "parent-child",
+      "created_at": "2026-09-15T21:01:56.867889003Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    },
+    {
+      "issue_id": "persona-vvs2.11",
+      "depends_on_id": "persona-vvs2.3",
+      "type": "blocks",
+      "created_at": "2026-09-15T21:02:58.694496937Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

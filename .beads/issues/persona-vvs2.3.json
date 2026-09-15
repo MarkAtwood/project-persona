@@ -1,0 +1,28 @@
+{
+  "id": "persona-vvs2.3",
+  "title": "Abstract the transport over UnixListener/UnixStream",
+  "description": "THE GATE. The epic measures 21 sites, nearly all in hire-grpc/src/server.rs, that name tokio::net::UnixListener or UnixStream concretely. The socket path, the accept loop and consumer attestation all bottom out in those types, so nothing else in this epic can be attempted first.\n\nhire-grpc/src/socket.rs already carries the ponytail comment naming this as the upgrade path: 'unix domain sockets only | ceiling: Windows needs a named pipe, which this function cannot express | upgrade path: abstract the transport over UnixListener/UnixStream first, then return a platform-tagged endpoint instead of a PathBuf'.\n\nSCOPE IS THE ABSTRACTION ONLY. No named pipe code in this bead, no Windows target. The deliverable is that hire-grpc names a trait rather than a concrete type, with the existing Unix implementation behind it and the test suite unchanged and green. A second implementation is persona-vvs2.4's job.\n\nTWO THINGS THE ABSTRACTION MUST CARRY, or it will need redoing:\n  - the PEER IDENTITY of an accepted connection, not just the byte stream.\n    consumer_attest.rs reads SO_PEERCRED off the Unix socket; a named pipe\n    answers GetNamedPipeClientProcessId instead. If the trait yields only an\n    AsyncRead/AsyncWrite, attestation cannot be implemented on either side of\n    it. Note the current fail-shut default at hire-grpc/src/service.rs:238-247\n    -- a transport that does not attest DENIES -- and keep that property: a\n    new transport added later must fail shut, not open.\n  - the ENDPOINT, as a platform-tagged value rather than a PathBuf. SPIFFE\n    already has the convention: an npipe: endpoint address on Windows against\n    unix: elsewhere.\n\nAlso here: the single #[cfg(not(unix))] in the whole workspace lives at hire-grpc/src/server.rs:223, and the lock lifetime comment at server.rs:17 ('_lock must stay alive for as long as this server serves') is a flock property that the abstraction must not silently drop -- see persona-vvs2.7.",
+  "acceptance_criteria": "hire-grpc names a transport trait, not a concrete Unix type; peer identity and endpoint are expressible through it; the Unix implementation is unchanged in behaviour and the suite is green; no Windows code.",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T21:01:02.944338985Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T21:02:42.653031709Z",
+  "labels": [
+    "windows",
+    "transport",
+    "portability"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-vvs2.3",
+      "depends_on_id": "persona-vvs2",
+      "type": "parent-child",
+      "created_at": "2026-09-15T21:01:02.973551544Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

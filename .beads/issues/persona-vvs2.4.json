@@ -1,0 +1,36 @@
+{
+  "id": "persona-vvs2.4",
+  "title": "Named pipe listener and stream",
+  "description": "The second transport implementation, once persona-vvs2.3 makes one possible.\n\nEndpoint: a named pipe under \\\\.\\pipe\\. The epic notes the previously specified name was corrected during the 2026-09-15 de-specification -- take the corrected form from the epic notes rather than from memory, and follow the SPIFFE npipe: endpoint address convention so a stock SPIFFE client can find it the way it would on any other Windows host.\n\nWindows named pipe semantics differ from Unix sockets in ways that matter here and should be decided rather than discovered:\n  - there is no filesystem path to unlink, so the stale-socket cleanup in\n    hire-grpc/src/server.rs has no analogue. See persona-vvs2.7.\n  - a pipe server pre-creates instances and each client connection consumes\n    one; the accept loop shape is genuinely different from UnixListener.\n  - the pipe's DACL is the access control. On Unix the socket's directory\n    permissions restrict who may connect; the Windows equivalent is an\n    explicit security descriptor, and getting it wrong is how a local\n    workload API becomes reachable by any user on the machine.\n\nThat last point deserves the most care in this bead. It is the one place where a direct port of the Unix design is silently insecure rather than merely non-functional.",
+  "acceptance_criteria": "A named pipe transport behind the vvs2.1 trait; DACL restricts the pipe to the owning user; the endpoint follows the SPIFFE npipe: convention; the e2e suite passes over it.",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T21:01:03.037918665Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T21:02:42.7137022Z",
+  "labels": [
+    "windows",
+    "transport",
+    "portability"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-vvs2.4",
+      "depends_on_id": "persona-vvs2",
+      "type": "parent-child",
+      "created_at": "2026-09-15T21:01:03.072440787Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    },
+    {
+      "issue_id": "persona-vvs2.4",
+      "depends_on_id": "persona-vvs2.3",
+      "type": "blocks",
+      "created_at": "2026-09-15T21:02:58.224245548Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

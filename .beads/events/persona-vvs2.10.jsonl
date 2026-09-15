@@ -1,0 +1,6 @@
+{"id":"01a0a6e0-5c84-7602-a676-ff94873af8c7","issue_id":"persona-vvs2.10","event_type":"created","actor":"agent","old_value":"","new_value":"","created_at":"2026-09-15T21:01:56.740394946Z"}
+{"id":"01a0a6e0-5c88-7800-a3ee-aff83a47e3e1","issue_id":"persona-vvs2.10","event_type":"label_added","actor":"agent","comment":"Added label: windows","created_at":"2026-09-15T21:01:56.744525172Z"}
+{"id":"01a0a6e0-5c8e-7d3c-a586-2697b1e3e5c0","issue_id":"persona-vvs2.10","event_type":"label_added","actor":"agent","comment":"Added label: attestor","created_at":"2026-09-15T21:01:56.750868504Z"}
+{"id":"01a0a6e0-5c92-7ee9-bc7f-622938f3dbca","issue_id":"persona-vvs2.10","event_type":"label_added","actor":"agent","comment":"Added label: driver","created_at":"2026-09-15T21:01:56.75497806Z"}
+{"id":"01a0a6e0-5c97-7064-b2ca-315868a63137","issue_id":"persona-vvs2.10","event_type":"label_added","actor":"agent","comment":"Added label: presence","created_at":"2026-09-15T21:01:56.759026366Z"}
+{"id":"01a0a6e0-5c9b-7263-a194-fef54f18945a","issue_id":"persona-vvs2.10","event_type":"label_added","actor":"agent","comment":"Added label: portability","created_at":"2026-09-15T21:01:56.763157158Z"}

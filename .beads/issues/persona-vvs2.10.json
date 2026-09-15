@@ -1,0 +1,46 @@
+{
+  "id": "persona-vvs2.10",
+  "title": "windows-hello attestor",
+  "description": "Deliberately filed HERE rather than under persona-vmpi, the missing-sources epic, because hired does not run on Windows at all: the attestor is not the gate, the transport is. Filing it as an ordinary missing driver would have created a bead nobody can start.\n\nSPEC-HIRE specifies Windows.Security.Credentials.KeyCredentialManager, returning TPM-backed attestation that the user authenticated with Hello by PIN or biometric and when, at iaa3 with hardware presence, with presence expiring on a configurable TTL and re-challenge triggering a Hello prompt. It is marked '(not implemented)' there after commit eb72478.\n\nWorth noting what it would be, once reachable: the THIRD path to real hardware presence, alongside fido2 and secure-enclave (persona-qbnm.3 and persona-vmpi.1). It shares their constraint -- a prompting attestor, so it must declare proof cost under persona-jl4j.3 and stay out of the unprompted FetchJWTSVID path.\n\nIt also shares the persona-3tly.2 problem in its sharpest form: Hello by PIN and Hello by face are DIFFERENT FACTS, and PresenceLevel collapses user presence and user verification into one rung.\n\nBlocked on the whole transport chain. Do not start it as a standalone module in the hope that the daemon catches up.",
+  "acceptance_criteria": "A KeyCredentialManager-backed assertion over the daemon's challenge; PIN and biometric reported as distinct facts; proof cost declared; only after hired runs on Windows.",
+  "status": "open",
+  "priority": 3,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T21:01:56.736041601Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T21:01:56.736041601Z",
+  "labels": [
+    "windows",
+    "attestor",
+    "driver",
+    "presence",
+    "portability"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-vvs2.10",
+      "depends_on_id": "persona-vvs2",
+      "type": "parent-child",
+      "created_at": "2026-09-15T21:01:56.773020693Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    },
+    {
+      "issue_id": "persona-vvs2.10",
+      "depends_on_id": "persona-vvs2.4",
+      "type": "blocks",
+      "created_at": "2026-09-15T21:02:58.56672441Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    },
+    {
+      "issue_id": "persona-vvs2.10",
+      "depends_on_id": "persona-jl4j.3",
+      "type": "blocks",
+      "created_at": "2026-09-15T21:02:58.635497711Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

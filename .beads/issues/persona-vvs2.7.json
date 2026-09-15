@@ -1,0 +1,35 @@
+{
+  "id": "persona-vvs2.7",
+  "title": "Second-instance refusal has no named-pipe equivalent",
+  "description": "hire-grpc/src/server.rs:17-21 and :62-64 hold a decision recorded in the second-personad-refuses memory: a second daemon REFUSES to start when a live one holds the socket, detected by an exclusive non-blocking flock on \u003csocket\u003e.lock taken BEFORE the stale-socket unlink. The comment at server.rs:17 records the lifetime requirement -- '_lock must stay alive for as long as this server serves'.\n\nThe mechanism is chosen specifically because the KERNEL RELEASES A FLOCK WHEN ITS HOLDER DIES, which is the live-vs-dead question a socket path cannot answer. None of that transfers.\n\nWHY IT MATTERS RATHER THAN BEING A TIDY-UP: the memory records what the check prevents. Two daemons hold different ephemeral signing keys and different pseudonym_ikm, so a silent takeover re-homes every consumer to new pseudonyms and to a JWKS without the kid on its existing token -- logging only 'removed stale socket'. That failure is platform-independent even though the fix is not.\n\nNamed pipes may make part of this free: creating a pipe instance with FILE_FLAG_FIRST_PIPE_INSTANCE fails if one exists, so the bind itself can refuse. Verify that rather than assuming it, and check what happens when the holder dies -- the flock property being relied on is specifically about crash recovery, and a pipe handle closing on process death may or may not give the same guarantee. A named mutex is the other candidate.\n\nAlso note there is no path to unlink, so the stale-socket cleanup this lock guards has no analogue either (persona-vvs2.4).",
+  "acceptance_criteria": "A second hired on Windows refuses to start against a live one and starts cleanly after a crash; the mechanism verified empirically, as the flock behaviour was; the takeover failure mode named in the bead cannot occur.",
+  "status": "open",
+  "priority": 3,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T21:01:30.923701308Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T21:02:42.852147215Z",
+  "labels": [
+    "windows",
+    "portability"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-vvs2.7",
+      "depends_on_id": "persona-vvs2",
+      "type": "parent-child",
+      "created_at": "2026-09-15T21:01:30.95262206Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    },
+    {
+      "issue_id": "persona-vvs2.7",
+      "depends_on_id": "persona-vvs2.4",
+      "type": "blocks",
+      "created_at": "2026-09-15T21:02:58.421916552Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

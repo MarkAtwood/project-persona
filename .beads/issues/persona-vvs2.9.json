@@ -1,0 +1,27 @@
+{
+  "id": "persona-vvs2.9",
+  "title": "Service install and lifecycle on Windows",
+  "description": "hire/src/main.rs:534 install_service() has a #[cfg(target_os = \"macos\")] branch writing a launchd plist and a Linux branch writing a systemd user unit. There is no Windows branch, and SPEC-HIRE's Windows user-mode service name was marked '(not implemented)' in the 2026-09-15 de-specification (commit eb72478) rather than removed, so it is a documented target with nothing behind it.\n\nTHE DECISION FIRST, THE CODE SECOND: hired is a USER-SESSION daemon. Its whole premise is 'who is the human at this keyboard', so it must run in the interactive user's session with access to that user's agents and tokens -- not as a LocalSystem service shared across sessions. A Windows service running as LocalSystem would be the wrong shape entirely: one instance, many sessions, and a pseudonym story that cannot work.\n\nSo the real options are a per-user scheduled task at logon, a startup entry, or a service that runs per-session. Decide which before writing installer code, and record why, the way the systemd unit and launchd plist decisions are recorded.\n\nNote persona-5s4b.26 in passing: install_service() currently fights the compiler with two lint suppressions rather than cfg-gating the Linux branch. Adding a third platform to that shape makes it worse, so .26 is worth doing first or together.",
+  "acceptance_criteria": "A recorded decision on how hired starts on Windows that preserves per-user-session isolation; installer code only after that; install_service() cfg-gated rather than lint-suppressed.",
+  "status": "open",
+  "priority": 3,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T21:01:56.645069512Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T21:01:56.645069512Z",
+  "labels": [
+    "windows",
+    "portability"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-vvs2.9",
+      "depends_on_id": "persona-vvs2",
+      "type": "parent-child",
+      "created_at": "2026-09-15T21:01:56.676519465Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

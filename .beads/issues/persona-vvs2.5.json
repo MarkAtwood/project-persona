@@ -1,0 +1,37 @@
+{
+  "id": "persona-vvs2.5",
+  "title": "Windows consumer attestation: the selector is undecided",
+  "description": "AN OPEN DECISION, NOT A PORT. The 2026-09-15 de-specification (commit 34cab94) removed ConsumerIdentity::MsixPublisher and its 'msix:publisher:{cn}' selector key and deliberately put NOTHING in its place. The epic notes record why: a publisher CN is shared across every application from one publisher, so all of them would derive the SAME PSEUDONYM -- the global-correlator failure attest_peer already refuses to build from uid, and asymmetric with MacosBundleId, which names app AND publisher.\n\nSo Windows currently has no answer to 'which application is calling', and inventing one casually is how the mistake recurs.\n\nMECHANISM IS THE EASY HALF: a named pipe answers GetNamedPipeClientProcessId, which gives a PID. The hard half is what identifies the APPLICATION from there, durably and per-app:\n  - the EXE path -- trivially forged by copying a binary\n  - the Authenticode signer -- same publisher-collapse problem as MSIX\n  - the package family name for packaged apps -- per-app, but only packaged\n    apps have one\n  - some combination, with a documented answer for unpackaged binaries\n\nTHIS IS A WIRE COMMITMENT. The selector string is an input to the HKDF info that derives the pseudonym (see the epic notes: that is exactly why removing MsixPublisher was urgent). Choosing wrong and shipping it means a scheme bump to fix. Nothing has ever derived from a Windows selector, so the slate is genuinely clean -- keep it that way until the answer is defensible.\n\nRead hire-core/src/consumer.rs:26, which records the removal in a comment, before proposing anything.",
+  "acceptance_criteria": "A selector that is per-application rather than per-publisher, with a documented answer for unpackaged binaries; the reason recorded alongside MacosBundleId's; no derivation shipped before the decision.",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T21:01:03.132630428Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T21:01:03.132630428Z",
+  "labels": [
+    "windows",
+    "security",
+    "pseudonym",
+    "portability"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-vvs2.5",
+      "depends_on_id": "persona-vvs2",
+      "type": "parent-child",
+      "created_at": "2026-09-15T21:01:03.171919122Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    },
+    {
+      "issue_id": "persona-vvs2.5",
+      "depends_on_id": "persona-vvs2.4",
+      "type": "blocks",
+      "created_at": "2026-09-15T21:02:58.281979124Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}
