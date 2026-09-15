@@ -82,6 +82,23 @@ fn candidate_from_jwt(raw_token: &str) -> Option<Candidate> {
     ))
 }
 
+/// Runs [`scan_token_caches`] on a blocking thread.
+///
+/// The scan reads and parses up to three JSON files under `$HOME`. An Azure
+/// MSAL cache is routinely a few hundred KiB, and `$HOME` may sit on NFS or
+/// autofs where a single `read_to_string` blocks for seconds. Called directly
+/// from an async method it stalls the reactor thread, and with it every other
+/// task scheduled there -- not just this one. `freshness` re-scans on every
+/// call, so this is a hot path, not startup.
+///
+/// A `JoinError` here means the scan panicked; the source is reported
+/// unavailable rather than propagating the panic into the caller's task.
+async fn scan_token_caches_off_reactor() -> Result<Vec<(Candidate, String)>, AttestorError> {
+    tokio::task::spawn_blocking(scan_token_caches)
+        .await
+        .map_err(|e| AttestorError::Unavailable(format!("token cache scan failed: {e}")))
+}
+
 /// Scan well-known token cache files and return all parseable candidates.
 fn scan_token_caches() -> Vec<(Candidate, String)> {
     let home = match std::env::var("HOME") {
@@ -150,14 +167,14 @@ impl Attestor for OidcCachedAttestor {
     }
 
     async fn enumerate(&self) -> Result<Vec<Candidate>, AttestorError> {
-        let pairs = scan_token_caches();
+        let pairs = scan_token_caches_off_reactor().await?;
         Ok(pairs.into_iter().map(|(candidate, _)| candidate).collect())
     }
 
     async fn freshness(&self, candidate: &Candidate) -> Result<FreshnessResult, AttestorError> {
         // Re-read `exp` on the raw token, not an assurance level this attestor
         // derived from that same `exp` two functions earlier.
-        let pairs = scan_token_caches();
+        let pairs = scan_token_caches_off_reactor().await?;
         match pairs.into_iter().find(|(c, _)| c.path == candidate.path) {
             None => Ok(FreshnessResult::Unavailable),
             Some((_, raw)) => {
@@ -167,6 +184,38 @@ impl Attestor for OidcCachedAttestor {
                     Ok(FreshnessResult::Stale(PresenceLevel::None))
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn the_scan_round_trips_through_the_blocking_pool() {
+        // Covers the spawn_blocking plumbing only: that the scan runs to
+        // completion on a blocking thread and its result comes back, whatever
+        // this machine's $HOME happens to hold. A JoinError or a panic inside
+        // the scan fails this.
+        //
+        // It does NOT cover the reason for the change -- that the scan no
+        // longer occupies a reactor thread. Demonstrating that needs a scan
+        // slow enough for a sibling task to observe progress during it, which
+        // is a timing race, and a flaky test is worse than an absent one. The
+        // property is spawn_blocking's documented contract.
+        let scanned = scan_token_caches_off_reactor()
+            .await
+            .expect("the scan must not fail on any machine");
+        // Every returned pair must be a candidate parsed from its own token,
+        // which holds vacuously on a machine with no caches.
+        for (candidate, token) in &scanned {
+            assert!(!token.is_empty(), "a pair must carry its raw token");
+            assert!(
+                candidate.path.contains("/via/oidc-cached"),
+                "candidate path should record its source: {}",
+                candidate.path
+            );
         }
     }
 }
