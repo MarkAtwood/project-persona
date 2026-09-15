@@ -1,14 +1,14 @@
 {
   "id": "persona-5s4b.128",
   "title": "persona log prints advice to stdout and exits 0 with no log data",
-  "description": "persona/src/main.rs show_log() prints the journalctl recipe to stdout and returns Ok, so 'persona log \u003e personad.log' yields a file of instructions and exit 0, which a script cannot distinguish from a successfully captured empty log.\n\nSame family as the fetch-x509 defect fixed in 440c6eb: a command whose output a user would redirect, writing prose into the redirect. Either move the advisory lines to stderr and exit non-zero the way fetch_x509 now does, or make the command actually exec journalctl and become a real log reader.\n\nRelated and already filed separately: the same function gives journalctl-only advice, which is wrong on macOS where install_service routes the daemon's output to ~/Library/Logs/personad.log.",
+  "description": "hire/src/main.rs show_log() prints the journalctl recipe to stdout and returns Ok, so 'hire log \u003e hired.log' yields a file of instructions and exit 0, which a script cannot distinguish from a successfully captured empty log.\n\nSame family as the fetch-x509 defect fixed in 440c6eb: a command whose output a user would redirect, writing prose into the redirect. Either move the advisory lines to stderr and exit non-zero the way fetch_x509 now does, or make the command actually exec journalctl and become a real log reader.\n\nRelated and already filed separately: the same function gives journalctl-only advice, which is wrong on macOS where install_service routes the daemon's output to ~/Library/Logs/hired.log.",
   "status": "open",
   "priority": 3,
   "issue_type": "bug",
   "owner": "mark@reviewcommit.com",
   "created_at": "2026-09-15T03:47:24.383633299Z",
   "created_by": "agent",
-  "updated_at": "2026-09-15T03:47:24.383633299Z",
+  "updated_at": "2026-09-15T19:34:28.547972926Z",
   "labels": [
     "review"
   ],

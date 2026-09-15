@@ -1,14 +1,14 @@
 {
   "id": "persona-5s4b.44",
   "title": "chrome-manifest.json ships PLACEHOLDER_EXTENSION_ID with no tooling to substitute it",
-  "description": "persona-nmh/chrome-manifest.json line 7:\n    \"allowed_origins\": [ \"chrome-extension://PLACEHOLDER_EXTENSION_ID/\" ]\n\nInstalled as-is, Chrome rejects every connection to the native messaging host — the manifest parses but matches no extension. Nothing in the repo substitutes the real id: no Makefile install target, no script, and no README instructions for either manifest.\n\nBoth manifests also hardcode \"path\": \"/usr/local/bin/persona-nmh\", which contradicts systemd/personad.service installing binaries to %h/.cargo/bin, and neither manifest is referenced by any build or install step, so nothing keeps the two files in sync with each other (chrome uses allowed_origins, firefox uses allowed_extensions — that difference is correct and intentional).\n\nEither add an install target that templates the extension id and binary path, or document the manual substitution in README.md.",
+  "description": "hire-nmh/chrome-manifest.json line 7:\n    \"allowed_origins\": [ \"chrome-extension://PLACEHOLDER_EXTENSION_ID/\" ]\n\nInstalled as-is, Chrome rejects every connection to the native messaging host — the manifest parses but matches no extension. Nothing in the repo substitutes the real id: no Makefile install target, no script, and no README instructions for either manifest.\n\nBoth manifests also hardcode \"path\": \"/usr/local/bin/hire-nmh\", which contradicts systemd/hired.service installing binaries to %h/.cargo/bin, and neither manifest is referenced by any build or install step, so nothing keeps the two files in sync with each other (chrome uses allowed_origins, firefox uses allowed_extensions — that difference is correct and intentional).\n\nEither add an install target that templates the extension id and binary path, or document the manual substitution in README.md.",
   "status": "open",
   "priority": 3,
   "issue_type": "task",
   "owner": "mark@reviewcommit.com",
   "created_at": "2026-09-13T20:58:29.516664205Z",
   "created_by": "agent",
-  "updated_at": "2026-09-13T20:58:29.516664205Z",
+  "updated_at": "2026-09-15T19:34:29.245892868Z",
   "labels": [
     "workspace",
     "review"
