@@ -15,6 +15,55 @@ use crate::workload::{
     X509BundlesResponse, X509svidRequest, X509svidResponse,
 };
 
+/// The verified JWT payload, as the `google.protobuf.Struct` the response field
+/// is typed as.
+///
+/// A consumer that validates through this RPC rather than decoding the token
+/// itself reads the whole payload here or nowhere: `spiffe_id` alone cannot
+/// distinguish an identity an IdP verified from one `getuid()` asserted, and
+/// `identity_assurance` is the field that can. Returning `None` would leave
+/// that consumer no choice but to abandon this RPC and verify against
+/// FetchJWTBundles by hand.
+///
+/// `None` only when the payload is not a JSON object, which a decoded JWT
+/// cannot be.
+fn claims_struct(payload: &serde_json::Value) -> Option<prost_types::Struct> {
+    payload.as_object().map(struct_from_map)
+}
+
+/// One JSON object as one protobuf `Struct`.
+fn struct_from_map(map: &serde_json::Map<String, serde_json::Value>) -> prost_types::Struct {
+    prost_types::Struct {
+        fields: map
+            .iter()
+            .map(|(name, value)| (name.clone(), json_to_protobuf(value)))
+            .collect(),
+    }
+}
+
+/// One JSON value as one protobuf `Value`.
+///
+/// A number too large for an f64 becomes its decimal string rather than a
+/// rounded double: protobuf has no integer value kind, and a silently rounded
+/// `exp` is worse than one the consumer has to parse.
+fn json_to_protobuf(value: &serde_json::Value) -> prost_types::Value {
+    use prost_types::value::Kind;
+    let kind = match value {
+        serde_json::Value::Null => Kind::NullValue(0),
+        serde_json::Value::Bool(b) => Kind::BoolValue(*b),
+        serde_json::Value::Number(n) => match n.as_f64() {
+            Some(f) => Kind::NumberValue(f),
+            None => Kind::StringValue(n.to_string()),
+        },
+        serde_json::Value::String(s) => Kind::StringValue(s.clone()),
+        serde_json::Value::Array(items) => Kind::ListValue(prost_types::ListValue {
+            values: items.iter().map(json_to_protobuf).collect(),
+        }),
+        serde_json::Value::Object(map) => Kind::StructValue(struct_from_map(map)),
+    };
+    prost_types::Value { kind: Some(kind) }
+}
+
 pub struct WorkloadApiService {
     pub signer: Arc<SvidSigner>,
     pub bundles: Arc<TrustBundleStore>,
@@ -490,10 +539,9 @@ impl SpiffeWorkloadApi for WorkloadApiService {
             audience = %req.audience,
         );
 
-        // ponytail: empty claims in ValidateJWTSVID response | upgrade to prost_types::Struct conversion when needed
         Ok(Response::new(ValidateJwtsvidResponse {
             spiffe_id: spiffe_id.uri(),
-            claims: None,
+            claims: claims_struct(&token_data.claims),
         }))
     }
 
@@ -514,10 +562,58 @@ impl SpiffeWorkloadApi for WorkloadApiService {
 
 #[cfg(test)]
 mod tests {
-    use super::within_max_age;
+    use super::{claims_struct, within_max_age};
     use std::time::Duration;
 
     const BOUND: Duration = Duration::from_secs(60);
+
+    /// The expected value is written out by hand rather than round-tripped, so
+    /// the conversion is compared against the protobuf encoding of the payload
+    /// and not against itself.
+    #[test]
+    fn the_validated_payload_reaches_the_consumer_as_a_struct() {
+        use prost_types::value::Kind;
+
+        let payload = serde_json::json!({
+            "spiffe_id": "spiffe://ssh.local/unix/1000",
+            "exp": 1_700_000_000u64,
+            "persona": { "identity_assurance": "iaa1", "presence": "none" },
+            "aud": ["one", "two"],
+        });
+
+        let fields = claims_struct(&payload)
+            .expect("a JWT payload is an object")
+            .fields;
+
+        assert_eq!(
+            fields["spiffe_id"].kind,
+            Some(Kind::StringValue("spiffe://ssh.local/unix/1000".to_owned()))
+        );
+        assert_eq!(fields["exp"].kind, Some(Kind::NumberValue(1_700_000_000.0)));
+        assert_eq!(
+            fields["aud"].kind,
+            Some(Kind::ListValue(prost_types::ListValue {
+                values: vec![
+                    prost_types::Value {
+                        kind: Some(Kind::StringValue("one".to_owned()))
+                    },
+                    prost_types::Value {
+                        kind: Some(Kind::StringValue("two".to_owned()))
+                    },
+                ]
+            }))
+        );
+
+        // The field this RPC exists to carry: without it "validated" cannot be
+        // told apart from "authenticated".
+        let Some(Kind::StructValue(persona)) = &fields["persona"].kind else {
+            panic!("persona must be a nested struct: {:?}", fields["persona"]);
+        };
+        assert_eq!(
+            persona.fields["identity_assurance"].kind,
+            Some(Kind::StringValue("iaa1".to_owned()))
+        );
+    }
 
     #[test]
     fn an_observation_younger_than_the_bound_is_served() {
