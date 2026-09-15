@@ -94,9 +94,9 @@ hire (CLI)  -->  hired (daemon)  -->  identity sources
 - **CLI:** `hire` -- `whoami`, `enumerate`, `fetch-jwt`, `prove`, `watch`, `trust-bundle list`. `enroll`, `delegate` and `fetch-x509` are designed in SPEC-HIRE.md but not built; they exit non-zero.
 - **Socket (Linux):** `$XDG_RUNTIME_DIR/hire/workload.sock`, normally `/run/user/{uid}/hire/workload.sock`
 - **Socket (macOS):** `<darwin-user-temp>/hire/workload.sock`, the per-user temp directory launchd also exports as `$TMPDIR`
-- **Socket (Windows):** `\\.\pipe\hire-workload-{sid}`
+- **Socket (Windows):** `\\.\pipe\hire-workload-{sid}` *(not implemented -- `hired` does not run on Windows; the transport abstraction is the gate)*
 - **Socket (fallback):** `/tmp/hire-{uid}/workload.sock` when the platform supplies no runtime directory
-- **Browser bridge:** localhost HTTPS gateway on `127.0.0.1:2443` + native messaging host
+- **Browser bridge:** native messaging host (`hire-nmh`). The localhost HTTPS gateway on `127.0.0.1:2443` is *(not implemented)* -- `maybe_start_http_gateway` logs and returns.
 
 The daemon implements the SPIFFE Workload API as-is. `hired` invents no protocol of its own.
 
