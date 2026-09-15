@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use tokio::net::UnixListener;
 use tokio_stream::wrappers::UnixListenerStream;
@@ -12,10 +12,7 @@ use crate::workload::spiffe_workload_api_server::SpiffeWorkloadApiServer;
 ///
 /// The socket is bound by [`bind_listener`], which also prepares its parent
 /// directory and restricts the socket to this user.
-pub async fn serve(
-    socket_path: &Path,
-    service: WorkloadApiService,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn serve(socket_path: &Path, service: WorkloadApiService) -> Result<(), ServeError> {
     let listener = bind_listener(socket_path)?;
 
     tracing::info!(?socket_path, "SPIFFE Workload API listening");
@@ -52,7 +49,7 @@ pub async fn serve(
 /// was rejected: umask is per-process state shared by every thread, so a daemon
 /// that sets and restores it around `bind` changes the mode of files other
 /// tokio workers create at the same time.
-fn bind_listener(socket_path: &Path) -> Result<UnixListener, Box<dyn std::error::Error>> {
+fn bind_listener(socket_path: &Path) -> Result<UnixListener, ServeError> {
     if let Some(parent) = socket_path.parent() {
         prepare_socket_dir(parent)?;
     }
@@ -63,15 +60,28 @@ fn bind_listener(socket_path: &Path) -> Result<UnixListener, Box<dyn std::error:
     match std::fs::remove_file(socket_path) {
         Ok(()) => tracing::warn!(?socket_path, "removed stale socket"),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => return Err(e.into()),
+        Err(source) => {
+            return Err(ServeError::StaleSocket {
+                path: socket_path.to_owned(),
+                source,
+            })
+        }
     }
 
-    let listener = UnixListener::bind(socket_path)?;
+    let listener = UnixListener::bind(socket_path).map_err(|source| ServeError::Bind {
+        path: socket_path.to_owned(),
+        source,
+    })?;
 
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(socket_path, std::fs::Permissions::from_mode(0o600))?;
+        std::fs::set_permissions(socket_path, std::fs::Permissions::from_mode(0o600)).map_err(
+            |source| ServeError::Permissions {
+                path: socket_path.to_owned(),
+                source,
+            },
+        )?;
     }
 
     Ok(listener)
@@ -87,14 +97,21 @@ fn bind_listener(socket_path: &Path) -> Result<UnixListener, Box<dyn std::error:
 /// for a daemon that issues identity credentials means impersonating it. So refuse a
 /// directory this user does not own, and tighten one that is too permissive.
 #[cfg(unix)]
-fn prepare_socket_dir(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+fn prepare_socket_dir(dir: &Path) -> Result<(), ServeError> {
     use std::fs::{DirBuilder, Permissions};
     use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
+
+    let wrap = |source| ServeError::SocketDir {
+        path: dir.to_owned(),
+        source,
+    };
 
     match std::fs::metadata(dir) {
         Ok(md) => {
             if !md.is_dir() {
-                return Err(format!("{} exists and is not a directory", dir.display()).into());
+                return Err(ServeError::SocketDirNotADirectory {
+                    path: dir.to_owned(),
+                });
             }
             // SAFETY: getuid() takes no arguments, has no preconditions and cannot fail.
             let uid = unsafe { libc::getuid() };
@@ -106,39 +123,124 @@ fn prepare_socket_dir(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
                         mode = format!("{:o}", md.mode() & 0o777),
                         "tightening socket directory to 0700"
                     );
-                    std::fs::set_permissions(dir, Permissions::from_mode(0o700))?;
+                    std::fs::set_permissions(dir, Permissions::from_mode(0o700)).map_err(wrap)?;
                 }
             } else if !(md.uid() == 0 && sticky) {
                 // A root-owned sticky directory such as /tmp is safe: the kernel lets
                 // only the entry's owner remove it. Anything else owned by another user
                 // is not, because the directory's owner can unlink whatever we bind.
-                return Err(format!(
-                    "refusing to use {}: owned by uid {}, expected {uid}",
-                    dir.display(),
-                    md.uid()
-                )
-                .into());
+                return Err(ServeError::SocketDirNotOurs {
+                    path: dir.to_owned(),
+                    owner: md.uid(),
+                    expected: uid,
+                });
             }
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            DirBuilder::new().recursive(true).mode(0o700).create(dir)?;
+            DirBuilder::new()
+                .recursive(true)
+                .mode(0o700)
+                .create(dir)
+                .map_err(wrap)?;
         }
-        Err(e) => return Err(e.into()),
+        Err(e) => return Err(wrap(e)),
     }
     Ok(())
 }
 
 #[cfg(not(unix))]
-fn prepare_socket_dir(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    std::fs::create_dir_all(dir)?;
-    Ok(())
+fn prepare_socket_dir(dir: &Path) -> Result<(), ServeError> {
+    std::fs::create_dir_all(dir).map_err(|source| ServeError::SocketDir {
+        path: dir.to_owned(),
+        source,
+    })
+}
+
+/// Why the Workload API server could not start, or why it stopped.
+///
+/// Concrete rather than `Box<dyn std::error::Error>` so a caller can tell the
+/// cases apart: refusing a directory another user owns calls for a different
+/// response from a transport failure, and each filesystem variant names the
+/// path it failed on as a field rather than only inside a message. The boxed
+/// form was also neither `Send` nor `Sync`, so `personad` could do nothing with
+/// it but flatten it to its `Display` text.
+///
+/// `Bind` does not today distinguish "another personad is running":
+/// [`bind_listener`] unlinks any existing socket before binding, so it takes
+/// the socket over rather than meeting `AddrInUse`.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum ServeError {
+    /// Something that is not a directory sits where the socket's parent belongs.
+    #[error("{path} exists and is not a directory")]
+    SocketDirNotADirectory {
+        /// The path that is occupied.
+        path: PathBuf,
+    },
+
+    /// The socket's parent directory belongs to another user, who could unlink
+    /// the socket and offer their own in its place.
+    #[error("refusing to use {path}: owned by uid {owner}, expected {expected}")]
+    SocketDirNotOurs {
+        /// The directory that was refused.
+        path: PathBuf,
+        /// The uid that owns it.
+        owner: u32,
+        /// This process's uid.
+        expected: u32,
+    },
+
+    /// The socket's parent directory could not be created or tightened.
+    #[error("cannot prepare the socket directory {path}")]
+    SocketDir {
+        /// The directory being prepared.
+        path: PathBuf,
+        /// The underlying filesystem error.
+        #[source]
+        source: std::io::Error,
+    },
+
+    /// A stale socket was present and could not be removed.
+    #[error("cannot remove the stale socket at {path}")]
+    StaleSocket {
+        /// The socket path.
+        path: PathBuf,
+        /// The underlying filesystem error.
+        #[source]
+        source: std::io::Error,
+    },
+
+    /// The socket could not be bound. `AddrInUse` means another daemon holds it.
+    #[error("cannot bind the socket at {path}")]
+    Bind {
+        /// The socket path.
+        path: PathBuf,
+        /// The underlying error from `bind(2)`.
+        #[source]
+        source: std::io::Error,
+    },
+
+    /// The socket was bound but could not be restricted to this user.
+    #[error("cannot restrict the socket at {path} to this user")]
+    Permissions {
+        /// The socket path.
+        path: PathBuf,
+        /// The underlying error from `chmod(2)`.
+        #[source]
+        source: std::io::Error,
+    },
+
+    /// The gRPC server stopped with a transport error.
+    #[error("the workload API server stopped")]
+    Transport(#[from] tonic::transport::Error),
 }
 
 #[cfg(all(test, unix))]
 mod tests {
-    use super::{bind_listener, prepare_socket_dir};
+    use super::{bind_listener, prepare_socket_dir, ServeError};
     use std::fs;
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    use std::path::Path;
     use std::path::PathBuf;
 
     fn scratch(name: &str) -> PathBuf {
@@ -269,10 +371,41 @@ mod tests {
         let err = bind_listener(&parent.join("workload.sock"))
             .expect_err("must refuse a parent that is not a directory");
         assert!(
-            err.to_string().contains("exists and is not a directory"),
-            "the directory check must run first; got: {err}"
+            matches!(err, ServeError::SocketDirNotADirectory { ref path } if *path == parent),
+            "the directory check must run first; got: {err:?}"
         );
 
         fs::remove_file(&parent).ok();
+    }
+
+    #[tokio::test]
+    async fn a_directory_another_user_owns_is_refused_as_a_matchable_variant() {
+        // The point of the concrete error type: a caller can tell this case
+        // apart and read the offending path and uid as fields, rather than
+        // parsing them back out of a message.
+        // SAFETY: getuid() takes no arguments, has no preconditions and cannot fail.
+        let me = unsafe { libc::getuid() };
+        let err = bind_listener(Path::new("/usr/persona-never-created.sock"))
+            .expect_err("/usr is root-owned and not sticky");
+        match err {
+            ServeError::SocketDirNotOurs {
+                path,
+                owner,
+                expected,
+            } => {
+                assert_eq!(path, PathBuf::from("/usr"));
+                assert_eq!(owner, 0);
+                assert_eq!(expected, me);
+            }
+            other => panic!("wrong variant: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_error_crosses_a_task_boundary() {
+        // Box<dyn Error> was neither Send nor Sync, which is why personad could
+        // only stringify it. Asserted at compile time so it cannot regress.
+        fn assert_send_sync<T: Send + Sync + 'static>() {}
+        assert_send_sync::<ServeError>();
     }
 }

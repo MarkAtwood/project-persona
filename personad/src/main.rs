@@ -55,10 +55,10 @@ async fn main() -> anyhow::Result<()> {
     let socket_path_cleanup = socket_path.clone();
     tokio::select! {
         result = server::serve(&socket_path, service) => {
-            if let Err(e) = result {
-                tracing::error!(err = %e, "server error");
-                return Err(anyhow::anyhow!("{e}"));
-            }
+            // ServeError is Send + Sync, so `?` carries the source chain here.
+            // The boxed error this used to return was neither, which left this
+            // call site nothing to do but flatten it to its Display text.
+            result.context("SPIFFE Workload API server")?;
         }
         _ = sigterm.recv() => {
             info!("received SIGTERM, shutting down");
