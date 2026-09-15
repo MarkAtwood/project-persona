@@ -507,11 +507,25 @@ async fn show_log() -> Result<()> {
     }
     #[allow(unreachable_code)]
     {
-        println!("systemd routes that to the journal.");
-        println!("To follow it: journalctl --user -u personad -f");
-        println!("Running personad by hand instead? Read its stderr.");
+        if systemd_is_running() {
+            println!("systemd routes that to the journal.");
+            println!("To follow it: journalctl --user -u personad -f");
+        } else {
+            println!("systemd is not running here, so there is no journal to read.");
+            println!("Read the stderr of however personad was started.");
+        }
         Ok(())
     }
+}
+
+/// Returns true if systemd is the running init system.
+///
+/// `/run/systemd/system` is the marker systemd documents for `sd_booted()`.
+/// Its absence is the same answer on Alpine, on WSL with systemd disabled and
+/// on FreeBSD, so one check covers every host a `cfg(target_os)` cannot see:
+/// the init system is a property of the running machine, not of the target.
+fn systemd_is_running() -> bool {
+    std::path::Path::new("/run/systemd/system").is_dir()
 }
 
 async fn install_service() -> Result<()> {
@@ -532,9 +546,18 @@ async fn install_service() -> Result<()> {
     }
     #[allow(unreachable_code)]
     {
-        // Linux / systemd path
         let home = std::env::var("HOME").context("HOME not set")?;
         let dir = PathBuf::from(&home).join(".config/systemd/user");
+        if !systemd_is_running() {
+            // Writing the unit anyway would leave a file nothing ever reads,
+            // under a success message. Hand over the file instead: someone who
+            // installed from crates.io has no checkout to copy it out of.
+            eprintln!("error: systemd is not running here, so nothing was installed.");
+            eprintln!("The unit is on stdout. Install it by hand at");
+            eprintln!("{}/personad.service", dir.display());
+            print!("{SYSTEMD_UNIT}");
+            std::process::exit(1);
+        }
         std::fs::create_dir_all(&dir).with_context(|| format!("create {}", dir.display()))?;
         let dest = dir.join("personad.service");
         std::fs::write(&dest, SYSTEMD_UNIT).with_context(|| format!("write {}", dest.display()))?;
