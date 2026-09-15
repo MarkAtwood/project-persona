@@ -1,0 +1,30 @@
+{
+  "id": "persona-jl4j.5",
+  "title": "Proof cache: freshness moves from challenge-binding to the clock",
+  "description": "Surface 3 of the epic -- 'the best thing we have proof of right now' -- only means something if proofs persist. They do not. hire-grpc/src/service.rs:285-322 re-proves every candidate from every attestor on every request; the ponytail comment at :288 names this cache as the upgrade path and names the ceiling it lifts.\n\nTHIS IS A SECURITY-MODEL CHANGE, NOT AN OPTIMIZATION. Read this before writing code.\n\nProofs are challenge-bound today. hire-attestors/src/claim.rs:470-475 -- Claim::derive filters evidence through Evidence::binds_to(candidate, challenge) and returns None when nothing binds. That is what makes hire-grpc/tests/e2e.rs a_replayed_proof_is_denied pass: a genuine signature answering an EARLIER challenge buys nothing. A cached claim is, by construction, a proof answering an earlier challenge.\n\nSo caching moves the guarantee from:\n    'this signature was made now, for me'      (challenge-binding)\nto:\n    'a signature was made at time T'           (the clock)\n\nThat trade is defensible -- hire_max_age and the 300s presence TTL are exactly the bound that makes the second form usable, and they already exist and are already enforced across every audience. But it must be entered deliberately.\n\nTRIPWIRE: if a_replayed_proof_is_denied starts needing an edit to pass, that is the signal this line has been crossed, not a flaky test. Do not edit it to accommodate the cache. Add the cache's own tests alongside it, and if the two genuinely conflict, escalate rather than weakening the replay test.\n\nKeying: a proof is a property of the human and their authenticator, not of the consumer -- so cache globally in the daemon and gate RELEASE per consumer. Do not key the cache by consumer; that would re-prove per consumer and reintroduce the touch storm one caller at a time.\n\nAlso subsumes the cost half of persona-5s4b.1 (FetchJWTSVID enumerates all attestors serially on every request) and persona-5s4b.2 (OIDC attestor rescans all token caches on every call) -- neither is worth optimising separately if the result is cached.",
+  "acceptance_criteria": "A second request inside the presence TTL performs no new proof; a request after hire_max_age expires does; a_replayed_proof_is_denied passes UNEDITED; the cache is not keyed by consumer.",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "feature",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T20:22:20.618573366Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T20:22:20.618573366Z",
+  "labels": [
+    "security",
+    "crypto",
+    "api",
+    "architecture",
+    "spiffe"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-jl4j.5",
+      "depends_on_id": "persona-jl4j",
+      "type": "parent-child",
+      "created_at": "2026-09-15T20:22:20.641002635Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

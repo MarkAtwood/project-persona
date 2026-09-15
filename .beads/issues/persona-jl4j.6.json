@@ -1,0 +1,37 @@
+{
+  "id": "persona-jl4j.6",
+  "title": "hire enumerate should ask the daemon, not build its own registry",
+  "description": "hire/src/main.rs:159-184 builds an attestor registry in-process and calls enumerate() directly, so 'hire enumerate' reports what THIS PROCESS can see, not what the running daemon sees. The two can differ: the daemon may have started under a different environment, a different session, or before a device was plugged in. A user debugging 'why does hired not see my key' is shown the wrong answer by the tool they would naturally reach for.\n\nOnce the candidate-listing RPC exists (persona-jl4j.4), enumerate becomes a client of it and the divergence closes.\n\nKeep a way to run the local probe explicitly -- it is genuinely useful for 'is this box capable' as distinct from 'is the daemon seeing it' -- but it must not be the default, and the output must say which question it answered.",
+  "acceptance_criteria": "hire enumerate reports the daemon's view by default; the in-process probe is still reachable under an explicit flag; the output names which of the two it is showing.",
+  "status": "open",
+  "priority": 3,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T20:22:20.6896392Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T20:22:20.6896392Z",
+  "labels": [
+    "cli",
+    "api",
+    "architecture",
+    "spiffe"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-jl4j.6",
+      "depends_on_id": "persona-jl4j",
+      "type": "parent-child",
+      "created_at": "2026-09-15T20:22:20.707165275Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    },
+    {
+      "issue_id": "persona-jl4j.6",
+      "depends_on_id": "persona-jl4j.4",
+      "type": "blocks",
+      "created_at": "2026-09-15T20:22:37.846502417Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

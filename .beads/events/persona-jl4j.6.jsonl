@@ -1,0 +1,5 @@
+{"id":"01a0a6bc-1b13-7cd7-873c-22ac010b1781","issue_id":"persona-jl4j.6","event_type":"created","actor":"agent","old_value":"","new_value":"","created_at":"2026-09-15T20:22:20.691842263Z"}
+{"id":"01a0a6bc-1b15-7dc9-8a34-1323d8960003","issue_id":"persona-jl4j.6","event_type":"label_added","actor":"agent","comment":"Added label: cli","created_at":"2026-09-15T20:22:20.693904339Z"}
+{"id":"01a0a6bc-1b17-7e4a-be48-4a8cc3071dff","issue_id":"persona-jl4j.6","event_type":"label_added","actor":"agent","comment":"Added label: api","created_at":"2026-09-15T20:22:20.695936925Z"}
+{"id":"01a0a6bc-1b19-7ee9-9437-96643395b955","issue_id":"persona-jl4j.6","event_type":"label_added","actor":"agent","comment":"Added label: architecture","created_at":"2026-09-15T20:22:20.697977742Z"}
+{"id":"01a0a6bc-1b1b-7f1b-91ac-b26d8b1eb673","issue_id":"persona-jl4j.6","event_type":"label_added","actor":"agent","comment":"Added label: spiffe","created_at":"2026-09-15T20:22:20.699990358Z"}

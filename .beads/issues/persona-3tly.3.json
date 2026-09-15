@@ -23,6 +23,14 @@
       "created_at": "2026-09-14T05:44:13.237645778Z",
       "created_by": "agent",
       "metadata": "{}"
+    },
+    {
+      "issue_id": "persona-3tly.3",
+      "depends_on_id": "persona-jl4j.4",
+      "type": "blocks",
+      "created_at": "2026-09-15T20:22:37.957897723Z",
+      "created_by": "agent",
+      "metadata": "{}"
     }
   ]
 }

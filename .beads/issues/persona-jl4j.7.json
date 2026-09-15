@@ -1,0 +1,37 @@
+{
+  "id": "persona-jl4j.7",
+  "title": "Narrow the 'no new wire protocol' claim",
+  "description": "README.md:3 says 'No new wire protocol.' and that is the project's headline bet. Adding the candidate-listing service (persona-jl4j.4) makes the accurate claim narrower: no changes to the SPIFFE wire protocol, and no new protocol a standard SPIFFE consumer has to know about.\n\nThat is still a strong claim and still the right bet -- envoy, ghostunnel, go-spiffe and rust-spiffe continue to work unmodified against an untouched Workload API. But it is not the same sentence, and this repo has spent two commits this week (34cab94, eb72478) removing capability claims that were truer than the code. Do not let this one drift the same way.\n\nUpdate README.md and SPEC-HIRE.md together; SPEC-HIRE.md 'API' (line 294) is where the second service has to be specified, not just mentioned.",
+  "acceptance_criteria": "No sentence in README.md or SPEC-HIRE.md claims more than the code does; the second service is specified in SPEC-HIRE's API section.",
+  "status": "open",
+  "priority": 3,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T20:22:20.754905464Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T20:22:20.754905464Z",
+  "labels": [
+    "docs",
+    "api",
+    "architecture",
+    "spiffe"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-jl4j.7",
+      "depends_on_id": "persona-jl4j",
+      "type": "parent-child",
+      "created_at": "2026-09-15T20:22:20.773923365Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    },
+    {
+      "issue_id": "persona-jl4j.7",
+      "depends_on_id": "persona-jl4j.4",
+      "type": "blocks",
+      "created_at": "2026-09-15T20:22:37.903260125Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

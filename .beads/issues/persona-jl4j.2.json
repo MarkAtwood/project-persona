@@ -1,0 +1,52 @@
+{
+  "id": "persona-jl4j.2",
+  "title": "Return the silent-provable set, sorted and tagged",
+  "description": "Second half of the epic's surface 2. Once persona-5s4b.87 honours req.spiffe_id and the hint encoding exists, FetchJWTSVID returns every identity provable WITHOUT prompting a human, sorted best-first, each entry tagged via hint.\n\nTwo constraints from the epic decision, neither optional:\n\n(1) Only silently-provable identities go in the list. An attestor that would prompt is not enumerated here -- it is reached by asking (hire_min_assurance, persona-ouo5.3) and costs exactly one touch. Today that distinction is free because neither prover prompts, which means it must be encoded as a property of the attestor NOW, while nothing depends on it, rather than discovered later when a FIDO2 tap regresses it.\n\n(2) The sort order is documented but ADVISORY; hint is normative. svids[0] must be a defensible cheap answer, but no caller may be required to sort-order to be correct.",
+  "acceptance_criteria": "A consumer with two provable identities receives both; the order is documented; each entry carries a non-empty hint; an attestor marked as prompting never appears in the unconstrained response.",
+  "status": "open",
+  "priority": 1,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T20:21:43.793842059Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T20:21:43.793842059Z",
+  "labels": [
+    "api",
+    "spiffe",
+    "architecture"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-jl4j.2",
+      "depends_on_id": "persona-jl4j",
+      "type": "parent-child",
+      "created_at": "2026-09-15T20:21:43.812014298Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    },
+    {
+      "issue_id": "persona-jl4j.2",
+      "depends_on_id": "persona-jl4j.1",
+      "type": "blocks",
+      "created_at": "2026-09-15T20:22:37.621939679Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    },
+    {
+      "issue_id": "persona-jl4j.2",
+      "depends_on_id": "persona-jl4j.3",
+      "type": "blocks",
+      "created_at": "2026-09-15T20:22:37.684594887Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    },
+    {
+      "issue_id": "persona-jl4j.2",
+      "depends_on_id": "persona-5s4b.87",
+      "type": "blocks",
+      "created_at": "2026-09-15T20:22:37.745567787Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

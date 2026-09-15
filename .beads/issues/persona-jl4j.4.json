@@ -1,0 +1,37 @@
+{
+  "id": "persona-jl4j.4",
+  "title": "Candidate-listing RPC on a second gRPC service",
+  "description": "Surface 1 of the epic: 'what we may be able to prove'. Returns candidates with their attainable tier and proof cost. No tokens, no prompting, no human interaction of any kind.\n\nWHY IT CANNOT REUSE THE WORKLOAD API: JWTSVID.svid is a required field, so every entry in a JWTSVIDResponse needs a real signed token, so every entry had to be proven. A candidate has not been proven -- that is what makes it a candidate. There is no honest way to express one in the existing response type.\n\nWHAT THIS COSTS, stated plainly because README.md currently promises otherwise: hired gains a second gRPC service on the same socket. The SPIFFE Workload API is untouched -- envoy, ghostunnel, go-spiffe and rust-spiffe never call the new service and are unaffected -- but the repo's 'No new wire protocol' claim becomes 'no changes to the SPIFFE wire protocol'. See persona-jl4j.7.\n\nConsumer attestation applies here exactly as it does to FetchJWTSVID: a caller that cannot be attested learns nothing, not even that the user has no identities. Do not let this RPC become the unauthenticated side door into the same information.\n\nOpen question for whoever takes this: whether the candidate list is pseudonymised per consumer the way issued SVIDs are. Candidates carry display_name and a path, which are the user's real local identifiers. Leaking those to a consumer that would only ever receive a pseudonym in a token would undo the pseudonymity property through the discovery channel. Probably the answer is that candidates are pseudonymised too and display_name is withheld -- but then the human-facing picker (persona-3tly.3) needs a different, non-consumer-facing path to the real names.",
+  "acceptance_criteria": "A HIRE-aware client lists candidates without any attestor prompting; an unattested caller is refused; a stock SPIFFE client is unaffected; the pseudonymity question above is answered in the issue before code lands.",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "feature",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T20:22:20.545829722Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T20:22:20.545829722Z",
+  "labels": [
+    "api",
+    "spiffe",
+    "grpc",
+    "architecture"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-jl4j.4",
+      "depends_on_id": "persona-jl4j",
+      "type": "parent-child",
+      "created_at": "2026-09-15T20:22:20.570240204Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    },
+    {
+      "issue_id": "persona-jl4j.4",
+      "depends_on_id": "persona-jl4j.3",
+      "type": "blocks",
+      "created_at": "2026-09-15T20:22:37.797523821Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

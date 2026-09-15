@@ -1,0 +1,28 @@
+{
+  "id": "persona-jl4j.1",
+  "title": "Define the hint tag encoding",
+  "description": "proto/spiffe/workload/workload.proto:139-143 makes hint the field a caller reads to choose among several SVIDs, and the epic decision makes it NORMATIVE -- the sort order is advisory, the tag is what a caller gates on. hint is a bare string, so it needs a defined encoding before anything can populate it.\n\nDo NOT invent a second vocabulary. The 'hire' JWT claim block already carries assurance tier, presence level, presence window and source for each issued token; the tag should be a compact form of that, so a caller reading hint and a caller decoding the token learn the same things by the same names.\n\nMust carry at minimum: assurance tier, presence level, source, and observation age -- the four axes persona-3tly.5 says do not collapse into one number.\n\nWatch out for persona-5s4b.129: 'sources' and 'auth_methods' are currently the same single-element expression in every issued token, so the claim block is not yet the clean source of vocabulary this depends on. Decide whether hint names the source, the auth method, or both, and make that consistent with .129's fix rather than racing it.",
+  "acceptance_criteria": "A written encoding with an example tag for each of the currently provable sources (ssh-agent, unix-account); a round-trip test parsing it back; no vocabulary that is not already in the hire claim block.",
+  "status": "open",
+  "priority": 1,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T20:21:43.722371289Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T20:21:43.722371289Z",
+  "labels": [
+    "api",
+    "spiffe",
+    "architecture"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-jl4j.1",
+      "depends_on_id": "persona-jl4j",
+      "type": "parent-child",
+      "created_at": "2026-09-15T20:21:43.743244902Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}
