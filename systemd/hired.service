@@ -1,7 +1,7 @@
 [Unit]
 Description=HIRE identity daemon (SPIFFE Workload API)
 After=tailscaled.service
-Documentation=https://github.com/MarkAtwood/project-hire
+Documentation=https://github.com/MarkAtwood/project-HIRE
 
 [Service]
 Type=simple
