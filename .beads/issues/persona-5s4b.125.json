@@ -3,13 +3,15 @@
   "title": "Docs and --help advertise CLI commands that are stubs or absent",
   "description": "README.md:94 lists the CLI as 'whoami, enumerate, fetch-jwt, enroll app, delegate, etc.' Two problems: 'enroll app' now exits 1 (closed as persona-5s4b.103), and 'delegate' is not in the dispatch table at persona/src/main.rs at all -- the README names a command that has never existed. The capability table at README.md:31 is in the same voice, and SPEC-HIA.md:336-337 documents 'persona enroll app' and 'persona enroll origin' as authorization commands.\n\nIn --help (main.rs:121,125), 'fetch-x509  fetch an X.509-SVID from the daemon' describes a function that prints a sentence, and 'trust-bundle  list or manage trust bundles' advertises manage, i.e. add and remove, both stubs. The enroll line was corrected in cd382e7; these were left because they belong to other commands.\n\nNote SPEC-HIA.md is normative, so deciding whether enroll is removed from the spec or kept as unimplemented-but-specified is Mark's call, not a docs edit.",
   "acceptance_criteria": "No doc or help text names a command that does not exist or claims a stub works. SPEC-HIA treatment of enroll decided explicitly.",
-  "status": "open",
+  "status": "closed",
   "priority": 2,
   "issue_type": "bug",
   "owner": "mark@reviewcommit.com",
   "created_at": "2026-09-15T03:37:48.595981134Z",
   "created_by": "agent",
-  "updated_at": "2026-09-15T03:37:48.595981134Z",
+  "updated_at": "2026-09-15T04:59:07.392747858Z",
+  "closed_at": "2026-09-15T04:59:07.392747858Z",
+  "close_reason": "Fixed in the docs commit after 5edfbb6's revert. --help now labels fetch-x509 and trust-bundle add/remove alongside enroll, so every unbuilt command says so where a reader looks before typing. README:94 no longer lists delegate and 'enroll app' as working verbs; it names what works and points enroll/delegate/fetch-x509 at SPEC-HIA, noting they exit non-zero -- verified by running all three, delegate included via the unknown-command path.\n\nDecided with Mark: docs LIST designed-but-unbuilt commands and LABEL them, rather than hiding them until they work. A reader asking 'does persona do X yet' should get the answer from --help, not from the exit code. Known cost: the labels rot -- whoever lands fetch-x509 must delete its marker, and nothing enforces that.\n\nNote delegate is specified in SPEC-HIA.md:754 with a full CLI section, so the README was speaking in the wrong tense rather than inventing a command. The README capability table at :29-40 was already carefully qualified and was left alone.",
   "labels": [
     "review"
   ],
