@@ -106,7 +106,7 @@ async fn main() -> Result<()> {
         "fetch-jwt" => fetch_jwt(&args[2..]).await,
         "fetch-x509" => fetch_x509().await,
         "prove" => prove(&args[2..]).await,
-        "enroll" => enroll(&args[2..]).await,
+        "enroll" => enroll(&args[2..]),
         "install-service" => install_service().await,
         "trust-bundle" => trust_bundle(&args[2..]).await,
         "watch" => watch().await,
@@ -120,7 +120,7 @@ async fn main() -> Result<()> {
             println!("  fetch-jwt        fetch a JWT-SVID from the daemon");
             println!("  fetch-x509       fetch an X.509-SVID from the daemon");
             println!("  prove            prove identity to a peer (JWT with challenge)");
-            println!("  enroll           enroll an application or origin");
+            println!("  enroll           (not implemented) enroll an application or origin");
             println!("  install-service  write personad service file (systemd or launchd)");
             println!("  trust-bundle     list or manage trust bundles");
             println!("  watch            poll for JWT-SVID changes every 30 seconds");
@@ -361,22 +361,19 @@ async fn fetch_x509() -> Result<()> {
     Ok(())
 }
 
-/// Enrolls an application or an authorized origin.
-async fn enroll(args: &[String]) -> Result<()> {
+/// Rejects both enroll subcommands. Enrollment is not implemented.
+///
+/// Earlier versions printed success here and stored nothing. Callers gate
+/// deployments on this exit code, so it must be non-zero.
+fn enroll(args: &[String]) -> Result<()> {
     let subcmd = args.first().map(String::as_str).unwrap_or("--help");
     match subcmd {
-        "app" => enroll_app().await,
-        "origin" => {
-            let url = match args.get(1) {
-                Some(u) => u,
-                None => {
-                    eprintln!("error: url required");
-                    eprintln!("usage: persona enroll origin <url>");
-                    std::process::exit(1);
-                }
-            };
-            println!("origin {url} authorized (in-memory)");
-            Ok(())
+        "app" | "origin" => {
+            eprintln!("error: enroll {subcmd} is not implemented");
+            eprintln!("There is no enrollment store. The CLI records nothing and personad keeps");
+            eprintln!("no enrollment state, so this command grants no origin or application any");
+            eprintln!("scope, and un-enrolled callers are not denied anything.");
+            std::process::exit(1);
         }
         other => {
             eprintln!("unknown enroll subcommand: {other}");
@@ -384,21 +381,6 @@ async fn enroll(args: &[String]) -> Result<()> {
             std::process::exit(1);
         }
     }
-}
-
-/// Shows enrollment info for the current process as an example app enrollment.
-async fn enroll_app() -> Result<()> {
-    let exe = std::fs::read_link("/proc/self/exe").context("read /proc/self/exe")?;
-    let name = exe
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| exe.display().to_string());
-    // SAFETY: getpid() and getuid() have no preconditions and always succeed.
-    let pid = unsafe { libc::getpid() };
-    let uid = unsafe { libc::getuid() };
-    println!("Enrolled: {name} (pid={pid}, uid={uid})");
-    println!("Note: enrollment is stored in-memory only in this version");
-    Ok(())
 }
 
 async fn trust_bundle(args: &[String]) -> Result<()> {

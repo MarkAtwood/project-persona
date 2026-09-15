@@ -1322,7 +1322,6 @@ dependencies = [
  "anyhow",
  "base64 0.23.1",
  "hyper-util",
- "libc",
  "persona-attestors",
  "persona-core",
  "persona-grpc",
