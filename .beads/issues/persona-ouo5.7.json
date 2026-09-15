@@ -1,0 +1,22 @@
+{
+  "id": "persona-ouo5.7",
+  "title": "auth_methods reports 'unix', naming the absence of authentication",
+  "description": "On a bare box the token carries auth_methods: [\"unix\"] (service.rs:362, populated from claim.source()). A consumer whose policy is 'auth_methods must be non-empty' -- the cheapest plausible reading of that field name -- now passes unconditionally on Unix, where before this change it could not be reached at all.\n\nsources: [\"unix\"] is honest. auth_methods is not, because getuid() is not an authentication method. Either omit the unix source from auth_methods or rename the field.",
+  "status": "open",
+  "priority": 3,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T01:01:37.8467748Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T01:01:37.8467748Z",
+  "dependencies": [
+    {
+      "issue_id": "persona-ouo5.7",
+      "depends_on_id": "persona-ouo5",
+      "type": "parent-child",
+      "created_at": "2026-09-15T01:01:37.855850619Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

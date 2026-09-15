@@ -1,0 +1,22 @@
+{
+  "id": "persona-ouo5.4",
+  "title": "set_var in unix_account_live races sibling tests that fork subprocesses",
+  "description": "cargo test runs all four #[tokio::test]s in tests/unix_account_live.rs on parallel threads. One calls std::env::set_var(\"HOME\", ..) at :195 and remove_var four times at :202, while a sibling concurrently runs Command::new(\"id\").output() -- a fork/exec that reads the process environ array. glibc setenv/unsetenv may realloc that array, so this is a genuine data race (read of freed memory), not just logical interference.\n\nNondeterministic and low-probability, which is worse than a reliable failure. Split the env-mutating test into its own integration binary.",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "bug",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T01:01:37.691072064Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T01:01:37.691072064Z",
+  "dependencies": [
+    {
+      "issue_id": "persona-ouo5.4",
+      "depends_on_id": "persona-ouo5",
+      "type": "parent-child",
+      "created_at": "2026-09-15T01:01:37.699571267Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

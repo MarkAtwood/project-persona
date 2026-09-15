@@ -1,0 +1,22 @@
+{
+  "id": "persona-ouo5.11",
+  "title": "README:61 repeats 'names it' with a shifted referent",
+  "description": "README:61-62 reads 'getuid() names the account the process runs under and getpwuid_r names it'. The second 'names' means 'resolves the account's name' and 'it' means 'the account', so it reads as a duplicated verb rather than a second step.\n\nRewrite: 'getuid() names the account the process runs under and getpwuid_r resolves its login name'.\n\nFlagged by the AI-prose lens, which otherwise found nothing in this diff: a grep for leverage/robust/seamless/ensure/utilize/facilitate/comprehensive/furthermore/additionally over the full diff returned zero hits.",
+  "status": "open",
+  "priority": 3,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T01:01:38.054365947Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T01:01:38.054365947Z",
+  "dependencies": [
+    {
+      "issue_id": "persona-ouo5.11",
+      "depends_on_id": "persona-ouo5",
+      "type": "parent-child",
+      "created_at": "2026-09-15T01:01:38.063080872Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}
