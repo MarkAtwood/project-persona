@@ -135,6 +135,10 @@ async fn main() -> Result<()> {
     }
 }
 
+/// Prints the SPIFFE identity personad reports for this caller.
+///
+/// A refusal is not an answer and an empty SVID list is not an identity, so
+/// both exit 1. Callers gate on `persona whoami && ...`.
 async fn whoami() -> Result<()> {
     use persona_grpc::workload::JwtsvidRequest;
 
@@ -151,7 +155,8 @@ async fn whoami() -> Result<()> {
         Ok(resp) => {
             let svids = resp.into_inner().svids;
             if svids.is_empty() {
-                println!("no identity");
+                eprintln!("error: no identity");
+                std::process::exit(1);
             } else {
                 for svid in &svids {
                     println!("spiffe_id: {}", svid.spiffe_id);
@@ -164,6 +169,7 @@ async fn whoami() -> Result<()> {
         }
         Err(status) => {
             eprintln!("personad: {}", status.message());
+            std::process::exit(1);
         }
     }
 
