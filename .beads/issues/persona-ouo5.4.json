@@ -2,13 +2,15 @@
   "id": "persona-ouo5.4",
   "title": "set_var in unix_account_live races sibling tests that fork subprocesses",
   "description": "cargo test runs all four #[tokio::test]s in tests/unix_account_live.rs on parallel threads. One calls std::env::set_var(\"HOME\", ..) at :195 and remove_var four times at :202, while a sibling concurrently runs Command::new(\"id\").output() -- a fork/exec that reads the process environ array. glibc setenv/unsetenv may realloc that array, so this is a genuine data race (read of freed memory), not just logical interference.\n\nNondeterministic and low-probability, which is worse than a reliable failure. Split the env-mutating test into its own integration binary.",
-  "status": "open",
+  "status": "closed",
   "priority": 2,
   "issue_type": "bug",
   "owner": "mark@reviewcommit.com",
   "created_at": "2026-09-15T01:01:37.691072064Z",
   "created_by": "agent",
-  "updated_at": "2026-09-15T01:01:37.691072064Z",
+  "updated_at": "2026-09-15T05:20:52.680810699Z",
+  "closed_at": "2026-09-15T05:20:52.680810699Z",
+  "close_reason": "Fixed in c426b2e. Bead was accurate, including the mechanism: the race is on the environ array (glibc setenv may realloc it while a sibling's fork/exec reads it), not on any variable's value. Fixed as the bead directed -- the env-mutating test moved to persona-attestors/tests/unix_account_bare_env.rs, its own integration binary and therefore its own process with no sibling thread to race. Test count preserved: unix_account_live.rs 4 -\u003e 3, plus 1 in the new binary. Additional finding the bead did not have: unix_account_live.rs's module header carried a RECORDED JUSTIFICATION for the mutation being safe ('the subject of these tests reads no environment variable at all, so no other test in this binary can observe the change'). That reasoning is wrong for this hazard -- it addresses logical interference, while the race is on the array and is indifferent to which variable is written. The header now says why nothing in that file may mutate the environment, so the wrong justification cannot be cited again. Workspace clippy is clean under -D warnings.",
   "dependencies": [
     {
       "issue_id": "persona-ouo5.4",

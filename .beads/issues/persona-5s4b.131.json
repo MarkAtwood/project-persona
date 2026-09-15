@@ -1,0 +1,25 @@
+{
+  "id": "persona-5s4b.131",
+  "title": "A second personad silently steals the socket from a running one",
+  "description": "Found while fixing persona-5s4b.35, which assumed the opposite. That bead says a caller should be able to see io::ErrorKind::AddrInUse and conclude 'another personad is running -- exit quietly'. It cannot, because that case never arises.\n\npersona-grpc/src/server.rs bind_listener unlinks any existing socket before binding. So when a second personad starts while a first is running:\n- the second unlinks the first's socket and binds its own at the same path\n- bind(2) succeeds; there is no AddrInUse\n- the first daemon keeps its listener open on an unlinked inode, serving only connections already accepted, and never learns it was displaced\n- every new client reaches the second daemon\n\nThe two daemons hold DIFFERENT ephemeral signing keys and DIFFERENT pseudonym_ikm (personad/src/main.rs:32 and persona-core/src/signer.rs:108), so consumers silently re-home to a new set of pseudonyms and a new JWT authority mid-session, with nothing logged beyond the existing 'removed stale socket' warning -- which reads as routine cleanup.\n\nThe unlink is deliberate and correct for the case it was written for: a socket left behind by a daemon that died. The gap is that an unlinked socket and a live one are indistinguishable by path alone.\n\nFix direction (fork, not decided here): the usual answer is an advisory lock on a separate file (flock on $XDG_RUNTIME_DIR/persona/personad.lock) taken before the unlink -- a held lock means a live daemon, a stale lock is released by the kernel when its holder dies, which is exactly the distinction the socket file cannot make. Alternative: connect(2) to the existing socket first and refuse if something answers, which needs no new file but races and treats a hung daemon as live. Either way the decision 'second instance refuses' vs 'second instance takes over' is a behaviour choice for Mark, and interacts with the settled rule that a command which did no work exits non-zero.\n\nNot a regression: predates persona-5s4b.35 and 56efa94.",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "bug",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T05:24:08.931094699Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T05:24:08.931094699Z",
+  "labels": [
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.131",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-15T05:24:08.953824225Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "id": "persona-5s4b.130",
+  "title": "SpiffeId has almost no test coverage",
+  "description": "Found while fixing persona-5s4b.77. persona-core/src/spiffe_id.rs had NO test module at all until that fix added five tests, and those cover only provenance(). SpiffeId is the central type of the crate and the thing that ends up inside every issued token.\n\nUntested today:\n- FromStr: the parser at spiffe_id.rs:129+ (scheme stripping, missing authority, empty path, a trailing slash, an empty trust domain, a URI with a query or fragment). SpiffeIdError has variants nothing exercises.\n- Display/uri() round-tripping for every TrustDomain variant, including the ones that interpolate (PersonalDid, PivIssuer, OrgOidc). persona-5s4b.37 is the P1 that says this round-trip is NOT injective -- a test suite here is what would pin the current behaviour before that is changed.\n- TrustDomain::from_str's fallback arm, which turns any unrecognised string into OrgOidc(s).\n- pseudonymous() path construction beyond what pseudonym.rs happens to assert.\n\nNot urgent and not a defect on its own; filed so the gap is visible rather than rediscovered. Worth doing BEFORE persona-5s4b.37, since .37 changes the string form and characterisation tests written first are what make that change reviewable.",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T05:21:09.418526051Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T05:21:09.418526051Z",
+  "labels": [
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.130",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-15T05:21:09.433220102Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

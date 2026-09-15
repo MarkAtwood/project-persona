@@ -2,13 +2,15 @@
   "id": "persona-5s4b.17",
   "title": "persona-grpc/build.rs emits no rerun-if-changed, so proto edits do not regenerate code",
   "description": "persona-grpc/build.rs compiles ../proto/spiffe/workload/workload.proto but never emits a cargo:rerun-if-changed directive.\n\nCargo's default when a build script emits no rerun-if-changed is to rerun it when any file *inside the package* changes. The proto lives at the workspace root (proto/), outside persona-grpc/, so it is not in that set. Editing workload.proto and rebuilding silently reuses the previously generated code — the build succeeds against a stale API and the mismatch only surfaces later as a confusing type error or a wire-format bug.\n\nAdd:\n    println!(\"cargo:rerun-if-changed=../proto/spiffe/workload/workload.proto\");\n(and one for the include dir if more protos are added).",
-  "status": "open",
+  "status": "closed",
   "priority": 2,
   "issue_type": "bug",
   "owner": "mark@reviewcommit.com",
   "created_at": "2026-09-13T20:57:43.542306233Z",
   "created_by": "agent",
-  "updated_at": "2026-09-13T20:57:43.542306233Z",
+  "updated_at": "2026-09-15T05:20:52.573067368Z",
+  "closed_at": "2026-09-15T05:20:52.573067368Z",
+  "close_reason": "Fixed in 2a7e025. Verified empirically rather than by inspection: with the build script unchanged and the build settled, 'touch proto/spiffe/workload/workload.proto \u0026\u0026 cargo build -p persona-grpc' produced NO work before the fix (Finished, nothing compiled) and recompiles persona-grpc after it. The proto list and include root are each named once and used for both the rerun-if-changed directives and compile_protos, so the trigger cannot drift from the compiler input. Note build artifacts land in /home/mark/Cache/cargo-target per ~/.cargo/config.toml, not ./target.",
   "labels": [
     "workspace",
     "review"
