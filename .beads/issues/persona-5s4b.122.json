@@ -3,13 +3,15 @@
   "title": "persona whoami exits 0 when the daemon refuses to name the caller",
   "description": "persona/src/main.rs:165-170. The Err arm of whoami() prints 'personad: {message}' to stderr and then falls through to Ok(()), so the process exits 0 when personad returned UNAUTHENTICATED. persona-grpc/src/service.rs can return 'consumer could not be attested', 'no identity claims available' and 'required presence level not satisfied' on that path. The empty-svids branch also prints 'no identity' and exits 0.\n\nSo 'persona whoami \u0026\u0026 deploy' deploys when the daemon affirmatively refused to say who the caller is. That is the same gate persona-5s4b.103 was filed about, in the one command whose whole job is to answer 'who am I'.\n\nThis is not house style: fetch_jwt and prove handle the identical Err with std::process::exit(1). whoami is the outlier inside one file.\n\nSharpened by c78a05e: the new enumerate note tells the operator to 'Ask personad directly with persona whoami', so the fix for .102 now routes people to the one identity command whose exit code cannot distinguish an answer from a refusal.",
   "acceptance_criteria": "whoami exits non-zero when the daemon returns an error status, and when no SVID is returned. fetch_jwt/prove behaviour unchanged.",
-  "status": "open",
+  "status": "closed",
   "priority": 1,
   "issue_type": "bug",
   "owner": "mark@reviewcommit.com",
   "created_at": "2026-09-15T03:37:20.785176984Z",
   "created_by": "agent",
-  "updated_at": "2026-09-15T03:37:20.785176984Z",
+  "updated_at": "2026-09-15T03:47:07.620053043Z",
+  "closed_at": "2026-09-15T03:47:07.620053043Z",
+  "close_reason": "Fixed in b34f3d8: whoami exits 1 on a daemon Err and on an empty SVID list, matching fetch_jwt. Refusal/empty paths verified by reading and the compiler; personad was not running, so they were not exercised at runtime.",
   "labels": [
     "review"
   ],

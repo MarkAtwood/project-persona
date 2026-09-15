@@ -3,13 +3,15 @@
   "title": "The remaining CLI stubs print success to stdout and exit 0",
   "description": "The generalisation of persona-5s4b.103, for the commands that pass were not in that bead's scope. Each prints a not-implemented notice with println! (stdout) and returns Ok, so the exit status is 0:\n\n- fetch_x509, main.rs:386. Aggravated by the stream choice: this command's whole purpose is to emit a credential to stdout, so 'persona fetch-x509 \u003e client.pem' writes a file containing 'X.509-SVID issuance not yet implemented (persona-4qm)' and reports success. Whatever consumes client.pem fails later, in a component with no idea the CLI was a stub. The bead number in the message is good practice and should survive the fix.\n- trust_bundle 'add', main.rs:431-433. The URL argument is read nowhere in the function; args is only consulted for the subcommand. 'persona trust-bundle add https://peer.example \u0026\u0026 mark_federation_ready' succeeds, and so does the same command with no URL at all -- there is no arity check. Silently discarding an argument removes the signal an operator uses to tell a stub from a real command.\n- the trust_bundle _ arm, main.rs:437-439, prints usage to stdout and returns Ok. So 'persona trust-bundle lst' succeeds. Both comparable dispatchers in the same file exit 1 on an unrecognised word (enroll's, and the top-level one), making this the only unknown-subcommand path a shell gate treats as done.\n\ntrust-bundle remove is filed separately because it is fail-open rather than fail-closed.",
   "acceptance_criteria": "Each stub exits non-zero; not-implemented notices go to stderr, not stdout; unknown trust-bundle subcommands exit non-zero.",
-  "status": "open",
+  "status": "closed",
   "priority": 2,
   "issue_type": "bug",
   "owner": "mark@reviewcommit.com",
   "created_at": "2026-09-15T03:37:34.832122014Z",
   "created_by": "agent",
-  "updated_at": "2026-09-15T03:37:34.832122014Z",
+  "updated_at": "2026-09-15T03:47:07.71089472Z",
+  "closed_at": "2026-09-15T03:47:07.71089472Z",
+  "close_reason": "Fixed in 440c6eb: fetch-x509, trust-bundle add and trust-bundle remove write to stderr and exit 1; the trust-bundle unknown-subcommand arm exits 1 like enroll's and main's. Verified by running: 'persona fetch-x509 \u003e FILE' now leaves FILE 0 bytes with exit 1. Also added --help arms to both dispatchers, which unwrap_or(\"--help\") had made answer 'unknown subcommand: --help'.",
   "labels": [
     "review"
   ],
