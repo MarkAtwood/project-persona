@@ -1,0 +1,28 @@
+{
+  "id": "persona-ux32",
+  "title": "External attestors are trusted by design; calibrate, don't gate",
+  "description": "TRUSTING EXTERNAL ATTESTORS IS FUNDAMENTAL, NOT A HAZARD TO BE MINIMISED. Mark,\n2026-09-15. hired is a trust aggregator by construction: its entire purpose is\nto put many human-identity authorities behind one socket. An authority it\nrefuses to trust is an identity source it does not support.\n\nIT ALREADY DOES THIS, ON EVERY REQUEST. The \"compiled-in Rust attestor\" is a\nCLIENT SHIM, not an authority. The authority is always somewhere else:\n\n  ssh.rs        speaks the SSH agent wire protocol over SSH_AUTH_SOCK (:3, :70)\n                -- another process, holding keys hired never sees\n  gpg.rs        tokio::process::Command spawns the gpg binary (:139-147)\n  tailscale.rs  raw HTTP/1.1 to tailscaled's LocalAPI over its Unix socket\n  unix.rs       getpwuid_r, whose own doc comment at :20 notes a directory\n                backend may answer -- see persona-ouo5.5, that can be NSS over\n                the network\n\nSo there is no in-process/out-of-process boundary to defend. A 2028-class\nbiometric sensor in its own box (see persona-3tly epic notes) is the same\narchitecture as ssh-agent, at a higher tier and over a longer wire.\n\nTHIS IS THE SAME MISTAKE SHAPE AS THE NO-NETWORK POSTURE, already made and\nalready reversed -- see the personad-may-use-the-network memory, commits\n5edfbb6 and its revert. \"Refusing the network does not make those sources\nlocal, it makes them unsupported.\" Refusing external attestors does not make\nidentity local; it makes it absent. Do not re-propose either.\n\nSO THE QUESTION IS NOT WHETHER, IT IS WITH WHAT CALIBRATION. Trust here is\ngraduated and explicit, never binary. What the daemon needs, and does not have:\n\n  ENROLMENT       being able to connect must not be sufficient to be believed.\n                  ssh-agent is trusted because SSH_AUTH_SOCK is in the user's\n                  own session -- an inherited ambient decision that does not\n                  generalise to a box on the network. An external attestor\n                  needs a decision recorded somewhere, the way persona's GPG\n                  enrolment rule is recorded (see gpg-key-validity-policy).\n\n  PER-CONNECTION  peer credentials and, where available, LSM context -- at\n  ATTESTATION     least what persona-5s4b.117 wants for consumers. Note the\n                  asymmetry that sets the bar: a mis-attested CONSUMER receives\n                  a credential it should not have, bounded by its own\n                  pseudonym. A mis-attested ATTESTOR mints assurance for an\n                  identity nothing established, for every consumer at once.\n                  Same mechanism, strictly more consequence.\n\n  TIER CEILING    what a given attestor is permitted to assert. This is the\n                  calibration that makes trusting external sources SAFE rather\n                  than merely necessary: a sensor class that can establish\n                  hardware-bound biometric presence may assert it; one that\n                  cannot must not be able to claim it by saying so. Without a\n                  ceiling, trust is all-or-nothing and the only safe answer\n                  becomes refusal -- which is the posture this bead rejects.\n\n  UNATTESTABLE    present but unattestable is a refusal, consistent with the\n                  fail-shut default at hire-grpc/src/service.rs:238-247. Note\n                  this is a refusal of THAT SOURCE, not of the request: hired\n                  still issues from whatever else proved.\n\nRELATIONSHIP TO persona-5s4b.8: that bead covers registration and availability\nprobing -- a packaging question. This is the authorization question underneath\nit. They should land together; a registration path with no calibration story\nwould make every registered attestor equally believed, which is the failure\nmode this bead exists to prevent.",
+  "acceptance_criteria": "A written trust model: how an external attestor is enrolled, how it is attested per connection, what tier ceiling it carries, and what happens when attestation fails. The model must ADMIT new external authorities, not merely restrict them.",
+  "status": "open",
+  "priority": 1,
+  "issue_type": "feature",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T20:32:04.323918638Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T20:32:57.02562807Z",
+  "labels": [
+    "security",
+    "architecture",
+    "attestor"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-ux32",
+      "depends_on_id": "persona-5s4b.8",
+      "type": "blocks",
+      "created_at": "2026-09-15T20:32:57.095589241Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "id": "persona-3tly.7",
+  "title": "Continuous presence has no carrier; departure events do",
+  "description": "persona-3tly.6 solves departure for DISCRETE events -- a card leaves the reader, a lock key is pressed, a session ends. Each fires once, and .6's proposal (ValidateJWTSVID consults live presence state) delivers it. That is the right design for those sources and this bead does not relitigate it.\n\nA CONTINUOUSLY-SENSED source does not fit that shape. Motivating case on the persona-3tly epic notes: paired IR cameras doing face map, vascular and liveness at the display, sampling constantly.\n\nTWO DIFFERENCES THAT MATTER:\n\n(1) There is no departure EVENT to deliver. The sensor emits a continuous truth, so departure is the ABSENCE of a fresh observation. Absence cannot be pushed; it can only be noticed by something that expected an observation and did not get one. That is a poll or a stream, not an event, and .6's event plumbing does not produce it.\n\n(2) .6's honest limit stops being acceptable. .6 records that a consumer verifying the signature itself against the published JWKS never sees the revocation, and prices that as a known hole. Against card-pull, the hole is bounded by an operator action people already understand. Against continuous biometrics in a room that installed cameras SPECIFICALLY to catch someone leaving the desk, that hole is the entire threat the deployment was built to close. The same defect, repriced by the source.\n\nTHE WIRE CONSTRAINT: FetchJWTSVID is the ONLY unary RPC in the Workload API. proto/spiffe/workload/workload.proto -- FetchX509SVID:14, FetchX509Bundles:20, FetchJWTBundles:34, FetchWITSVID:47 and FetchWITBundles:52 are all 'stream'; FetchJWTSVID:29 alone is request/response. So the one credential type that carries presence is the one with no push channel.\n\nTHE FORK, to be decided rather than defaulted into:\n  (a) Collapse JWT-SVID TTLs from the hardcoded 300s (hire-core/src/signer.rs:203) to seconds, and let callers re-fetch. Cheap to state, and it makes presence approximately honest without any new protocol. Costs a re-fetch storm, and it is INCOHERENT with the presence-TTL-scoped proof cache in persona-jl4j.5 -- a 2s token against a 300s cached proof asserts a freshness the cache is not tracking.\n  (b) Make presence a PULL: consumers call ValidateJWTSVID per use and validation consults live presence. This is .6's proposal taken to its conclusion, and it converts the JWT-SVID from a bearer token into a reference token. That is a real architectural fork and it changes what SPIFFE conformance means here, because a stock SPIFFE consumer self-verifies and will not make the call.\n  (c) Carry presence on a stream that is not the JWT-SVID, leaving the token to carry identity only.\n\nDECIDE THIS BEFORE persona-jl4j.5 fixes a cache TTL, because .5 currently assumes presence only ever expires. Note (a) and (b) push the TTL in opposite directions.",
+  "acceptance_criteria": "One of (a)/(b)/(c) chosen and written into SPEC-HIRE with its cost stated; persona-jl4j.5's cache TTL derived from that choice rather than from the current 300s constant.",
+  "status": "open",
+  "priority": 1,
+  "issue_type": "feature",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T20:32:04.256708923Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T20:32:04.256708923Z",
+  "labels": [
+    "design",
+    "presence",
+    "api"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-3tly.7",
+      "depends_on_id": "persona-3tly",
+      "type": "parent-child",
+      "created_at": "2026-09-15T20:32:04.283845079Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

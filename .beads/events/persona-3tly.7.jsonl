@@ -1,0 +1,4 @@
+{"id":"01a0a6c5-02a5-7530-b7c5-4513e888e2fa","issue_id":"persona-3tly.7","event_type":"created","actor":"agent","old_value":"","new_value":"","created_at":"2026-09-15T20:32:04.261341543Z"}
+{"id":"01a0a6c5-02aa-7188-b58e-80621bc1c688","issue_id":"persona-3tly.7","event_type":"label_added","actor":"agent","comment":"Added label: design","created_at":"2026-09-15T20:32:04.266101075Z"}
+{"id":"01a0a6c5-02ae-78f1-8e4b-c6de6fe0ebcd","issue_id":"persona-3tly.7","event_type":"label_added","actor":"agent","comment":"Added label: presence","created_at":"2026-09-15T20:32:04.27058664Z"}
+{"id":"01a0a6c5-02b3-70d7-8766-ed7fde2885f8","issue_id":"persona-3tly.7","event_type":"label_added","actor":"agent","comment":"Added label: api","created_at":"2026-09-15T20:32:04.275056001Z"}
