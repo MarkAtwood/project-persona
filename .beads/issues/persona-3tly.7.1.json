@@ -32,6 +32,14 @@
       "created_at": "2026-09-15T20:37:03.839875539Z",
       "created_by": "agent",
       "metadata": "{}"
+    },
+    {
+      "issue_id": "persona-3tly.7.1",
+      "depends_on_id": "persona-yzl8",
+      "type": "blocks",
+      "created_at": "2026-09-15T20:38:48.185994963Z",
+      "created_by": "agent",
+      "metadata": "{}"
     }
   ]
 }

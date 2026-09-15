@@ -1,0 +1,18 @@
+{
+  "id": "persona-yzl8",
+  "title": "ValidateJWTSVID accepts every token 60s past exp",
+  "description": "hire-grpc/src/service.rs:513 builds Validation::new(Algorithm::ES256) and never sets leeway.\n\njsonwebtoken 11.0.0 defaults that field to 60 (validation.rs:39-43 and :126), and the expiry check at validation.rs:283-284 is:\n\n    exp - reject_tokens_expiring_in_less_than \u003c now - leeway\n\nSo hired's own ValidateJWTSVID honours a JWT-SVID for 60 seconds after it expires. Today's tokens declare a 300s life (hire-core/src/signer.rs:203) and are actually accepted for 360s -- a 20% overrun nobody declared and no test covers.\n\nTHIS IS NOT CLOCK SKEW AND TIME SYNC DOES NOT FIX IT. Mark's point stands that high-security sites force clock alignment before any action -- Kerberos already requires it, so any CAC/PIV site has it. Leeway is a POLICY CONSTANT the verifying library applies regardless of how accurate the clocks actually are. Perfectly aligned clocks still get 60 free seconds.\n\nWHY THIS IS P1 RATHER THAN A TIDY-UP: it silently defeats persona-3tly.7.1. That bead derives JWT-SVID TTL from the backing source's departure-detection capability, so a source that cannot observe departure gets a short TTL as its ENTIRE safety margin. A 2s token accepted for 62s is not a short TTL. The layer would look implemented and do nothing.\n\nFIX: set leeway explicitly. Zero is defensible here and probably right -- the daemon and its consumers are on the same host over a Unix socket, sharing one clock, so there is no skew to accommodate. Whatever value is chosen must be CHOSEN, with the reason recorded, rather than inherited from a library default.\n\nNote the inverse knob while in here: reject_tokens_expiring_in_less_than defaults to 0, and is the field that would refuse a token about to expire in transit. Different question, same struct, also currently a default nobody picked.\n\nTEST ORACLE: an independent one is available and cheap. Sign a token with a known past exp and assert ValidateJWTSVID refuses it -- the assertion does not depend on our own verifier's configuration, only on the boundary behaviour, and it fails today.",
+  "acceptance_criteria": "leeway is set explicitly with its value justified in a comment; a token past exp is refused; a test covers the boundary; reject_tokens_expiring_in_less_than is likewise chosen rather than defaulted.",
+  "status": "open",
+  "priority": 1,
+  "issue_type": "bug",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T20:38:34.639745425Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T20:38:34.639745425Z",
+  "labels": [
+    "security",
+    "crypto",
+    "correctness"
+  ]
+}
