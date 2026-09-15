@@ -466,6 +466,16 @@ async fn trust_bundle(args: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// Polls personad every 30 seconds and prints identities as they change.
+///
+/// The loop does not give up when the daemon is unreachable: a restart should
+/// not kill a watch someone is reading, and surviving outages is what a monitor
+/// is for. So there is no failure threshold to pick and nothing to configure.
+/// Only Ctrl-C ends it, which is the user stopping rather than a failure, so it
+/// exits 0. `persona whoami` is the health check that answers with an exit code.
+///
+/// Identities go to stdout and diagnostics to stderr, so redirecting the stream
+/// yields identities alone.
 async fn watch() -> Result<()> {
     use persona_grpc::workload::JwtsvidRequest;
     use tokio::time::{interval, Duration};
@@ -478,7 +488,7 @@ async fn watch() -> Result<()> {
                 let mut client = match connect_to_daemon().await {
                     Ok(c) => c,
                     Err(e) => {
-                        println!("[{now}] error: {e}");
+                        eprintln!("[{now}] error: {e}");
                         continue;
                     }
                 };
@@ -496,7 +506,7 @@ async fn watch() -> Result<()> {
                         }
                     }
                     Err(e) => {
-                        println!("[{now}] error: {}", e.message());
+                        eprintln!("[{now}] error: {}", e.message());
                     }
                 }
             }
