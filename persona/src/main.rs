@@ -387,10 +387,13 @@ async fn prove(args: &[String]) -> Result<()> {
     Ok(())
 }
 
-/// Stub for X.509-SVID issuance — not yet implemented by the daemon.
+/// Rejects X.509-SVID issuance. The daemon does not implement it.
+///
+/// The notice goes to stderr so `persona fetch-x509 > client.pem` leaves the
+/// file empty instead of filling it with prose.
 async fn fetch_x509() -> Result<()> {
-    println!("X.509-SVID issuance not yet implemented (persona-4qm)");
-    Ok(())
+    eprintln!("error: X.509-SVID issuance not yet implemented (persona-4qm)");
+    std::process::exit(1);
 }
 
 /// Rejects both enroll subcommands. Enrollment is not implemented.
@@ -406,6 +409,10 @@ fn enroll(args: &[String]) -> Result<()> {
             eprintln!("no enrollment state, so this command grants no origin or application any");
             eprintln!("scope, and un-enrolled callers are not denied anything.");
             std::process::exit(1);
+        }
+        "--help" | "-h" => {
+            println!("usage: persona enroll app | origin <url>");
+            std::process::exit(0);
         }
         other => {
             eprintln!("unknown enroll subcommand: {other}");
@@ -436,13 +443,24 @@ async fn trust_bundle(args: &[String]) -> Result<()> {
             }
         }
         "add" => {
-            println!("trust-bundle federation not yet implemented (requires personad support)");
+            eprintln!("error: trust-bundle add is not implemented (requires personad support)");
+            eprintln!("No trust anchor was added. personad was not contacted.");
+            std::process::exit(1);
         }
         "remove" => {
-            println!("trust-bundle removal not yet implemented");
+            eprintln!("error: trust-bundle remove is not implemented");
+            eprintln!("No trust anchor was removed. personad was not contacted, so any anchor");
+            eprintln!("for that domain is still live and tokens from it still validate.");
+            std::process::exit(1);
         }
-        _ => {
+        "--help" | "-h" => {
             println!("usage: persona trust-bundle <list|add <url>|remove <domain>>");
+            std::process::exit(0);
+        }
+        other => {
+            eprintln!("unknown trust-bundle subcommand: {other}");
+            eprintln!("usage: persona trust-bundle <list|add <url>|remove <domain>>");
+            std::process::exit(1);
         }
     }
     Ok(())
