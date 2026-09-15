@@ -2,13 +2,15 @@
   "id": "persona-o9xa",
   "title": "Major dependency upgrades blocked by caret bounds",
   "description": "cargo update clears everything inside the declared semver ranges (done, aaa70a0). Eleven crates sit behind a major bound that only a Cargo.toml edit can cross. Tracked as separate issues because each is an independent migration with its own breakage surface; a big-bang upgrade would make failures impossible to attribute.\n\nBaseline at filing: tests 37/37 green, cargo audit exit 0, clippy exit 101 (two pre-existing errors, persona-5s4b.27).",
-  "status": "open",
+  "status": "closed",
   "priority": 1,
   "issue_type": "epic",
   "owner": "mark@reviewcommit.com",
   "created_at": "2026-09-13T23:48:15.522066106Z",
   "created_by": "agent",
-  "updated_at": "2026-09-13T23:48:15.522066106Z",
+  "updated_at": "2026-09-15T16:39:29.682288114Z",
+  "closed_at": "2026-09-15T16:39:29.682288114Z",
+  "close_reason": "All five children complete; bd flagged it eligible for close. Verified 2026-09-15 that the upgrades are actually in effect and not merely declared: Cargo.lock carries base64 0.23.1, sha2 0.11.0 and hkdf 0.13.0 for this workspace. The older majors (base64 0.22.1, sha2 0.10.9, hkdf 0.12.4, digest 0.10.7) are still in the lock but only as transitive dependencies of other crates -- they are not reachable from a Cargo.toml edit here, so they are outside what this epic could cross.\n\nCaveat on the epic's own framing: it said 'eleven crates sit behind a major bound' and only five issues were ever filed. I did not re-derive that count -- cargo-outdated is not installed and the registry is not consulted offline -- so I am closing on 'every child done', not on 'no major bound remains anywhere'. If the other six were real they were never written down; reopen or file fresh if a later cargo-outdated run finds them.\n\nNote for whoever does that run: rand_core is declared 0.6 and rand_core 0.9 exists, but ed25519-dalek 2 pins 0.6, so that one is held by a dependency rather than by our own caret. Two versions of sha2/digest coexist in the graph for the same reason (jsonwebtoken and p256 still on digest 0.10); that resolves itself upstream, not here.",
   "labels": [
     "dependency",
     "upgrade"
