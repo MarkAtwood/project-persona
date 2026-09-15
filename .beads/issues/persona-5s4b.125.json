@@ -1,0 +1,26 @@
+{
+  "id": "persona-5s4b.125",
+  "title": "Docs and --help advertise CLI commands that are stubs or absent",
+  "description": "README.md:94 lists the CLI as 'whoami, enumerate, fetch-jwt, enroll app, delegate, etc.' Two problems: 'enroll app' now exits 1 (closed as persona-5s4b.103), and 'delegate' is not in the dispatch table at persona/src/main.rs at all -- the README names a command that has never existed. The capability table at README.md:31 is in the same voice, and SPEC-HIA.md:336-337 documents 'persona enroll app' and 'persona enroll origin' as authorization commands.\n\nIn --help (main.rs:121,125), 'fetch-x509  fetch an X.509-SVID from the daemon' describes a function that prints a sentence, and 'trust-bundle  list or manage trust bundles' advertises manage, i.e. add and remove, both stubs. The enroll line was corrected in cd382e7; these were left because they belong to other commands.\n\nNote SPEC-HIA.md is normative, so deciding whether enroll is removed from the spec or kept as unimplemented-but-specified is Mark's call, not a docs edit.",
+  "acceptance_criteria": "No doc or help text names a command that does not exist or claims a stub works. SPEC-HIA treatment of enroll decided explicitly.",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "bug",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T03:37:48.595981134Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T03:37:48.595981134Z",
+  "labels": [
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.125",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-15T03:37:48.611194156Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

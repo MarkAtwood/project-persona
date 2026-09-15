@@ -1,0 +1,26 @@
+{
+  "id": "persona-5s4b.123",
+  "title": "trust-bundle remove reports a revocation it never performs",
+  "description": "persona/src/main.rs:434-436. 'remove' prints 'trust-bundle removal not yet implemented' to STDOUT and returns Ok, so the process exits 0. personad is never contacted.\n\nDirection matters here. The enroll no-op closed in .103 granted nothing and therefore denied nothing, which is a fail-closed nuisance. This one FAILS TO REVOKE, which is fail-open. An operator withdrawing trust in a compromised federated domain runs 'persona trust-bundle remove compromised.example', sees a benign line and a zero exit, and concludes the anchor is gone. It is still live and tokens from that domain keep validating. Any runbook step of the form 'persona trust-bundle remove X \u0026\u0026 echo revoked' passes.\n\nIt is also the weakest-worded of the three stubs: unlike 'add' it does not even say 'requires personad support', so nothing hints the daemon was never asked.\n\nFound by the discovery lens while fixing .103; confirmed by reading the code.",
+  "acceptance_criteria": "trust-bundle remove exits non-zero and says no revocation happened, until the daemon implements it.",
+  "status": "open",
+  "priority": 1,
+  "issue_type": "bug",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T03:37:34.765289805Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T03:37:34.765289805Z",
+  "labels": [
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.123",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-15T03:37:34.778636283Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}
