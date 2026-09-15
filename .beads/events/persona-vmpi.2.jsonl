@@ -1,0 +1,4 @@
+{"id":"01a0a6d6-4b42-7267-9fca-f1a5e3e2b1a1","issue_id":"persona-vmpi.2","event_type":"created","actor":"agent","old_value":"","new_value":"","created_at":"2026-09-15T20:50:56.962159353Z"}
+{"id":"01a0a6d6-4b46-7464-a297-ee6a8dbdb67d","issue_id":"persona-vmpi.2","event_type":"label_added","actor":"agent","comment":"Added label: attestor","created_at":"2026-09-15T20:50:56.966288834Z"}
+{"id":"01a0a6d6-4b4a-74b0-8c9f-720fb360dbaa","issue_id":"persona-vmpi.2","event_type":"label_added","actor":"agent","comment":"Added label: driver","created_at":"2026-09-15T20:50:56.970308246Z"}
+{"id":"01a0a6d6-4b4e-739c-9b4b-0d5c73f3bae4","issue_id":"persona-vmpi.2","event_type":"label_added","actor":"agent","comment":"Added label: network","created_at":"2026-09-15T20:50:56.97423745Z"}

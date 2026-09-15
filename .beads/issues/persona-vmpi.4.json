@@ -1,0 +1,27 @@
+{
+  "id": "persona-vmpi.4",
+  "title": "Cloud CLI credential caches: aws-sso, gcloud, az",
+  "description": "Filed as ONE bead because they are one mechanism, not three. SPEC-HIRE lists aws-sso (~/.aws/sso/cache), gcloud (gcloud auth print-identity-token) and az (az account get-access-token) as separate Day-Two sources, but all three are the same shape: read a cached OIDC-ish credential that some other tool's login flow deposited. So is hire-attestors/src/oidc.rs, which already exists and does exactly this for a different set of paths.\n\nTHE RIGHT MOVE IS PROBABLY NOT THREE MODULES. persona-lnaj already names the generalisation -- 'No general file-drop identity source; every file path is compiled in'. These three are the evidence that lnaj is the real bead and this is a consumer of it. Three hardcoded path-scanners would be the mechanism where lnaj's configurable drop point is the constraint.\n\nDecide that first. If lnaj lands, this may reduce to configuration and a note in the docs rather than any Rust at all -- which would be the best outcome available.\n\nINHERITS THE BEARER PROBLEM in full: none of these can answer a challenge, all of them are files on disk that we did not verify. Same unanswered question as tailscale and oidc under persona-qbnm, and the gcloud/az variants additionally shell out to another binary, so the trust boundary is a subprocess. Do not implement before persona-ux32 says what believing a read-back artifact requires.\n\nP3 deliberately: these serve developer convenience on a workstation, not the high-assurance cases the project is actually aimed at, and each one adds an unverified iaa1-or-iaa2 path.",
+  "acceptance_criteria": "Either implemented as configuration over persona-lnaj, or a recorded reason why three separate modules are warranted; no new hardcoded cache paths.",
+  "status": "open",
+  "priority": 3,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T20:51:16.732103444Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T20:51:16.732103444Z",
+  "labels": [
+    "attestor",
+    "driver"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-vmpi.4",
+      "depends_on_id": "persona-vmpi",
+      "type": "parent-child",
+      "created_at": "2026-09-15T20:51:16.760573193Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

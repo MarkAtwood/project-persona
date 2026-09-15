@@ -1,0 +1,27 @@
+{
+  "id": "persona-qbnm",
+  "title": "Seven attestors enumerate but cannot prove",
+  "description": "hire-attestors/src/lib.rs:112-122 gives Attestor::prove a default body that returns ChallengeFailed('\u003cname\u003e cannot produce evidence'). Only ssh.rs and unix.rs override it. Every other module -- tailscale, oidc, did_key, gpg, fido2, goa, piv -- inherits the refusal.\n\nUnder the Candidate/Claim split that is not a small gap. Claim::derive takes no assurance level and reads the tier off the evidence variants, so no evidence means NO CLAIM. These seven sources enumerate candidates that can never become claims. They probe, they log, they appear in 'hire enumerate', and they contribute nothing to an issued token. The README status table says this plainly -- 'works for most sources; returns candidates, not claims' -- and this epic is the work behind that sentence.\n\nThey are NOT seven instances of the same task. Three groups:\n\n  CAN SIGN A CHALLENGE TODAY, no new dependency, closest to ssh.rs:\n    gpg (gpg-agent signs), did_key (the key is local by definition)\n\n  NEEDS A DEPENDENCY BEFORE prove() IS EVEN WRITABLE:\n    fido2 (real ctap-hid-fido2 dep exists but is off by default),\n    piv (pkcs11 feature is an empty placeholder; is_available() returns\n    false in BOTH cfg arms so it never activates at all),\n    goa (feature is an empty placeholder with no zbus dep)\n\n  CANNOT SIGN ANYTHING, AND THAT IS THE POINT:\n    tailscale and oidc. Neither holds a key that can answer a challenge.\n    tailscaled reports what it believes; a cached OIDC token is a bearer\n    artifact. For these, 'prove' means the daemon deciding to believe an\n    external authority -- which is persona-ux32's question, not a coding\n    task. Do not let them be implemented as 'return the thing we read'\n    without answering it.\n\nEVERY CHILD MUST DECLARE proof cost and attainable tier (persona-jl4j.3). fido2 and piv are the first attestors that will PROMPT A HUMAN, which is exactly the constraint persona-jl4j decided FetchJWTSVID must respect. Implementing either before jl4j.3 lands means the touch-storm arrives before the thing that prevents it.",
+  "design": "Order suggested by cost, not by priority: gpg and did_key first, because they need no new dependency and follow ssh.rs's shape closely enough to validate that the Evidence/binds_to path generalises beyond one attestor. fido2 next, because it is the first real presence-establishing source and the whole presence model (persona-3tly) is currently theory tested against nothing. piv after, since PKCS#11 is the heaviest dependency. tailscale and oidc last, because they are blocked on a decision rather than on code. goa whenever GNOME matters.",
+  "status": "open",
+  "priority": 1,
+  "issue_type": "epic",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T20:49:14.030190699Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T20:49:14.030190699Z",
+  "labels": [
+    "attestor",
+    "driver"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-qbnm",
+      "depends_on_id": "persona-jl4j.3",
+      "type": "blocks",
+      "created_at": "2026-09-15T20:51:16.986281029Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

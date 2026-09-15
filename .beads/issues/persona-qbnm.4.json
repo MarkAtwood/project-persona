@@ -1,0 +1,28 @@
+{
+  "id": "persona-qbnm.4",
+  "title": "piv: PKCS#11 slot enumeration and challenge signing",
+  "description": "hire-attestors/src/piv.rs is the emptiest module that still claims to exist. is_available() returns FALSE IN BOTH cfg ARMS (:25-31) -- the pkcs11 arm hardcodes false behind a ponytail comment naming cryptoki as the upgrade -- so the source never activates even when built with --features pkcs11. The pkcs11 feature itself is an empty placeholder with no dependency (hire-attestors/Cargo.toml). And prove() is the default refusal.\n\nReal work, in order: add cryptoki, enumerate slots, find the PIV application, read the certificate, sign the challenge with the card's key.\n\nWHY IT MATTERS DISPROPORTIONATELY: this is the CAC path. SPEC-HIRE notes the certificate may carry UPN, email, or DOD EDIPI, and the whole 2028 high-security scenario on persona-3tly assumes card-based identity is real here. It is also the source persona-3tly.6 names as having genuine DEPARTURE detection -- a PC/SC card-removal event is an observed fact, not a timeout -- which makes it the natural first implementation of the departure half of the presence model.\n\nPresence depends on PIN mode, which makes it a prompting attestor: same persona-jl4j.3 constraint as fido2.\n\nAssurance iaa3 when the card is hardware-bound and a PIN is required.",
+  "acceptance_criteria": "A signature from the card over the daemon's challenge; is_available() reflects an actual slot probe rather than a constant; PIN-mode determines the presence claim; proof cost declared.",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T20:49:56.316748338Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T20:49:56.316748338Z",
+  "labels": [
+    "attestor",
+    "driver",
+    "crypto"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-qbnm.4",
+      "depends_on_id": "persona-qbnm",
+      "type": "parent-child",
+      "created_at": "2026-09-15T20:49:56.346691206Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "id": "persona-vmpi",
+  "title": "Specified sources with no implementation at all",
+  "description": "SPEC-HIRE.md 'Sources (Attestor Plugins)' specifies sources that have no module in hire-attestors/src/ whatsoever. Distinct from persona-qbnm, where the module exists and only prove() is missing: here there is nothing to finish.\n\nVerified 2026-09-15 against the tree. hire-attestors/src/ contains claim, did_key, fido2, goa, gpg, lib, oidc, piv, registry, ssh, tailscale, unix. Nothing else.\n\nDAY-ONE SOURCES WITH NO MODULE:\n  secure-enclave  macOS TouchID/FaceID via LocalAuthentication + CryptoTokenKit\n  did:web         SPEC groups it under 'did-self' with did:key, but it is a\n                  different trust model -- iaa2, resolved over HTTPS\n  windows-hello   NOT FILED HERE. It belongs to persona-vvs2: hired does not\n                  run on Windows at all, so the attestor is not the gate. Do\n                  not duplicate it into this epic.\n\nDAY-TWO SOURCES, none with a module: aws-sso, gcloud, az, bitwarden, kerberos.\n\nEvery child inherits the persona-qbnm constraints: declare proof cost and attainable tier (persona-jl4j.3), and if the source cannot answer a challenge, answer persona-ux32 before writing prove().",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "epic",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T20:50:31.05946357Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T20:50:31.05946357Z",
+  "labels": [
+    "attestor",
+    "driver"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-vmpi",
+      "depends_on_id": "persona-jl4j.3",
+      "type": "blocks",
+      "created_at": "2026-09-15T20:51:16.911510315Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

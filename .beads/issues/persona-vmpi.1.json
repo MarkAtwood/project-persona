@@ -1,0 +1,29 @@
+{
+  "id": "persona-vmpi.1",
+  "title": "secure-enclave: TouchID and FaceID on macOS",
+  "description": "No module exists. SPEC-HIRE specifies LocalAuthentication plus CryptoTokenKit, TouchID or FaceID acting as a platform FIDO2 authenticator, returning a Secure Enclave-backed assertion with a timestamp, at iaa3 with hardware presence.\n\nWHY THIS RANKS ABOVE THE DAY-TWO SOURCES: with fido2, it is one of only two paths to real hardware presence, and it is the one that needs no separate device. On a Mac it is simply there. The persona-3tly presence model currently has no source that establishes presence at all, so both this and fido2 are what turn that model from theory into something testable.\n\nPLATFORM CARE. persona-core is deliberately platform-independent and CI cross-checks it (the persona-core-must-stay-portable memory); this belongs in hire-attestors, not hire-core. The cfg(target_os = \"macos\") arms are NOT type-checked by a native Linux build -- that is the trap the portability job was added to catch, so 'make portability' must stay green while this lands.\n\nNote tailscale.rs hardcodes /var/run/tailscale/tailscaled.sock and therefore never activates on macOS, so this would be the first attestor that actually works there beyond unix-account.\n\nPrompting attestor: same persona-jl4j.3 constraint as fido2.",
+  "acceptance_criteria": "A Secure Enclave assertion over the daemon's challenge on real hardware; presence claimed only on actual user verification; make portability green.",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T20:50:56.858976602Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T20:50:56.858976602Z",
+  "labels": [
+    "attestor",
+    "driver",
+    "macos",
+    "presence"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-vmpi.1",
+      "depends_on_id": "persona-vmpi",
+      "type": "parent-child",
+      "created_at": "2026-09-15T20:50:56.893678399Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "id": "persona-qbnm.2",
+  "title": "did:key: sign the challenge with the controlled key",
+  "description": "hire-attestors/src/did_key.rs enumerates DIDs from HIRE_DID_KEYS but inherits the default prove().\n\nThe easiest real prove() in the tree: did:key means the verification method IS the key material, encoded in the identifier itself, and the private half is local by construction. There is no resolution step and no network. Sign the challenge, verify against the key the DID encodes.\n\nAssurance iaa1 per SPEC-HIRE (self-issued). Presence: none -- a file-backed key signs without a human, same reasoning ssh.rs documents.\n\nSCOPE: did:key ONLY. SPEC-HIRE's 'did-self' entry also names did:web and did:ipfs; did:web is a different source with a different assurance (iaa2 if the document is hosted under a domain the user controls) and an HTTPS resolution step, filed separately. Do not fold them together -- they share a prefix, not a trust model.\n\nNote persona-5s4b.93: did:key identities are currently issued under the ssh.local trust domain, which is wrong and is blocked on the trust-domain work. Proving does not fix that and should not wait for it.",
+  "acceptance_criteria": "A signature over the challenge verified against the key the DID encodes; no network; did:web and did:ipfs explicitly out of scope.",
+  "status": "open",
+  "priority": 1,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T20:49:56.153710145Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T20:49:56.153710145Z",
+  "labels": [
+    "attestor",
+    "driver",
+    "crypto"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-qbnm.2",
+      "depends_on_id": "persona-qbnm",
+      "type": "parent-child",
+      "created_at": "2026-09-15T20:49:56.179023896Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

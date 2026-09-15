@@ -1,0 +1,27 @@
+{
+  "id": "persona-qbnm.5",
+  "title": "goa: D-Bus enumeration of GNOME Online Accounts",
+  "description": "hire-attestors/src/goa.rs is a placeholder. The goa feature in hire-attestors/Cargo.toml is empty with the comment 'add zbus dep when implementing D-Bus enumeration', is_available() is gated on both target_os=linux and the feature, and prove() is the default refusal.\n\nWork: add zbus, talk to org.gnome.OnlineAccounts, return the OIDC tokens for the primary GNOME account. SPEC-HIRE says iaa2 with session presence.\n\nNOTE THE SHAPE PROBLEM, shared with oidc-cached: what comes back is a BEARER TOKEN, not a key that can answer a challenge. So this source cannot 'prove' in the sense ssh.rs does, and implementing it as 'return the token we read' asserts an identity on the strength of a file we did not verify. That belongs to persona-ux32's trust-calibration question. Lowest priority in the epic for that reason as much as for GNOME's reach.\n\npersona-5s4b.42 covers the narrower question of whether the empty goa and pkcs11 features should exist at all in the meantime.",
+  "acceptance_criteria": "Either a real D-Bus implementation whose trust story is answered, or the feature is removed; not a placeholder that reads as support.",
+  "status": "open",
+  "priority": 3,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T20:49:56.408310682Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T20:49:56.408310682Z",
+  "labels": [
+    "attestor",
+    "driver"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-qbnm.5",
+      "depends_on_id": "persona-qbnm",
+      "type": "parent-child",
+      "created_at": "2026-09-15T20:49:56.433425837Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

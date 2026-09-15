@@ -1,0 +1,3 @@
+{"id":"01a0a6d4-b933-7bba-8471-7845746c8f11","issue_id":"persona-qbnm","event_type":"created","actor":"agent","old_value":"","new_value":"","created_at":"2026-09-15T20:49:14.035770647Z"}
+{"id":"01a0a6d4-b937-7cc2-9a3b-f0aa4f359771","issue_id":"persona-qbnm","event_type":"label_added","actor":"agent","comment":"Added label: attestor","created_at":"2026-09-15T20:49:14.039837436Z"}
+{"id":"01a0a6d4-b93b-7d96-a210-3779150dfabd","issue_id":"persona-qbnm","event_type":"label_added","actor":"agent","comment":"Added label: driver","created_at":"2026-09-15T20:49:14.043891508Z"}

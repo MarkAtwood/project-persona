@@ -1,0 +1,28 @@
+{
+  "id": "persona-vmpi.2",
+  "title": "did:web: resolve the DID document over HTTPS",
+  "description": "No module. hire-attestors/src/did_key.rs handles did:key only, and the two share a prefix rather than a trust model.\n\ndid:web is iaa2 per SPEC-HIRE, because the DID document is hosted under a domain the user controls, so the claim rests on domain control rather than on self-issuance. That means an HTTPS fetch of the DID document and then a challenge signed by a key the document names.\n\nTHE NETWORK IS SETTLED AND THIS IS THE CASE THAT SETTLED IT. See the personad-may-use-the-network memory: hired MAY make outbound connections, and did:web was one of the three reasons given, because did:web is DEFINED as an HTTPS fetch. Do not re-propose a local-only variant.\n\nTreat the fetched document as untrusted input: it is named by something the daemon does not control, which is the standing rule for any name hired resolves.",
+  "acceptance_criteria": "A did:web identity proven by a challenge signature verified against a key from the fetched document; the document treated as untrusted input; failure to resolve declines rather than degrades to iaa1.",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T20:50:56.956280147Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T20:50:56.956280147Z",
+  "labels": [
+    "attestor",
+    "driver",
+    "network"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-vmpi.2",
+      "depends_on_id": "persona-vmpi",
+      "type": "parent-child",
+      "created_at": "2026-09-15T20:50:56.986059064Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

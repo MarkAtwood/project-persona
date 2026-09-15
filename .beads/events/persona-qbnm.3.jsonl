@@ -1,0 +1,5 @@
+{"id":"01a0a6d5-5e0c-748d-b724-43a2fd66b7a6","issue_id":"persona-qbnm.3","event_type":"created","actor":"agent","old_value":"","new_value":"","created_at":"2026-09-15T20:49:56.236299722Z"}
+{"id":"01a0a6d5-5e10-7569-b99e-719d6251e22e","issue_id":"persona-qbnm.3","event_type":"label_added","actor":"agent","comment":"Added label: attestor","created_at":"2026-09-15T20:49:56.240355475Z"}
+{"id":"01a0a6d5-5e14-7230-baa5-57cd3e77fd05","issue_id":"persona-qbnm.3","event_type":"label_added","actor":"agent","comment":"Added label: driver","created_at":"2026-09-15T20:49:56.244144417Z"}
+{"id":"01a0a6d5-5e18-707f-aacf-6f92d9b1f3c4","issue_id":"persona-qbnm.3","event_type":"label_added","actor":"agent","comment":"Added label: crypto","created_at":"2026-09-15T20:49:56.248033417Z"}
+{"id":"01a0a6d5-5e1b-7d67-9787-ce41264b407d","issue_id":"persona-qbnm.3","event_type":"label_added","actor":"agent","comment":"Added label: presence","created_at":"2026-09-15T20:49:56.251879629Z"}

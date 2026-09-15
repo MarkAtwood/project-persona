@@ -1,0 +1,29 @@
+{
+  "id": "persona-qbnm.6",
+  "title": "tailscale and oidc cannot answer a challenge; decide what proof means for them",
+  "description": "Filed as ONE bead because it is one decision, not two implementations. Splitting follows the decision; it does not precede it.\n\nhire-attestors/src/tailscale.rs reads /localapi/v0/status over tailscaled's Unix socket and returns UserProfile.LoginName. hire-attestors/src/oidc.rs reads cached ID tokens from disk. Both enumerate. Neither can prove, and unlike gpg or did:key that is NOT because the code is missing -- NEITHER HOLDS A KEY THAT CAN ANSWER A CHALLENGE. tailscaled reports what it believes; a cached OIDC token is a bearer artifact sitting in a file.\n\nSo Claim::derive's contract bites: evidence must bind to the challenge (Evidence::binds_to), and there is nothing here to bind. Implementing prove() as 'return the thing we read' would manufacture evidence for an identity nothing established, which is precisely the hole the Candidate/Claim split was built to close.\n\nTHE REAL QUESTION IS persona-ux32's: what does the daemon need in order to believe an external authority it cannot challenge? Both sources ARE external authorities -- see the external-attestors-are-trusted-by-design memory. Refusing them is not the answer; the whole architecture is built on trusting sources like these. But the trust has to be CALIBRATED and its basis recorded, not implied by the fact that a socket answered.\n\nWHAT MAKES THEM DIFFERENT FROM EACH OTHER, and why the decision may split:\n  tailscale  a LIVE authority answering right now over a local socket. Freshness\n             is real; the weakness is that tailscaled's word is unverifiable by us.\n  oidc       a token AT REST with its own iss/exp and a signature we could\n             actually verify against the issuer's JWKS -- which we do not do\n             today. That is a cryptographic check we are declining to perform,\n             not an impossible one. SPEC-HIRE already grades a non-expired token\n             iaa2 and an expired one iaa1.\n\nSo oidc may have a real path to verified evidence (fetch the JWKS, check the signature, bind the token to the request some other way), while tailscale may not. Answer that before writing either.",
+  "design": "Note this interacts with persona-3tly.1 (presence is hearsay): the general problem of an assertion that cannot be carried to the consumer. A source we cannot challenge is the same defect one layer earlier -- an assertion we cannot verify on arrival.",
+  "acceptance_criteria": "A recorded decision for each source on what evidence, if any, it can produce and at what tier; no prove() that returns unverified read-back as evidence.",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T20:50:30.981916543Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T20:50:30.981916543Z",
+  "labels": [
+    "attestor",
+    "driver",
+    "security"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-qbnm.6",
+      "depends_on_id": "persona-qbnm",
+      "type": "parent-child",
+      "created_at": "2026-09-15T20:50:31.013747581Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

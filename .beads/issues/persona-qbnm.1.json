@@ -1,0 +1,28 @@
+{
+  "id": "persona-qbnm.1",
+  "title": "gpg: sign the challenge with gpg-agent",
+  "description": "hire-attestors/src/gpg.rs enumerates keys by parsing 'gpg --with-colons' (:139-147) and applies the enrolment rule recorded in the gpg-key-validity-policy memory, but inherits the default prove() and so produces no evidence.\n\nClosest sibling to ssh.rs, which is the model: connect to the agent, have it sign the daemon's challenge, verify the signature against both the challenge and the key the candidate names. gpg-agent speaks Assuan over its socket; the key never leaves the agent.\n\nAssurance is iaa1 per SPEC-HIRE -- self-asserted, key custody assumed. Presence: decide deliberately. ssh.rs claims NONE and documents why (an agent key with no passphrase and no confirm flag signs without prompting anybody). gpg-agent is different: it often DOES prompt for a passphrase via pinentry, and a key cached in the agent does not. So the same key can prove with or without a human depending on cache state. That makes gpg the first source where proof cost (persona-jl4j.3) is DYNAMIC rather than static, which is worth getting right here rather than discovering later.\n\nDo not claim presence from the mere fact that pinentry could have appeared.",
+  "acceptance_criteria": "A signature over the daemon's challenge, verified against the candidate's key; presence claimed only when a human actually authenticated; proof cost reported honestly given agent cache state.",
+  "status": "open",
+  "priority": 1,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T20:49:56.063831716Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T20:49:56.063831716Z",
+  "labels": [
+    "attestor",
+    "driver",
+    "crypto"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-qbnm.1",
+      "depends_on_id": "persona-qbnm",
+      "type": "parent-child",
+      "created_at": "2026-09-15T20:49:56.100482318Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

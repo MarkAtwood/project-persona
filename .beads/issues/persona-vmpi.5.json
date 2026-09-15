@@ -1,0 +1,27 @@
+{
+  "id": "persona-vmpi.5",
+  "title": "bitwarden: identity item from an unlocked vault",
+  "description": "No module. SPEC-HIRE Day-Two: the identity item from an unlocked Bitwarden vault, requiring a Bitwarden CLI unlock.\n\nLowest value in the epic and filed mainly so the spec and the backlog agree. The vault holds what the user put in it, so the identity is self-asserted at best -- iaa1 with no presence beyond the fact that somebody unlocked a vault at some point.\n\nNote the one genuinely interesting property: an unlocked vault IS a weak presence signal, in the way a screen unlock is, and a LOCKED vault is an observable departure event of the kind persona-3tly.6 wants. That is more interesting than the identity claim.\n\nSame bearer problem as the rest of this band. Same persona-ux32 dependency.",
+  "acceptance_criteria": "Either implemented with its trust basis recorded, or the spec entry is removed so the document stops promising it.",
+  "status": "open",
+  "priority": 3,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T20:51:16.827849306Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T20:51:16.827849306Z",
+  "labels": [
+    "attestor",
+    "driver"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-vmpi.5",
+      "depends_on_id": "persona-vmpi",
+      "type": "parent-child",
+      "created_at": "2026-09-15T20:51:16.850999072Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

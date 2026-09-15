@@ -1,0 +1,4 @@
+{"id":"01a0a6d5-5e62-7888-b77f-ebe1c33f41c0","issue_id":"persona-qbnm.4","event_type":"created","actor":"agent","old_value":"","new_value":"","created_at":"2026-09-15T20:49:56.32256018Z"}
+{"id":"01a0a6d5-5e68-7005-9609-b373f3f9977c","issue_id":"persona-qbnm.4","event_type":"label_added","actor":"agent","comment":"Added label: attestor","created_at":"2026-09-15T20:49:56.32800197Z"}
+{"id":"01a0a6d5-5e6d-795c-b565-090897976c1b","issue_id":"persona-qbnm.4","event_type":"label_added","actor":"agent","comment":"Added label: driver","created_at":"2026-09-15T20:49:56.333613893Z"}
+{"id":"01a0a6d5-5e71-79e8-b10a-ebd89086d963","issue_id":"persona-qbnm.4","event_type":"label_added","actor":"agent","comment":"Added label: crypto","created_at":"2026-09-15T20:49:56.337649731Z"}
