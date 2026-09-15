@@ -9,10 +9,12 @@ pub mod oidc;
 pub mod piv;
 pub mod ssh;
 pub mod tailscale;
+#[cfg(unix)]
+pub mod unix;
 
 pub use claim::{
-    Candidate, ChallengeSignature, Claim, Evidence, HardwareTouch, SelfAssertedDomain,
-    VerifiedToken,
+    Candidate, ChallengeSignature, Claim, Evidence, HardwareTouch, PlatformIdentity,
+    SelfAssertedDomain, VerifiedToken,
 };
 pub use did_key::DidKeyAttestor;
 pub use fido2::Fido2Attestor;
@@ -22,6 +24,8 @@ pub use oidc::OidcCachedAttestor;
 pub use piv::PivAttestor;
 pub use ssh::SshAgentAttestor;
 pub use tailscale::TailscaleAttestor;
+#[cfg(unix)]
+pub use unix::UnixAttestor;
 
 pub mod registry;
 pub use registry::probe_sources;

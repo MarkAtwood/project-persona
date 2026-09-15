@@ -209,6 +209,13 @@ Each source implements a plugin interface: `enumerate()`, `prove(candidate, chal
 - Returns: DID, verification method, signed assertion
 - Assurance: `iaa1` for `did:key` (self-issued); `iaa2` for `did:web` if the DID document is hosted under a domain the user controls
 
+**unix-account** (Linux, macOS, BSD)
+- Method: `getuid()` for the account, `getpwuid_r` for its name; no agent, no socket, no network
+- Returns: uid, username
+- Assurance: `iaa1` (self-asserted; the kernel names the account a process runs under, and nothing checks who holds it)
+- Presence: none (an account is not a seat — a uid says a process is running, not that a human is logged in)
+- Notes: available whenever the operating system is, so this is the one source that never degrades away and a Unix box always issues. The consumer gets the answer `getuid()` would have given it, plus provenance, a pseudonym and audience binding; a consumer that reads "holds a credential" as "is authenticated" gets a weaker answer than it did when the daemon declined, and has to read the assurance field instead. It publishes into `ssh.local` rather than a domain of its own, because `personad` seeds no bundle for a domain the table above does not list and an unseeded domain fails `ValidateJWTSVID`.
+
 ### Day-Two Sources
 
 **aws-sso** — active `aws sso login` session in `~/.aws/sso/cache`
@@ -804,6 +811,8 @@ The startup probe order:
 7. GPG agent (gpgconf socket)
 8. Kerberos (`KRB5CCNAME` or default ccache)
 9. Platform-specific: GNOME Online Accounts (DBus), KDE Wallet (DBus), WAM (COM)
+
+The Unix account source is absent from that list because there is nothing to probe: it is available whenever the kernel is. It is appended after every probed source, and that position is load-bearing. The daemon keeps the first claim it sees at the winning tier, so a source that always produces `iaa1` evidence placed any earlier would take the slot from an SSH key or a hardware touch at the same tier and re-home every pseudonym derived from it.
 
 ---
 

@@ -1,3 +1,5 @@
+#[cfg(unix)]
+use crate::UnixAttestor;
 use crate::{
     Attestor, DidKeyAttestor, Fido2Attestor, GoaAttestor, GpgAttestor, OidcCachedAttestor,
     PivAttestor, SshAgentAttestor, TailscaleAttestor,
@@ -13,9 +15,19 @@ use std::sync::Arc;
 /// 4. DID keys (PERSONA_DID_KEYS)
 /// 5. GPG keyring
 /// 6. FIDO2 hardware keys
+/// 7. GNOME Online Accounts
+/// 8. PIV/smartcard
+/// 9. Unix account (not probed — see below)
 ///
 /// Each source is probed with a lightweight availability check before inclusion.
 /// A source that fails to probe is logged and skipped — never fatal.
+///
+/// The Unix account source is not probed: it is available whenever the kernel
+/// is, so there is nothing to check. It goes last, and that position is
+/// load-bearing. `persona-grpc` keeps the first claim seen at the winning tier,
+/// so a source that always produces Iaa1 evidence placed any earlier would take
+/// the slot from an ssh key or a hardware touch at the same tier and re-home
+/// every pseudonym derived from it.
 pub async fn probe_sources() -> Vec<Arc<dyn Attestor>> {
     let mut active: Vec<Arc<dyn Attestor>> = Vec::new();
 
@@ -82,6 +94,13 @@ pub async fn probe_sources() -> Vec<Arc<dyn Attestor>> {
         active.push(Arc::new(PivAttestor::new()));
     } else {
         tracing::debug!("piv: no smartcard found or pkcs11 feature not enabled, skipping");
+    }
+
+    // 9. Unix account — always present, so it is pushed rather than probed.
+    #[cfg(unix)]
+    {
+        active.push(Arc::new(UnixAttestor::new()));
+        tracing::debug!("unix: added (the OS is always available)");
     }
 
     if active.is_empty() {

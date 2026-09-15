@@ -26,7 +26,7 @@ pub enum AssuranceError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum IdentityAssurance {
-    /// Self-asserted: SSH key, GPG key, or DID.
+    /// Self-asserted: SSH key, GPG key, DID, or local username.
     Iaa1,
 
     /// IdP-verified: Tailscale OIDC, GNOME Online Accounts.

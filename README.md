@@ -31,7 +31,7 @@ identity claims it signs. Treat the assurance and presence levels below as targe
 | JWT-SVID issuance, ephemeral in-memory CA | works |
 | Attestor registry, startup probing, `enumerate()` | works for most sources; returns candidates, not claims |
 | CLI (`whoami`, `enumerate`, `fetch-jwt`, ...) | works |
-| `prove()` -- cryptographic proof of possession | ssh-agent only, ed25519 keys only. Every other attestor still declines, so an agent key is currently the only way to obtain an SVID |
+| `prove()` -- evidence backing a claim | ssh-agent (ed25519 keys only) proves possession; the Unix account source attests the local account and always succeeds. Every other attestor still declines |
 | Identity assurance levels | derived from evidence -- see below |
 | Presence levels | enforced across every audience, and unknown requirements are refused rather than ignored |
 | Presence freshness (`persona_max_age`, 300s presence TTL) | enforced -- but no attestor yet establishes presence at all, so the bound is checked against an observation that always reports no presence |
@@ -56,9 +56,15 @@ above it.
 
 It claims **no presence**, deliberately. An agent key with no passphrase and no confirm
 flag signs without prompting anybody, so no human took part and the daemon says so. A
-token from this path reports `iaa1` with `present: false`. Every other attestor still
-declines, so on a machine with no ssh-agent `personad` finds candidates, proves none of
-them, and answers `UNAUTHENTICATED` with `no identity claims available`.
+token from this path reports `iaa1` with `present: false`.
+
+The Unix account source also proves, and always does: `getuid()` names the account the
+process runs under and `getpwuid_r` names it, which is `iaa1` with no presence at all. It
+is added after every probed source, so it wins only when nothing else proved anything.
+That removes the bare-box refusal -- on Unix `personad` now issues on every request, so
+holding a credential says nothing on its own and a consumer has to read the assurance
+field. What it reads there is the answer `getuid()` would have given it, plus provenance,
+a pseudonym and audience binding. Every other attestor still declines.
 
 Issues are tracked in-repo with [beads](https://github.com/gastownhall/beads) under
 `.beads/`.
@@ -69,7 +75,7 @@ What the daemon is for. See [Status](#status) for what runs today.
 
 - **SPIFFE Workload API** -- the daemon implements the standard gRPC Workload API (`FetchJWTSVID`, `FetchX509SVIDs`, `FetchJWTBundles`, `FetchX509Bundles`, `ValidateJWTSVID`). Any SPIFFE-aware consumer (envoy, ghostunnel, go-spiffe, rust-spiffe) works unmodified.
 - **Per-consumer pseudonymity** -- each consumer gets an HKDF-derived pseudonym instead of the user's root identity, so linking one user across consumers takes explicit consent. The pseudonym is stable for the lifetime of the running daemon: the key is generated at start and never persisted, so pseudonyms rotate when personad restarts, as the ephemeral signing key already does. Keyed on the calling application, never on the audience -- one consumer gets one pseudonym across every audience it requests.
-- **Identity assurance levels** -- `iaa1` (self-asserted: SSH key, GPG, DID), `iaa2` (IdP-verified: Tailscale OIDC, GNOME Online Accounts), `iaa3` (hardware-bound + IdP-verified: FIDO2, PIV, Windows Hello).
+- **Identity assurance levels** -- `iaa1` (self-asserted: SSH key, GPG, DID, local username), `iaa2` (IdP-verified: Tailscale OIDC, GNOME Online Accounts), `iaa3` (hardware-bound + IdP-verified: FIDO2, PIV, Windows Hello).
 - **Presence levels** -- `none`, `session` (screen unlocked at login), `software` (TOTP/password re-entry), `hardware` (FIDO2 touch, Windows Hello, TouchID, PIV PIN -- timestamped, hardware-backed).
 - **Attestor plugins** -- each identity source implements `enumerate()`, `prove()`, `freshness()`. Sources are probed at startup; missing sources are skipped, never fatal.
 
@@ -102,7 +108,8 @@ another consumer. It is not authentication against a local adversary: a maliciou
 ## Identity Sources
 
 Day-one attestor plugins. The assurance and presence columns are targets for once
-`prove()` exists, not what the daemon substantiates today. See [Status](#status).
+`prove()` exists, not what the daemon substantiates today -- except SSH agent and Unix
+account, which substantiate their rows now. See [Status](#status).
 
 | Source | Assurance | Presence | Platforms |
 |---|---|---|---|
@@ -116,6 +123,7 @@ Day-one attestor plugins. The assurance and presence columns are targets for onc
 | SSH agent | iaa1 | none | cross-platform |
 | GPG | iaa1 | none | cross-platform |
 | DID (did:key, did:web) | iaa1/iaa2 | none | cross-platform |
+| Unix account | iaa1 | none | Linux, macOS, BSD |
 
 ## Platform Support
 

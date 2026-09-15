@@ -292,8 +292,57 @@ impl HardwareTouch {
     }
 }
 
-/// Verified evidence supporting a candidate, produced by
+/// The kernel's answer to which account a process runs under, and the moment
+/// the daemon asked.
+///
+/// There is no key material and no signature here because there are none to
+/// have: the operating system is the entire authority. Do not hand it a
+/// [`SignedAssertion`](crate::SignedAssertion) for symmetry with
+/// [`ChallengeSignature`] — that constructor is public, so the bytes would be
+/// forgeable by anyone and `assertion()` would start lying across the enum.
+///
+/// Unlike [`VerifiedToken`] and [`HardwareTouch`] this observation can actually
+/// be made today, so it has a constructor. The constructor is crate-visible and
+/// takes no arguments, which is what keeps the discipline: an attestor can say
+/// "I asked the kernel", and there is no parameter through which it can say
+/// anything more.
+#[derive(Debug, Clone)]
+pub struct PlatformIdentity {
+    asked_at: SystemTime,
+}
+
+impl PlatformIdentity {
+    /// Record that the daemon asked the kernel, now.
+    ///
+    /// Infallible, alone among the payloads in this module: a process always
+    /// runs under an account and the kernel cannot refuse the question. The
+    /// instant is stamped here rather than passed in, so nothing can re-date a
+    /// cached answer.
+    pub(crate) fn observe() -> Self {
+        Self {
+            asked_at: SystemTime::now(),
+        }
+    }
+
+    /// When the daemon asked the kernel which account it runs under.
+    ///
+    /// It dates a question, not a person. Nobody was observed doing anything at
+    /// this instant: the account was there before it and is there after it, and
+    /// asking again a second later moves the timestamp without anything having
+    /// happened. Reading it the way [`HardwareTouch::touched_at`] is read — as
+    /// the moment a human was seen — is exactly the confusion the accompanying
+    /// [`PresenceLevel::None`] exists to prevent.
+    pub fn asked_at(&self) -> SystemTime {
+        self.asked_at
+    }
+}
+
+/// Evidence supporting a candidate, produced by
 /// [`Attestor::prove`](crate::Attestor::prove).
+///
+/// Not every variant is cryptographic. A variant means that something outside
+/// this process attested the candidate; what that is worth is the tier it maps
+/// to, never the mere fact that evidence exists.
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 pub enum Evidence {
@@ -303,6 +352,8 @@ pub enum Evidence {
     IdpVerified(VerifiedToken),
     /// A human touched an authenticator.
     HardwarePresence(HardwareTouch),
+    /// The operating system named the account this process runs under.
+    PlatformAssertion(PlatformIdentity),
 }
 
 impl Evidence {
@@ -334,6 +385,12 @@ impl Evidence {
                 PresenceLevel::Hardware,
                 h.touched_at(),
             ),
+            // The kernel names the account a process runs under. That is not a
+            // human being present, and it is not a check on who holds the
+            // account — only that something outside this process said so.
+            Evidence::PlatformAssertion(p) => {
+                (IdentityAssurance::Iaa1, PresenceLevel::None, p.asked_at())
+            }
         }
     }
 
@@ -342,13 +399,21 @@ impl Evidence {
     /// Exhaustive, so a new variant forces the question rather than defaulting
     /// to "bound". Only possession is challenge-bound today.
     ///
+    /// A `PlatformAssertion` is unbound and always will be: the kernel answers
+    /// the same question however it is asked, so there is no nonce for it to
+    /// carry. What that costs is the binding, not freshness — the assertion is
+    /// observed afresh inside the `prove` it answers, so there is nothing
+    /// stale to replay.
+    ///
     /// ponytail: possession only | ceiling: nothing binds a future
     ///   `VerifiedToken` to this request | upgrade path: when a verifying
     ///   constructor for it lands it carries the token's `nonce`, compared here.
     fn binds_to(&self, challenge: &[u8]) -> bool {
         match self {
             Evidence::Possession(s) => s.challenge() == challenge,
-            Evidence::IdpVerified(_) | Evidence::HardwarePresence(_) => true,
+            Evidence::IdpVerified(_)
+            | Evidence::HardwarePresence(_)
+            | Evidence::PlatformAssertion(_) => true,
         }
     }
 }
@@ -379,6 +444,11 @@ impl Claim {
     /// to check, because the attestor is the party a replay would arrive from
     /// and there must be no `derive` that skips the comparison. Plain `==`: the
     /// challenge is a public nonce and this is a freshness check, not a MAC.
+    ///
+    /// Where a source is available whenever the machine is — `unix` on any
+    /// Unix box — `None` is unreachable in practice and the daemon issues on
+    /// every request. Holding a credential therefore says nothing on its own;
+    /// the assurance field is what a consumer has to read.
     pub fn derive(candidate: &Candidate, challenge: &[u8], evidence: &[Evidence]) -> Option<Claim> {
         let evidence: Vec<&Evidence> = evidence.iter().filter(|e| e.binds_to(challenge)).collect();
         let (first, rest) = evidence.split_first()?;
@@ -459,7 +529,8 @@ impl Claim {
         &self.display_name
     }
 
-    /// When the daemon observed the evidence that set [`Claim::presence`].
+    /// When the daemon observed the evidence that set [`Claim::presence`], or
+    /// the sole evidence when only one piece survived the challenge filter.
     ///
     /// It means exactly that and no more: the daemon saw this evidence at this
     /// instant. It is not proof that a human was verifiably at the keyboard
@@ -527,6 +598,10 @@ mod tests {
 
     fn hardware_touch(at: SystemTime) -> Evidence {
         Evidence::HardwarePresence(HardwareTouch { touched_at: at })
+    }
+
+    fn platform_assertion(at: SystemTime) -> Evidence {
+        Evidence::PlatformAssertion(PlatformIdentity { asked_at: at })
     }
 
     /// A fixed instant, so every freshness assertion is arithmetic over
@@ -698,6 +773,34 @@ mod tests {
             let c = Claim::derive(&candidate(), TEST_CHALLENGE, &evidence).unwrap();
             assert_eq!(c.attested_at(), epoch_plus(2_000));
         }
+    }
+
+    #[test]
+    fn a_platform_assertion_is_the_floor_and_asserts_no_presence() {
+        let c = Claim::derive(
+            &candidate(),
+            TEST_CHALLENGE,
+            &[platform_assertion(epoch_plus(10))],
+        )
+        .unwrap();
+        assert_eq!(c.assurance(), IdentityAssurance::Iaa1);
+        assert_eq!(c.presence(), PresenceLevel::None);
+        assert_eq!(c.attested_at(), epoch_plus(10));
+    }
+
+    #[test]
+    fn a_platform_assertion_does_not_re_date_a_touch() {
+        let c = Claim::derive(
+            &candidate(),
+            TEST_CHALLENGE,
+            &[
+                hardware_touch(epoch_plus(10)),
+                platform_assertion(epoch_plus(900)),
+            ],
+        )
+        .unwrap();
+        assert_eq!(c.presence(), PresenceLevel::Hardware);
+        assert_eq!(c.attested_at(), epoch_plus(10));
     }
 
     #[test]
