@@ -302,26 +302,39 @@ impl HardwareTouch {
 /// forgeable by anyone and `assertion()` would start lying across the enum.
 ///
 /// Unlike [`VerifiedToken`] and [`HardwareTouch`] this observation can actually
-/// be made today, so it has a constructor. The constructor is crate-visible and
-/// takes no arguments, which is what keeps the discipline: an attestor can say
-/// "I asked the kernel", and there is no parameter through which it can say
-/// anything more.
+/// be made today, so it has a constructor. The constructor is crate-visible, so
+/// no downstream crate can state an account the kernel never named.
+///
+/// It records *which* account, because this is the one variant with no secret
+/// and no challenge behind it. Without that field the observation says only
+/// "some account was asked about", which is true of every account at once — and
+/// a value obtained legitimately from [`Attestor::prove`](crate::Attestor::prove)
+/// could be paired with any candidate at all. [`Evidence::binds_to`] compares it.
 #[derive(Debug, Clone)]
 pub struct PlatformIdentity {
+    account: String,
     asked_at: SystemTime,
 }
 
 impl PlatformIdentity {
-    /// Record that the daemon asked the kernel, now.
+    /// Record that the daemon asked the kernel which account it runs under, and
+    /// got `account` — a SPIFFE path component, as it would appear on a
+    /// [`Candidate`].
     ///
     /// Infallible, alone among the payloads in this module: a process always
     /// runs under an account and the kernel cannot refuse the question. The
     /// instant is stamped here rather than passed in, so nothing can re-date a
     /// cached answer.
-    pub(crate) fn observe() -> Self {
+    pub(crate) fn observe(account: impl Into<String>) -> Self {
         Self {
+            account: account.into(),
             asked_at: SystemTime::now(),
         }
+    }
+
+    /// The account the kernel named, as a SPIFFE path component.
+    pub fn account(&self) -> &str {
+        &self.account
     }
 
     /// When the daemon asked the kernel which account it runs under.
@@ -408,12 +421,16 @@ impl Evidence {
     /// ponytail: possession only | ceiling: nothing binds a future
     ///   `VerifiedToken` to this request | upgrade path: when a verifying
     ///   constructor for it lands it carries the token's `nonce`, compared here.
-    fn binds_to(&self, challenge: &[u8]) -> bool {
+    fn binds_to(&self, candidate: &Candidate, challenge: &[u8]) -> bool {
         match self {
             Evidence::Possession(s) => s.challenge() == challenge,
-            Evidence::IdpVerified(_)
-            | Evidence::HardwarePresence(_)
-            | Evidence::PlatformAssertion(_) => true,
+            // Nothing binds this one to the request, so it must at least be
+            // bound to the subject. A `PlatformIdentity` is obtainable by any
+            // caller of `prove` and carries no secret; without this comparison
+            // a legitimately obtained one re-wraps onto an arbitrary candidate
+            // and mints a claim for an account nobody asked the kernel about.
+            Evidence::PlatformAssertion(p) => p.account() == candidate.path,
+            Evidence::IdpVerified(_) | Evidence::HardwarePresence(_) => true,
         }
     }
 }
@@ -436,9 +453,10 @@ pub struct Claim {
 impl Claim {
     /// Derive a claim from a candidate and the evidence proving it.
     ///
-    /// Returns `None` when no evidence answers `challenge`. Discovery alone
-    /// entitles a candidate to nothing, and evidence answering some *other*
-    /// challenge is a replay, not evidence.
+    /// Returns `None` when no evidence answers `challenge` *for this candidate*.
+    /// Discovery alone entitles a candidate to nothing; evidence answering some
+    /// *other* challenge is a replay, not evidence; and evidence about some
+    /// other subject is neither.
     ///
     /// The challenge is a parameter rather than something the caller is trusted
     /// to check, because the attestor is the party a replay would arrive from
@@ -450,7 +468,10 @@ impl Claim {
     /// every request. Holding a credential therefore says nothing on its own;
     /// the assurance field is what a consumer has to read.
     pub fn derive(candidate: &Candidate, challenge: &[u8], evidence: &[Evidence]) -> Option<Claim> {
-        let evidence: Vec<&Evidence> = evidence.iter().filter(|e| e.binds_to(challenge)).collect();
+        let evidence: Vec<&Evidence> = evidence
+            .iter()
+            .filter(|e| e.binds_to(candidate, challenge))
+            .collect();
         let (first, rest) = evidence.split_first()?;
 
         let (mut assurance, mut presence, mut attested_at) = first.tier();
@@ -601,7 +622,14 @@ mod tests {
     }
 
     fn platform_assertion(at: SystemTime) -> Evidence {
-        Evidence::PlatformAssertion(PlatformIdentity { asked_at: at })
+        platform_assertion_for(candidate().path, at)
+    }
+
+    fn platform_assertion_for(account: impl Into<String>, at: SystemTime) -> Evidence {
+        Evidence::PlatformAssertion(PlatformIdentity {
+            account: account.into(),
+            asked_at: at,
+        })
     }
 
     /// A fixed instant, so every freshness assertion is arithmetic over
@@ -840,6 +868,44 @@ mod tests {
             assert_eq!(c.assurance(), IdentityAssurance::Iaa1);
             assert_eq!(c.presence(), PresenceLevel::None);
         }
+    }
+
+    /// persona-ouo5.1: a platform assertion is refused for an account it does
+    /// not name.
+    ///
+    /// `PlatformIdentity` cannot be forged — the field is private and the
+    /// constructor is crate-visible — but it need not be forged to be misused.
+    /// It is the one payload with no secret and no challenge behind it, so any
+    /// caller of `prove` legitimately obtains one, and before this check
+    /// `Claim::derive` would pair it with whatever candidate it was handed:
+    ///
+    /// ```text
+    /// prove() -> PlatformIdentity{unix/1000} + Candidate{unix/0, "root"}
+    ///   -> Some(spiffe://ssh.local/unix/0 name=root)
+    /// ```
+    ///
+    /// Demonstrated against the real crate from an external consumer before the
+    /// account field existed. The unforgeability the module header promises is
+    /// what fails if this test is deleted.
+    #[test]
+    fn a_platform_assertion_is_refused_for_an_account_it_does_not_name() {
+        let root = Candidate::new("unix", SelfAssertedDomain::SshLocal, "unix/0", "root");
+        let harvested = platform_assertion_for("unix/1000", SystemTime::now());
+
+        assert!(
+            Claim::derive(&root, TEST_CHALLENGE, std::slice::from_ref(&harvested)).is_none(),
+            "evidence naming unix/1000 minted a claim for unix/0"
+        );
+
+        // The same value still works for the account it actually names, so the
+        // check discriminates rather than rejecting the variant outright.
+        let owner = Candidate::new("unix", SelfAssertedDomain::SshLocal, "unix/1000", "mark");
+        let claim = Claim::derive(&owner, TEST_CHALLENGE, &[harvested])
+            .expect("the account the kernel named must still derive");
+        assert_eq!(
+            claim.spiffe_id().to_string(),
+            "spiffe://ssh.local/unix/1000"
+        );
     }
 }
 

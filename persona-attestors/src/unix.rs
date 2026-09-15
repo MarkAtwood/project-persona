@@ -207,7 +207,7 @@ impl Attestor for UnixAttestor {
             ));
         }
         Ok(vec![Evidence::PlatformAssertion(
-            PlatformIdentity::observe(),
+            PlatformIdentity::observe(candidate.path.clone()),
         )])
     }
 }

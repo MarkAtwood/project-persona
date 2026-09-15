@@ -2,13 +2,15 @@
   "id": "persona-ouo5.1",
   "title": "PlatformIdentity is harvestable from the public Attestor API and re-wrappable onto any candidate",
   "description": "Confirmed empirically by a verification agent with a throwaway crate depending on persona-attestors by path.\n\nThe struct literal is correctly refused (E0451, asked_at is private). But PlatformIdentity is pub, re-exported at lib.rs:16, and Clone. A downstream crate calls UnixAttestor::prove(), owns the returned Vec\u003cEvidence\u003e, destructures out the PlatformIdentity, and re-wraps it around an arbitrary Candidate:\n\n  Claim::derive(\u0026Candidate::new(\"unix\", SshLocal, \"unix/0\", \"root\"), b\"a-challenge-we-never-answered\", \u0026[Evidence::PlatformAssertion(p)])\n  -\u003e Some(source=unix assurance=Iaa1 presence=None id=spiffe://ssh.local/unix/0 name=root)\n\nTwo gaps combine: binds_to() (claim.rs:416) returns true unconditionally for this variant, and Claim::derive never checks evidence corresponds to the candidate. Every other variant is either unconstructable (VerifiedToken, HardwareTouch have no constructor at all) or challenge-bound (Possession). This is the first with neither.\n\nRoot cause is a deliberate simplification: the implementer left the uid OUT of PlatformIdentity ('would be never-read, dead_code fires'). That omission is exactly what removes the binding.\n\nBlast radius is the library type guarantee, not personad itself -- the daemon builds claims from its own attestors. But that guarantee is the entire point of the okek refactor.",
-  "status": "open",
+  "status": "closed",
   "priority": 2,
   "issue_type": "bug",
   "owner": "mark@reviewcommit.com",
   "created_at": "2026-09-15T01:01:37.524139849Z",
   "created_by": "agent",
-  "updated_at": "2026-09-15T01:01:37.524139849Z",
+  "updated_at": "2026-09-15T01:31:52.996962826Z",
+  "closed_at": "2026-09-15T01:31:52.996962826Z",
+  "close_reason": "Fixed: PlatformIdentity carries the account it observed, and binds_to compares it against the candidate.",
   "dependencies": [
     {
       "issue_id": "persona-ouo5.1",
