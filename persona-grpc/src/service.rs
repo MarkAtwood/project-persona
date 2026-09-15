@@ -5,7 +5,10 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tonic::{Request, Response, Status};
 
 use persona_attestors::{Attestor, Claim};
-use persona_core::{AudienceExtensions, PresenceLevel, SvidSigner, TrustBundleStore, TrustDomain};
+use persona_core::{
+    AudienceExtensions, PersonaClaims, PresenceInfo, PresenceLevel, SvidSigner, TrustBundleStore,
+    TrustDomain,
+};
 
 use crate::consumer_attest::PeerIdentity;
 use crate::workload::{
@@ -386,11 +389,6 @@ impl SpiffeWorkloadApi for WorkloadApiService {
         // cannot check, which is hearsay one layer down. Whole seconds is the
         // floor: finer resolution buys a JWT consumer nothing and multiplies the
         // linkage.
-        //
-        // ponytail: Unix seconds rather than the RFC 3339 strings the spec
-        // example showed | ceiling: no date formatting exists in the workspace |
-        // upgrade path: emit `persona_core::PresenceInfo` once a date crate is
-        // justified by something other than cosmetics.
         let attested_at = claim
             .attested_at()
             .duration_since(UNIX_EPOCH)
@@ -398,18 +396,22 @@ impl SpiffeWorkloadApi for WorkloadApiService {
             .as_secs();
         let present_until = attested_at.saturating_add(PRESENCE_TTL.as_secs());
 
-        let persona_ext = serde_json::json!({
-            "root_trust_domain": claim.spiffe_id().trust_domain.to_string(),
-            "sources": [claim.source()],
-            "identity_assurance": claim.assurance().to_string(),
-            "presence": {
-                "present": presence != PresenceLevel::None,
-                "attested_by": claim.source(),
-                "attested_at": attested_at,
-                "present_until": present_until,
+        // Built through the type that defines the wire format, so a field added
+        // to `PersonaClaims` stops compiling here instead of silently vanishing
+        // from the token.
+        let persona_ext = serde_json::to_value(PersonaClaims::new(
+            claim.spiffe_id().trust_domain.to_string(),
+            vec![claim.source().to_owned()],
+            claim.assurance(),
+            PresenceInfo {
+                present: presence != PresenceLevel::None,
+                attested_by: claim.source().to_owned(),
+                attested_at,
+                present_until,
             },
-            "auth_methods": [claim.source()],
-        });
+            vec![claim.source().to_owned()],
+        ))
+        .expect("PersonaClaims serialises as JSON");
 
         // The root identity is an input to derivation and never an output. There
         // is no branch here that can emit claim.spiffe_id().uri().

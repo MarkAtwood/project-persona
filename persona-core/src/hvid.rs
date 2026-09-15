@@ -36,9 +36,101 @@ pub struct PersonaClaims {
     pub auth_methods: Vec<String>,
 }
 
+impl PersonaClaims {
+    /// Builds the `persona` extension object.
+    ///
+    /// `sources` and `auth_methods` are both `Vec<String>` and sit next to each
+    /// other in meaning, so transposing them compiles. `sources` names where the
+    /// identity came from (`"tailscale"`, `"piv-smartcard"`); `auth_methods`
+    /// names how the user authenticated (`"tailscale_oidc"`, `"fido2_up"`).
+    pub fn new(
+        root_trust_domain: String,
+        sources: Vec<String>,
+        identity_assurance: IdentityAssurance,
+        presence: PresenceInfo,
+        auth_methods: Vec<String>,
+    ) -> Self {
+        Self {
+            root_trust_domain,
+            sources,
+            identity_assurance,
+            presence,
+            auth_methods,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Oracle: the `persona` extension printed in SPEC-HIA.md, "HVID Extension
+    /// (Human Verifiable Identity Document)". Values and types are transcribed
+    /// from that document, not from this crate.
+    ///
+    /// The key sets are compared for equality in both directions, so a field
+    /// added to the wire fails here as loudly as one removed.
+    #[test]
+    fn serialises_to_the_spec_shape() {
+        let value = serde_json::to_value(PersonaClaims::new(
+            "example.com".into(),
+            vec!["tailscale".into(), "piv-smartcard".into()],
+            IdentityAssurance::Iaa3,
+            PresenceInfo {
+                present: true,
+                attested_by: "fido2_up".into(),
+                attested_at: 1_745_999_640,
+                present_until: 1_745_999_940,
+            },
+            vec!["tailscale_oidc".into(), "fido2_up".into()],
+        ))
+        .unwrap();
+
+        let obj = value
+            .as_object()
+            .expect("persona extension is a JSON object");
+        let mut keys: Vec<&str> = obj.keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            [
+                "auth_methods",
+                "identity_assurance",
+                "presence",
+                "root_trust_domain",
+                "sources",
+            ]
+        );
+
+        assert_eq!(obj["root_trust_domain"], serde_json::json!("example.com"));
+        assert_eq!(
+            obj["sources"],
+            serde_json::json!(["tailscale", "piv-smartcard"])
+        );
+        assert_eq!(obj["identity_assurance"], serde_json::json!("iaa3"));
+        assert_eq!(
+            obj["auth_methods"],
+            serde_json::json!(["tailscale_oidc", "fido2_up"])
+        );
+
+        let presence = obj["presence"]
+            .as_object()
+            .expect("presence is a JSON object");
+        let mut presence_keys: Vec<&str> = presence.keys().map(String::as_str).collect();
+        presence_keys.sort_unstable();
+        assert_eq!(
+            presence_keys,
+            ["attested_at", "attested_by", "present", "present_until"]
+        );
+
+        assert_eq!(presence["present"], serde_json::json!(true));
+        assert_eq!(presence["attested_by"], serde_json::json!("fido2_up"));
+
+        // The spec prints these unquoted. A string here would still round-trip
+        // through serde and still deserialise, so only a type check catches it.
+        assert_eq!(presence["attested_at"].as_u64(), Some(1_745_999_640));
+        assert_eq!(presence["present_until"].as_u64(), Some(1_745_999_940));
+    }
 
     #[test]
     fn roundtrip_persona_claims() {
