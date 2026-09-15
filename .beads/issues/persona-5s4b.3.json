@@ -2,13 +2,15 @@
   "id": "persona-5s4b.3",
   "title": "Peer binary hashing reads the entire executable into memory",
   "description": "persona-grpc/src/consumer_attest.rs:72-76 — hash_file() does `std::fs::read(path)` to load the whole binary, then hashes it:\n\n    let data = std::fs::read(path)?;\n    Ok(Sha256::digest(\u0026data).into())\n\nWhat goes wrong: the peer binary is arbitrary — a browser or Electron app is 100-300MB. This allocates a buffer the full size of the peer's executable just to stream it through SHA-256. It is also a synchronous, unbounded-size read: attest_peer() is a sync fn (consumer_attest.rs:16) intended to be called from the tonic connection path, so that read blocks a tokio worker thread for the duration.\n\nFix, no new dependency and fewer lines of intermediate state: open the file and `std::io::copy` it into the hasher (sha2::Sha256 implements std::io::Write), which streams in fixed-size chunks with no full-file buffer. If it stays on an async path, wrap the call in tokio::task::spawn_blocking.\n\nNote attest_peer() is currently not called from anywhere (see the dead-surface issue), so this is cheap to fix before it is wired in.",
-  "status": "open",
+  "status": "closed",
   "priority": 2,
   "issue_type": "task",
   "owner": "mark@reviewcommit.com",
   "created_at": "2026-09-13T20:56:38.859952551Z",
   "created_by": "agent",
-  "updated_at": "2026-09-13T20:56:38.859952551Z",
+  "updated_at": "2026-09-15T05:15:57.458810763Z",
+  "closed_at": "2026-09-15T05:15:57.458810763Z",
+  "close_reason": "STALE -- both claims no longer hold. (1) hash_file does NOT read the whole executable: persona-grpc/src/consumer_attest.rs:120-133 already streams through a fixed 64 KiB buffer with no full-file allocation. (2) 'attest_peer() is currently not called from anywhere' is false -- server.rs:43 maps every accepted connection through AttestedStream::accept, which calls attest_peer. The remaining point, that the SHA-256 runs synchronously on the tokio accept path, is a recorded deliberate simplification, not an untracked defect: the ponytail comment at consumer_attest.rs:189-195 names the ceiling (~150ms for a 200 MB Electron binary, serialised with the next accept) and the upgrade path (StreamExt::then + spawn_blocking, which keeps the serve_with_incoming bound and does not change the signature). Nothing to do.",
   "labels": [
     "efficiency",
     "review"
