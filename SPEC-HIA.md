@@ -55,9 +55,7 @@ This is a deliberate strategic choice. By presenting the standard SPIFFE Workloa
 
 Storage: nothing persistent that isn't already persistent in the underlying source. `personad` is a normaliser, not a vault. Any data it caches is wiped on session end.
 
-Network: `personad` makes no outbound network connections. Every source reads a local socket, a local file, an environment variable, or a subprocess. Anything that needs the network is reached through a local daemon that already does it -- the Tailscale attestor speaks the LocalAPI over `/var/run/tailscale/tailscaled.sock` rather than fetching for itself, and that is the pattern any future source follows. A daemon holding the user's identity keys that talks to nothing is a far smaller thing to reason about, and the posture is worth more than the features it blocks, because it cannot be added back once given up.
-
-The Linux user unit enforces this with `RestrictAddressFamilies=AF_UNIX`. That is seccomp-applied and filters at `socket(2)` by address family, so it also refuses inbound `AF_INET`: the localhost gateway named above is unimplemented, and building it would mean revisiting that line. `IPAddressDeny=` does not work here -- the BPF firewall is not delegated to the systemd user manager, which accepts the setting and silently ignores it. macOS has no equivalent, so there the rule is a convention rather than a guarantee.
+Network: `personad` may make outbound network connections. Several sources are defined by network resolution and have no local substitute: `did:web` resolves a DID document over HTTPS, verifying an OIDC token means fetching the issuer's JWKS, and SPIFFE Federation syncs trust bundles between hosts. Where a source can reach its data through a local daemon that already does the fetching it still should -- the Tailscale attestor speaks the LocalAPI over `/var/run/tailscale/tailscaled.sock` rather than calling the coordination server itself -- but that is an efficiency, not a boundary. A name `personad` resolves generally arrives from local input it does not control, so it is untrusted input and is treated as such.
 
 ---
 

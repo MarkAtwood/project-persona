@@ -10,15 +10,5 @@ Restart=on-failure
 RestartSec=5
 Environment=RUST_LOG=info
 
-# personad makes no outbound network connections (persona-38zm). Enforced with
-# seccomp, not IPAddressDeny=: the BPF firewall is not delegated to the user
-# manager, which accepts IPAddressDeny= and silently ignores it -- measured on
-# a cgroup v2 host, where curl still reached the network through it.
-# This filters by address family at socket(2), so it also blocks inbound
-# AF_INET. The localhost gateway in SPEC-HIA is unimplemented -- the browser
-# bridge is persona-nmh over stdio -- and building it would mean revisiting
-# this line.
-RestrictAddressFamilies=AF_UNIX
-
 [Install]
 WantedBy=default.target
