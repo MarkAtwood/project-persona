@@ -788,20 +788,27 @@ The per-platform work is entirely in the attestor plugins — the "how do I disc
 
 Implementation: a single Rust binary with `#[cfg]` feature flags per platform, compiling to a static binary on each target. The SPIFFE gRPC socket is the universal interface. Applications write to the socket API once and run everywhere.
 
+This table is the **design**. Sources are marked *(not implemented)* where no
+attestor exists today; everything unmarked is active in a default build. The
+distinction matters because a platform's entry describes what `personad` is
+meant to federate, not what it currently federates.
+
 | Platform | Identity sources | Presence sources | Socket |
 |---|---|---|---|
-| Linux (systemd: Fedora, RHEL, Ubuntu, Debian) | Tailscale, GNOME Online Accounts, KDE Wallet, OIDC cached, SSH agent, GPG, DID, PIV, Kerberos | libfido2 (USB/NFC), PAM | `$XDG_RUNTIME_DIR/persona/workload.sock`, normally `/run/user/{uid}/persona/workload.sock` (user systemd unit) |
-| Linux (non-systemd: Gentoo, Void, Alpine) | Same as above minus GNOME/KDE-specific sources | libfido2 | `$XDG_RUNTIME_DIR/persona/workload.sock`, or `/tmp/persona-{uid}/workload.sock` if that is unset (started via init script or user session) |
-| macOS | Tailscale, Keychain, OIDC cached, SSH agent, GPG, DID, PIV | TouchID (CryptoTokenKit), libfido2 | `<darwin-user-temp>/persona/workload.sock` (LaunchAgent) |
-| Windows | Tailscale, WAM (Web Account Manager), OIDC cached, SSH agent, PIV | Windows Hello, WebAuthn API, libfido2 | `\\.\pipe\persona-workload-{sid}` (user-mode service) |
-| FreeBSD / OpenBSD / NetBSD | SSH agent, GPG, Kerberos, PIV, DID | libfido2 | `$XDG_RUNTIME_DIR/persona/workload.sock`, or `/tmp/persona-{uid}/workload.sock` if that is unset |
-| Kubernetes | ServiceAccount projected token, node attestation via kubelet | none (workload identity, not human) | Projected volume socket (SPIFFE CSI driver pattern) |
-| Container (Docker / Podman) | Host `personad` socket bind-mounted into container | Inherited from host | Bind-mount host socket to `/run/persona/workload.sock` |
-| WSL2 | Windows `personad` via `AF_UNIX` interop, or native Linux `personad` with Tailscale | Host Windows Hello via named-pipe bridge, or libfido2 native | `/run/user/{uid}/persona/workload.sock` (native) or bridged from Windows pipe |
+| Linux (systemd: Fedora, RHEL, Ubuntu, Debian) | Tailscale, OIDC cached, SSH agent, GPG, `did:key`, Unix account; GNOME Online Accounts *(not implemented)*, KDE Wallet *(not implemented)*, PIV *(not implemented)*, Kerberos *(not implemented)*, `did:web` *(not implemented)* | libfido2 (USB/NFC) behind `--features fido2`; PAM *(not implemented)* | `$XDG_RUNTIME_DIR/persona/workload.sock`, normally `/run/user/{uid}/persona/workload.sock` (user systemd unit) |
+| Linux (non-systemd: Gentoo, Void, Alpine) | Same as above minus GNOME/KDE-specific sources | libfido2 behind `--features fido2` | `$XDG_RUNTIME_DIR/persona/workload.sock`, or `/tmp/persona-{uid}/workload.sock` if that is unset (started via init script or user session) |
+| macOS | OIDC cached, SSH agent, GPG, `did:key`, Unix account; Keychain *(not implemented)*, PIV *(not implemented)*; Tailscale *(not implemented here — the attestor probes `/var/run/tailscale/tailscaled.sock`, which the macOS client does not create)* | TouchID (CryptoTokenKit) *(not implemented)*; libfido2 behind `--features fido2` | `<darwin-user-temp>/persona/workload.sock` (LaunchAgent) |
+| Windows | *(not implemented — `personad` does not run on Windows; the named-pipe transport is the gate.)* Designed: Tailscale, WAM (Web Account Manager), OIDC cached, SSH agent, PIV | Windows Hello, WebAuthn API, libfido2 — all *(not implemented)* | `\\.\pipe\persona-workload-{sid}` (user-mode service) *(not implemented)* |
+| FreeBSD / OpenBSD / NetBSD | SSH agent, GPG, `did:key`, OIDC cached, Unix account; Kerberos *(not implemented)*, PIV *(not implemented)* | libfido2 behind `--features fido2` | `$XDG_RUNTIME_DIR/persona/workload.sock`, or `/tmp/persona-{uid}/workload.sock` if that is unset |
+| Kubernetes | ServiceAccount projected token, node attestation via kubelet — all *(not implemented)* | none (workload identity, not human) | Projected volume socket (SPIFFE CSI driver pattern) *(not implemented)* |
+| Container (Docker / Podman) | Host `personad` socket bind-mounted into container — needs no code, so this works today | Inherited from host | Bind-mount host socket to `/run/persona/workload.sock` |
+| WSL2 | Native Linux `personad` works as on any Linux; `AF_UNIX` interop with a Windows `personad` *(not implemented)* | Host Windows Hello via named-pipe bridge *(not implemented)*; libfido2 native behind `--features fido2` | `/run/user/{uid}/persona/workload.sock` (native); the bridged Windows pipe *(not implemented)* |
 
 ### Platform detection and graceful degradation
 
-`personad` probes available identity sources at startup and activates only those present on the current platform. A minimal deployment (SSH agent only) works everywhere; a rich deployment (Tailscale + FIDO2 + PIV + OIDC) uses whatever the platform offers. Missing sources are logged and skipped, never fatal.
+`personad` probes available identity sources at startup and activates only those present on the current platform. A minimal deployment (SSH agent only) works everywhere; a rich deployment (Tailscale + FIDO2 + OIDC) uses whatever the platform offers. Missing sources are logged and skipped, never fatal.
+
+The Unix account source is the floor: it needs only a running process, so no Unix platform probes to nothing. The rich case is still partly design — PIV has no working `is_available()`, and FIDO2 is compiled out unless `--features fido2` is set.
 
 The startup probe order:
 1. Tailscale socket (`/var/run/tailscale/tailscaled.sock` or platform equivalent)

@@ -111,33 +111,45 @@ Day-one attestor plugins. The assurance and presence columns are targets for onc
 `prove()` exists, not what the daemon substantiates today -- except SSH agent and Unix
 account, which substantiate their rows now. See [Status](#status).
 
-| Source | Assurance | Presence | Platforms |
-|---|---|---|---|
-| Tailscale | iaa2 | none | Linux, macOS, Windows |
-| FIDO2 (libfido2) | iaa3 | hardware | Linux, macOS, Windows |
-| PIV / smartcard | iaa3 | hardware (with PIN) | cross-platform |
-| Windows Hello | iaa3 | hardware | Windows |
-| Secure Enclave (TouchID) | iaa3 | hardware | macOS |
-| GNOME Online Accounts | iaa2 | session | Linux (GNOME) |
-| OIDC cached | iaa2/iaa1 | session | cross-platform |
-| SSH agent | iaa1 | none | cross-platform |
-| GPG | iaa1 | none | cross-platform |
-| DID (did:key, did:web) | iaa1/iaa2 | none | cross-platform |
-| Unix account | iaa1 | none | Linux, macOS, BSD |
+The `Built` column says whether the attestor exists today, which is a separate
+question from whether it substantiates its assurance row.
+
+| Source | Assurance | Presence | Platforms | Built |
+|---|---|---|---|---|
+| Tailscale | iaa2 | none | Linux | yes -- probes `/var/run/tailscale/tailscaled.sock`, the Linux path; the macOS and Windows clients do not create it |
+| FIDO2 (libfido2) | iaa3 | hardware | Linux, macOS, Windows | yes, behind `--features fido2`; off in a default build |
+| PIV / smartcard | iaa3 | hardware (with PIN) | cross-platform | no -- `is_available()` returns false even with `--features pkcs11` |
+| Windows Hello | iaa3 | hardware | Windows | no -- no attestor exists |
+| Secure Enclave (TouchID) | iaa3 | hardware | macOS | no -- no attestor exists |
+| GNOME Online Accounts | iaa2 | session | Linux (GNOME) | no -- `goa` is a placeholder feature with no D-Bus dependency |
+| OIDC cached | iaa2/iaa1 | session | cross-platform | yes -- always registered, scans gcloud and Azure caches |
+| SSH agent | iaa1 | none | cross-platform | yes -- `prove()` is ed25519 only |
+| GPG | iaa1 | none | cross-platform | yes, when a `gpg` binary is present |
+| DID | iaa1/iaa2 | none | cross-platform | `did:key` yes, via `PERSONA_DID_KEYS`; `did:web` no |
+| Unix account | iaa1 | none | Linux, macOS, BSD | yes -- always available |
 
 ## Platform Support
 
 The consumer-facing API is identical on every platform -- the SPIFFE Workload API gRPC socket. Per-platform work is entirely in the attestor plugins.
 
-| Platform | Service manager | Notes |
-|---|---|---|
-| Linux (systemd) | `personad.service` (user unit) | Full source support |
-| Linux (non-systemd) | Init script or user session | Socket at `$XDG_RUNTIME_DIR/persona/workload.sock`, or `/tmp/persona-{uid}/workload.sock` if that is unset |
-| macOS | LaunchAgent | TouchID via CryptoTokenKit |
-| Windows | User-mode service | Windows Hello, named pipe transport |
-| FreeBSD / OpenBSD | User session | SSH agent, GPG, Kerberos, PIV, FIDO2 |
-| Containers | Bind-mount host socket | Inherits host identity |
-| WSL2 | Native or bridged from Windows | AF_UNIX interop or native Tailscale |
+`Sources today` lists the attestors a default build ships for that platform. Each
+still has its own runtime check -- Tailscale needs its socket, SSH agent needs
+`SSH_AUTH_SOCK`, `did:key` needs `PERSONA_DID_KEYS`, GPG needs a `gpg` binary --
+so a given machine activates a subset. Only OIDC cached and Unix account are
+unconditional. Anything designed but absent is marked `(not implemented)`.
+
+Measured on one Linux box: `tailscale, ssh-agent, oidc-cached, gpg, unix`, five
+sources, with `did:key` skipped for an unset `PERSONA_DID_KEYS`.
+
+| Platform | Service manager | Sources today | Designed, not built |
+|---|---|---|---|
+| Linux (systemd) | `personad.service` (user unit) | Tailscale, SSH agent, OIDC cached, `did:key`, GPG, Unix account | GNOME Online Accounts, PIV, Kerberos; FIDO2 needs `--features fido2` |
+| Linux (non-systemd) | Init script or user session | Same as above. Socket at `$XDG_RUNTIME_DIR/persona/workload.sock`, or `/tmp/persona-{uid}/workload.sock` if that is unset | Same as above |
+| macOS | LaunchAgent | SSH agent, OIDC cached, `did:key`, GPG, Unix account | TouchID / Secure Enclave, Keychain, PIV (not implemented); Tailscale probes the Linux socket path and so never activates here |
+| Windows | -- | none; `personad` does not run on Windows | The whole platform (not implemented) -- the named-pipe transport is the gate. See the `persona-vvs2` epic |
+| FreeBSD / OpenBSD | User session | SSH agent, GPG, OIDC cached, `did:key`, Unix account | Kerberos, PIV (not implemented); FIDO2 needs `--features fido2` |
+| Containers | Bind-mount host socket | Inherits host identity | -- |
+| WSL2 | Native Linux `personad` | Same as Linux | Bridging to a Windows `personad` (not implemented) |
 
 Implementation is a single Rust binary with `#[cfg]` feature flags per platform.
 
