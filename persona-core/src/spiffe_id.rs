@@ -90,11 +90,16 @@ impl SpiffeId {
 
     /// Extracts the source name from a `via/{source}` tail segment in the path.
     ///
-    /// Returns `Some("source")` if the path ends with `via/{source}`, otherwise
-    /// `None`.
+    /// Returns `Some(source)` if the path ends with `via/{source}`, otherwise
+    /// `None`. `via` must be a whole path segment: `user/trivia/x` is not a
+    /// provenance-bearing path and yields `None`.
+    ///
+    /// This names the identity source that produced a claim, and a `SpiffeId`
+    /// can be parsed from a URI this daemon did not mint, so the segment
+    /// boundary is what stops an arbitrary tail segment being read as a source.
     pub fn provenance(&self) -> Option<&str> {
         let (prefix, source) = self.path.rsplit_once('/')?;
-        if prefix.ends_with("via") || prefix == "via" {
+        if prefix == "via" || prefix.ends_with("/via") {
             Some(source)
         } else {
             None
@@ -160,6 +165,75 @@ fn parse_trust_domain(s: &str) -> TrustDomain {
             } else {
                 TrustDomain::OrgOidc(other.to_owned())
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod provenance_tests {
+    use super::*;
+
+    /// URIs quoted verbatim from SPEC-HIA.md, which defines the path form as
+    /// `spiffe://{trust-domain}/user/{sub}/via/{source}` at line 69.
+    #[test]
+    fn reads_the_source_from_the_forms_the_spec_gives() {
+        for (uri, source) in [
+            // SPEC-HIA.md:74
+            (
+                "spiffe://example.com/user/mark/via/google-workspace",
+                "google-workspace",
+            ),
+            // SPEC-HIA.md:77
+            (
+                "spiffe://example.com/user/mark/via/piv-smartcard",
+                "piv-smartcard",
+            ),
+            // SPEC-HIA.md:653
+            ("spiffe://example.com/user/mark/via/tailscale", "tailscale"),
+        ] {
+            let id = SpiffeId::from_str(uri).expect("the spec's own URI must parse");
+            assert_eq!(id.provenance(), Some(source), "{uri}");
+        }
+    }
+
+    #[test]
+    fn reads_the_source_the_oidc_attestor_actually_mints() {
+        // persona-attestors/src/oidc.rs:80 builds "user/{sub}/via/oidc-cached".
+        let id = SpiffeId::new(
+            TrustDomain::OrgOidc("example.com".into()),
+            "user/mark/via/oidc-cached",
+        );
+        assert_eq!(id.provenance(), Some("oidc-cached"));
+    }
+
+    #[test]
+    fn via_alone_is_a_prefix() {
+        let id = SpiffeId::new(TrustDomain::SshLocal, "via/ssh-agent");
+        assert_eq!(id.provenance(), Some("ssh-agent"));
+    }
+
+    #[test]
+    fn a_segment_merely_ending_in_via_is_not_a_provenance_marker() {
+        // The predicate used to be prefix.ends_with("via"), which is true of any
+        // segment with that suffix. provenance() names the identity source that
+        // produced a claim, and a SpiffeId can be parsed from a URI this daemon
+        // did not mint, so these must not report a source.
+        for path in ["user/trivia/x", "user/alice/servia/bob", "user/bolivia/c"] {
+            let id = SpiffeId::new(TrustDomain::SshLocal, path);
+            assert_eq!(id.provenance(), None, "{path} has no via/ segment");
+        }
+    }
+
+    #[test]
+    fn a_path_with_no_via_segment_has_no_provenance() {
+        for path in [
+            "user/alice",
+            "alice",
+            "pseudonym/abcdef",
+            "user/alice/for/app",
+        ] {
+            let id = SpiffeId::new(TrustDomain::SshLocal, path);
+            assert_eq!(id.provenance(), None, "{path}");
         }
     }
 }
