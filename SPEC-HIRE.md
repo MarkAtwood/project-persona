@@ -47,7 +47,14 @@ This is a deliberate strategic choice. By presenting the standard SPIFFE Workloa
 **CLI:** `hire`
 **Socket (Linux):** `$XDG_RUNTIME_DIR/hire/workload.sock`, normally `/run/user/{uid}/hire/workload.sock` (gRPC, SPIFFE Workload API)
 **Socket (macOS):** `<darwin-user-temp>/hire/workload.sock`, the per-user temp directory launchd also exports as `$TMPDIR`
-**Socket (Windows):** Named pipe `\\.\pipe\hire-workload-{sid}`
+**Socket (Windows):** Named pipe `\\.\pipe\hired\public\api` *(not implemented)*
+
+This follows SPIRE, which binds its Workload API at `\spire-agent\public\api`
+(the `\\.\pipe\` prefix is implied in its configuration). `hired` invents no
+protocol, and that applies to the endpoint convention as much as to the wire
+format. An earlier draft specified `\\.\pipe\hire-workload-{sid}`, which was
+invented here: SPIRE puts no SID in the pipe name and isolates per user with a
+DACL instead, so the SID bought nothing and leaked an identifier into a name.
 **Localhost HTTP gateway:** `127.0.0.1:2443` (for browser native-messaging bridge)
 **User systemd unit (Linux):** `hired.service`
 **LaunchAgent (macOS):** `hired` (`~/Library/LaunchAgents/hired.plist`)
@@ -798,7 +805,7 @@ meant to federate, not what it currently federates.
 | Linux (systemd: Fedora, RHEL, Ubuntu, Debian) | Tailscale, OIDC cached, SSH agent, GPG, `did:key`, Unix account; GNOME Online Accounts *(not implemented)*, KDE Wallet *(not implemented)*, PIV *(not implemented)*, Kerberos *(not implemented)*, `did:web` *(not implemented)* | libfido2 (USB/NFC) behind `--features fido2`; PAM *(not implemented)* | `$XDG_RUNTIME_DIR/hire/workload.sock`, normally `/run/user/{uid}/hire/workload.sock` (user systemd unit) |
 | Linux (non-systemd: Gentoo, Void, Alpine) | Same as above minus GNOME/KDE-specific sources | libfido2 behind `--features fido2` | `$XDG_RUNTIME_DIR/hire/workload.sock`, or `/tmp/hire-{uid}/workload.sock` if that is unset (started via init script or user session) |
 | macOS | OIDC cached, SSH agent, GPG, `did:key`, Unix account; Keychain *(not implemented)*, PIV *(not implemented)*; Tailscale *(not implemented here — the attestor probes `/var/run/tailscale/tailscaled.sock`, which the macOS client does not create)* | TouchID (CryptoTokenKit) *(not implemented)*; libfido2 behind `--features fido2` | `<darwin-user-temp>/hire/workload.sock` (LaunchAgent) |
-| Windows | *(not implemented — `hired` does not run on Windows; the named-pipe transport is the gate.)* Designed: Tailscale, WAM (Web Account Manager), OIDC cached, SSH agent, PIV | Windows Hello, WebAuthn API, libfido2 — all *(not implemented)* | `\\.\pipe\hire-workload-{sid}` (user-mode service) *(not implemented)* |
+| Windows | *(not implemented — `hired` does not run on Windows; the named-pipe transport is the gate.)* Designed: Tailscale, WAM (Web Account Manager), OIDC cached, SSH agent, PIV | Windows Hello, WebAuthn API, libfido2 — all *(not implemented)* | `\\.\pipe\hired\public\api` (user-mode service) *(not implemented)* |
 | FreeBSD / OpenBSD / NetBSD | SSH agent, GPG, `did:key`, OIDC cached, Unix account; Kerberos *(not implemented)*, PIV *(not implemented)* | libfido2 behind `--features fido2` | `$XDG_RUNTIME_DIR/hire/workload.sock`, or `/tmp/hire-{uid}/workload.sock` if that is unset |
 | Kubernetes | ServiceAccount projected token, node attestation via kubelet — all *(not implemented)* | none (workload identity, not human) | Projected volume socket (SPIFFE CSI driver pattern) *(not implemented)* |
 | Container (Docker / Podman) | Host `hired` socket bind-mounted into container — needs no code, so this works today | Inherited from host | Bind-mount host socket to `/run/hire/workload.sock` |

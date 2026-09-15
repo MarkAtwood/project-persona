@@ -14,7 +14,8 @@ use std::path::PathBuf;
 /// cannot disagree about where the socket is.
 ///
 // ponytail: unix domain sockets only | ceiling: Windows needs a named pipe
-//   (`\\.\pipe\hire-workload-{sid}`), which this function cannot express |
+//   (`\\.\pipe\hired\public\api`, SPIRE's convention), which this function
+//   cannot express |
 //   upgrade path: abstract the transport over UnixListener/UnixStream first, then
 //   return a platform-tagged endpoint instead of a PathBuf
 pub fn workload_socket_path() -> PathBuf {

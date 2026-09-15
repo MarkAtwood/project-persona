@@ -20,10 +20,23 @@ pub enum ConsumerIdentity {
     FlatpakApp(String),
     /// Snap package name, e.g. `"firefox"`.
     SnapName(String),
-    /// MSIX Package Family Name publisher CN (Windows).
-    MsixPublisher(String),
     /// Chrome or Firefox extension ID.
     ChromeExtension(String),
+    // There is deliberately no Windows variant. One existed --
+    // MsixPublisher(String), keyed "msix:publisher:{cn}" -- and was removed
+    // before any Windows code was written, because it was a guess frozen into
+    // a wire format. The publisher CN is shared by every application from one
+    // publisher, so every app from that publisher would derive the SAME
+    // pseudonym: a stable global correlator wearing a pseudonym's clothes,
+    // which is the exact reason `attest_peer` refuses to key on uid. Compare
+    // `MacosBundleId`, which carries the application AND its publisher. Most
+    // Windows software is not MSIX-packaged besides.
+    //
+    // Whoever writes Windows consumer attestation picks the identity then,
+    // knowing what the platform actually offers, and adds a variant with a
+    // format they can defend. Removing this one cost nothing: it was never
+    // constructed, so no pseudonym was ever derived from it and no scheme bump
+    // is needed.
 }
 
 impl ConsumerIdentity {
@@ -42,7 +55,6 @@ impl ConsumerIdentity {
     /// - `MacosBundleId` → `"macos:bundle_id:<id>:team_id:<team>"`
     /// - `FlatpakApp`    → `"flatpak:app:<id>"`
     /// - `SnapName`      → `"snap:name:<name>"`
-    /// - `MsixPublisher` → `"msix:publisher:<cn>"`
     /// - `ChromeExtension` → `"chrome_extension:id:<id>"`
     pub fn selector_key(&self) -> String {
         match self {
@@ -59,7 +71,6 @@ impl ConsumerIdentity {
             }
             ConsumerIdentity::FlatpakApp(id) => format!("flatpak:app:{id}"),
             ConsumerIdentity::SnapName(name) => format!("snap:name:{name}"),
-            ConsumerIdentity::MsixPublisher(cn) => format!("msix:publisher:{cn}"),
             ConsumerIdentity::ChromeExtension(id) => format!("chrome_extension:id:{id}"),
         }
     }
@@ -100,12 +111,6 @@ mod tests {
     fn snap_selector_key() {
         let key = ConsumerIdentity::SnapName("firefox".into()).selector_key();
         assert_eq!(key, "snap:name:firefox");
-    }
-
-    #[test]
-    fn msix_selector_key() {
-        let key = ConsumerIdentity::MsixPublisher("CN=Example".into()).selector_key();
-        assert_eq!(key, "msix:publisher:CN=Example");
     }
 
     #[test]
