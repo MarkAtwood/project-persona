@@ -1,0 +1,28 @@
+{
+  "id": "persona-3tly.7.2",
+  "title": "(b) ValidateJWTSVID consults live presence state",
+  "description": "Layer (b) of the persona-3tly.7 decision, and persona-3tly.6's own proposal taken up unchanged: validation consults live PRESENCE state, so a token whose presence was observably revoked fails validation even though exp has not passed. Departure then lands in an RPC that already exists rather than needing a revocation protocol.\n\nThe shape already exists. persona-5s4b.82 made ValidateJWTSVID consult live trust-bundle state rather than a cached key, and hire-grpc/src/service.rs:459-467 records why the signer is deliberately not read there. Same move, one field over.\n\nReaches any SPIFFE consumer that calls ValidateJWTSVID. Does NOT reach one that self-verifies against the JWKS -- that gap is layer (a)'s job and is why all three layers exist.",
+  "acceptance_criteria": "A token whose presence was observably revoked fails ValidateJWTSVID before exp; a token whose presence merely decayed is distinguishable from one that was revoked.",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T20:37:03.696933794Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T20:37:03.696933794Z",
+  "labels": [
+    "presence",
+    "api",
+    "design"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-3tly.7.2",
+      "depends_on_id": "persona-3tly.7",
+      "type": "parent-child",
+      "created_at": "2026-09-15T20:37:03.71111536Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

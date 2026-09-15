@@ -1,0 +1,37 @@
+{
+  "id": "persona-3tly.7.1",
+  "title": "(a) Derive JWT-SVID TTL from the source, not a constant",
+  "description": "hire-core/src/signer.rs:203 hardcodes exp = now + 300 for every JWT-SVID regardless of what backs it. persona-3tly.6 already establishes that a TTL means different things per source: where departure is observable a TTL is a backstop and can be generous; where it is not, the TTL is the ENTIRE safety margin and should be short.\n\nLayer (a) of the persona-3tly.7 decision. This is the only layer that reaches a stock SPIFFE consumer that self-verifies against the published JWKS and never calls back.\n\nDepends on persona-5s4b.24, which already flags the hardcoded 300s and the untyped serde_json::Value the signer takes.\n\nWATCH THE SKEW FLOOR recorded on persona-3tly.7: seconds-scale exp is safe for local consumption over the Unix socket because there is no skew, and unsafe for a token forwarded to an off-host relying party whose skew tolerance is conventionally minutes. A single TTL cannot serve both. Whether that means two token shapes, or presence being withheld from forwardable tokens, is the decision this bead has to make rather than inherit.",
+  "acceptance_criteria": "TTL is a function of the backing source's departure-detection capability; no hardcoded constant; the forwarded-token skew case is explicitly answered.",
+  "status": "open",
+  "priority": 1,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T20:37:03.628977657Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T20:37:03.628977657Z",
+  "labels": [
+    "presence",
+    "crypto",
+    "api",
+    "design"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-3tly.7.1",
+      "depends_on_id": "persona-3tly.7",
+      "type": "parent-child",
+      "created_at": "2026-09-15T20:37:03.647902791Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    },
+    {
+      "issue_id": "persona-3tly.7.1",
+      "depends_on_id": "persona-5s4b.24",
+      "type": "blocks",
+      "created_at": "2026-09-15T20:37:03.839875539Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

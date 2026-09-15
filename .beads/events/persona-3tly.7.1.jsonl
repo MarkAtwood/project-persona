@@ -1,0 +1,5 @@
+{"id":"01a0a6c9-940f-7282-bcb4-30c796054483","issue_id":"persona-3tly.7.1","event_type":"created","actor":"agent","old_value":"","new_value":"","created_at":"2026-09-15T20:37:03.631165196Z"}
+{"id":"01a0a6c9-9411-71f5-8cb3-1810dfc66c46","issue_id":"persona-3tly.7.1","event_type":"label_added","actor":"agent","comment":"Added label: presence","created_at":"2026-09-15T20:37:03.633128725Z"}
+{"id":"01a0a6c9-9413-7113-955a-6ca4211d2afc","issue_id":"persona-3tly.7.1","event_type":"label_added","actor":"agent","comment":"Added label: crypto","created_at":"2026-09-15T20:37:03.635071639Z"}
+{"id":"01a0a6c9-9414-7f32-a5d2-e624bbdebe1d","issue_id":"persona-3tly.7.1","event_type":"label_added","actor":"agent","comment":"Added label: api","created_at":"2026-09-15T20:37:03.63699631Z"}
+{"id":"01a0a6c9-9416-7ceb-ac26-22b3e6533680","issue_id":"persona-3tly.7.1","event_type":"label_added","actor":"agent","comment":"Added label: design","created_at":"2026-09-15T20:37:03.638847149Z"}

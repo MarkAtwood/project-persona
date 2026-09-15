@@ -1,0 +1,45 @@
+{
+  "id": "persona-3tly.7.3",
+  "title": "(c) Presence subscription on the HIRE service",
+  "description": "Layer (c) of the persona-3tly.7 decision: a stream carrying presence changes, so a HIRE-aware consumer learns the principal left without polling and without waiting for a TTL.\n\nRides on the second gRPC service from persona-jl4j.4, so the marginal cost is one RPC rather than a new surface. Note this is the layer a CONTINUOUSLY-sensed source wants most, because such a source produces no departure event for the (b) path to deliver -- it produces a continuous truth whose interruption is the signal.\n\nDESIGN NOTE FOR persona-jl4j.5: for a continuous source, the proof cache and this subscription are the SAME machinery. The daemon holds a live subscription and the cached observation is simply the latest one, so proof age stays near zero and never needs a poll. Build the cache so a source can PUSH into it, not only be polled, or it gets rebuilt when the first continuous attestor lands.\n\nConsumer attestation applies as it does everywhere: a caller that cannot be attested gets no subscription. A presence stream is a side channel about the human's physical whereabouts and should be no more freely available than a token is.",
+  "acceptance_criteria": "A HIRE-aware consumer is notified of a presence change without polling; unattested callers are refused; the cache in persona-jl4j.5 accepts pushed observations.",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "feature",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T20:37:03.760166986Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T20:37:03.760166986Z",
+  "labels": [
+    "presence",
+    "api",
+    "grpc",
+    "design"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-3tly.7.3",
+      "depends_on_id": "persona-3tly.7",
+      "type": "parent-child",
+      "created_at": "2026-09-15T20:37:03.778193297Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    },
+    {
+      "issue_id": "persona-3tly.7.3",
+      "depends_on_id": "persona-jl4j.4",
+      "type": "blocks",
+      "created_at": "2026-09-15T20:37:03.905983596Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    },
+    {
+      "issue_id": "persona-3tly.7.3",
+      "depends_on_id": "persona-jl4j.5",
+      "type": "blocks",
+      "created_at": "2026-09-15T20:37:03.96618345Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

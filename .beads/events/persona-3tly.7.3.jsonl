@@ -1,0 +1,5 @@
+{"id":"01a0a6c9-9492-7532-b82a-37ae1cc6e94d","issue_id":"persona-3tly.7.3","event_type":"created","actor":"agent","old_value":"","new_value":"","created_at":"2026-09-15T20:37:03.762341472Z"}
+{"id":"01a0a6c9-9494-78c8-b3dd-e1048bb7b131","issue_id":"persona-3tly.7.3","event_type":"label_added","actor":"agent","comment":"Added label: presence","created_at":"2026-09-15T20:37:03.76457609Z"}
+{"id":"01a0a6c9-9496-7839-ac80-713ed6135809","issue_id":"persona-3tly.7.3","event_type":"label_added","actor":"agent","comment":"Added label: api","created_at":"2026-09-15T20:37:03.766539332Z"}
+{"id":"01a0a6c9-9498-77d1-91c3-3537c289d9a5","issue_id":"persona-3tly.7.3","event_type":"label_added","actor":"agent","comment":"Added label: grpc","created_at":"2026-09-15T20:37:03.768512821Z"}
+{"id":"01a0a6c9-949a-7857-ba6a-d5daf4e72097","issue_id":"persona-3tly.7.3","event_type":"label_added","actor":"agent","comment":"Added label: design","created_at":"2026-09-15T20:37:03.770547194Z"}
