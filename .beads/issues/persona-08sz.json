@@ -1,0 +1,20 @@
+{
+  "id": "persona-08sz",
+  "title": "Enrolling an attestor: where a source's trust basis is recorded",
+  "description": "THE MISSING OBJECT. In this repo 'enroll' means enrolling a CONSUMER -- hire enroll app, hire enroll origin, the workload registration at SPEC-HIRE.md:275, the browser origin allowlist at :287. There is nothing for enrolling a SOURCE, and three separate beads bottom out in needing one:\n\n  persona-ux32   a tier ceiling must be RECORDED at enrolment, not asserted by\n                 the sensor at connect time. That was the whole point of making\n                 it a constraint rather than a negotiation -- but there is\n                 nowhere to record it.\n  persona-5s4b.8 a registration path for third-party attestors. Registration is\n                 the packaging half; being BELIEVED is this half.\n  persona-lnaj   a signed credential in a drop directory becomes\n                 Evidence::IdpVerified once 'the daemon verifies the issuer\n                 signature'. Against which issuers? Nothing says.\n\nAnd persona-5s4b.103 closed by making hire enroll honestly exit 1 and store nothing, so there is no enrolment state anywhere to extend.\n\nWHAT AN ENROLMENT RECORD HAS TO SAY, and nothing more:\n  - which authority: a public key, a DID, or a certificate\n  - what it may vouch for: a tier ceiling, per persona-ux32\n  - optionally what it may vouch ABOUT: a path prefix or domain, so one\n    authority cannot mint identities in another's namespace\n\nKEEP IT SMALL. A file the daemon reads at startup is enough and is the whole v1. Not a registry service, not a protocol, not a PKI. 'hire enroll' writes it and the daemon reads it. A source with no enrolled authority is not an error -- it produces Candidates and proves nothing, which is the model already working, so every consumer of this can ship before it exists and get better afterwards.\n\nTHIS IS THE FIRST THING IN THE WORKSPACE THAT PERSISTS ANYTHING. SPEC-HIRE.md:101 says so outright -- 'nothing here writes to disk until enrollment is implemented' -- and hire-core/src/signer.rs:75 already defers to 'whatever state enrollment introduces'. So this bead owns the question of where that lives and what its permissions are.\n\nNOTE THE ASYMMETRY AND PRESERVE IT: enrolment state SHOULD survive a restart and the pseudonym key deliberately should NOT. Enrolment is policy the user authored; the pseudonym key is a secret whose non-persistence is the unlinkability guarantee (SPEC-HIRE.md:101). Putting them in one store because both are 'daemon state' would trade a stated privacy property for a convenience.",
+  "design": "Do not design a revocation protocol here. Removing a line from the file is revocation, and it is enough for v1. If that turns out to be insufficient, the reason will be concrete and this bead will have shipped something useful in the meantime.",
+  "acceptance_criteria": "An enrolment record naming an authority and a tier ceiling, written by hire enroll and read by the daemon at startup; a source with no enrolled authority degrades to Candidate-only rather than erroring; enrolment state persists and the pseudonym key still does not.",
+  "notes": "NO HARD DEPENDENCIES EITHER WAY, deliberately. persona-ux32, persona-lnaj and persona-lbdx all NEED this eventually and all have useful work that ships before it exists: ux32 is a written trust model, and lnaj and lbdx both degrade to Candidate-only without an enrolled authority, which is the Candidate/Claim model working rather than a shortfall. Dependency edges were added between them and then removed for that reason -- blocking three useful beads on an unbuilt store is the failure mode, not the ordering.\n\nWhat connects them is prose, not the graph. Whoever builds this should read all three first; whoever builds those three should not wait for this.",
+  "status": "open",
+  "priority": 1,
+  "issue_type": "feature",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T21:58:12.786965909Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T21:59:04.141677084Z",
+  "labels": [
+    "attestor",
+    "security",
+    "enrollment"
+  ]
+}
