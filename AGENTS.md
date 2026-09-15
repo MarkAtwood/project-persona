@@ -38,9 +38,9 @@ cp -rf source dest          # NOT: cp -r source dest
 
 ## Project Context
 
-personad is a **user-session daemon** that federates heterogeneous human-identity sources behind the standard SPIFFE Workload API socket. It is "SPIRE for humans": a local daemon that answers "who is the person at this workstation and how confident are we they are physically present?" CLI is `persona`, daemon is `personad`. No new wire protocol -- consumers call `FetchJWTSVID` / `FetchX509SVIDs` on the local socket and get standard SPIFFE SVIDs. Any SPIFFE-aware client works unmodified.
+hired is a **user-session daemon** that federates heterogeneous human-identity sources behind the standard SPIFFE Workload API socket. It is "SPIRE for humans": a local daemon that answers "who is the person at this workstation and how confident are we they are physically present?" CLI is `hire`, daemon is `hired`. No new wire protocol -- consumers call `FetchJWTSVID` / `FetchX509SVIDs` on the local socket and get standard SPIFFE SVIDs. Any SPIFFE-aware client works unmodified.
 
-Read `~/PROJECT/SPEC-HIA.md` before making design changes -- it is the authoritative spec.
+Read `~/PROJECT/SPEC-HIRE.md` before making design changes -- it is the authoritative spec.
 
 ## Before Writing Code
 
@@ -53,25 +53,25 @@ For any task touching more than 3 files or requiring more than a few steps:
 
 | Crate | What belongs here |
 |---|---|
-| `personad` | Daemon binary: socket listener, startup, signal handling, systemd/launchd integration |
-| `persona` | CLI binary: `persona whoami`, `persona enumerate`, `persona fetch-jwt`, etc. |
-| `persona-core` | Shared types: SPIFFE ID schema, assurance levels (`iaa1`/`iaa2`/`iaa3`), presence model (`none`/`session`/`software`/`hardware`), trust domain model |
-| `persona-attestors` | Attestor plugin trait (`enumerate` -> candidates, `prove` -> evidence, `freshness`) + implementations: tailscale, fido2, piv, oidc, ssh-agent, gpg, did, secure-enclave, windows-hello, gnome-online-accounts |
-| `persona-grpc` | SPIFFE Workload API gRPC server: `FetchX509SVIDs`, `FetchX509Bundles`, `FetchJWTSVID`, `FetchJWTBundles`, `ValidateJWTSVID` |
+| `hired` | Daemon binary: socket listener, startup, signal handling, systemd/launchd integration |
+| `hire` | CLI binary: `hire whoami`, `hire enumerate`, `hire fetch-jwt`, etc. |
+| `hire-core` | Shared types: SPIFFE ID schema, assurance levels (`iaa1`/`iaa2`/`iaa3`), presence model (`none`/`session`/`software`/`hardware`), trust domain model |
+| `hire-attestors` | Attestor plugin trait (`enumerate` -> candidates, `prove` -> evidence, `freshness`) + implementations: tailscale, fido2, piv, oidc, ssh-agent, gpg, did, secure-enclave, windows-hello, gnome-online-accounts |
+| `hire-grpc` | SPIFFE Workload API gRPC server: `FetchX509SVIDs`, `FetchX509Bundles`, `FetchJWTSVID`, `FetchJWTBundles`, `ValidateJWTSVID` |
 
-**No gRPC outside `persona-grpc`. No platform-specific attestation outside `persona-attestors`. No `unsafe`.**
+**No gRPC outside `hire-grpc`. No platform-specific attestation outside `hire-attestors`. No `unsafe`.**
 
 ## Key Design Decisions
 
-**Standard SPIFFE Workload API.** The gRPC service implements the upstream SPIFFE proto definitions (`spiffe.api.agent.v1`). No custom wire protocol. Any SPIFFE client library (go-spiffe, rust-spiffe, java-spiffe, py-spiffe) works against personad unmodified.
+**Standard SPIFFE Workload API.** The gRPC service implements the upstream SPIFFE proto definitions (`spiffe.api.agent.v1`). No custom wire protocol. Any SPIFFE client library (go-spiffe, rust-spiffe, java-spiffe, py-spiffe) works against hired unmodified.
 
 **Per-consumer pseudonymity.** The default SPIFFE ID exposed to a consumer is an HKDF-derived pseudonym: `spiffe://{trust-domain}/pseudonym/{hkdf-id}`. There is no `for/{consumer-app-id}` tail. Consumers get identifiers that cannot be correlated across apps without explicit user consent, stable for the lifetime of the running daemon. Derivation uses `HKDF-SHA256(ikm=pseudonym_key || root_spiffe_uri, salt=trust_domain, info=consumer_app_id)`, where `pseudonym_key` is 32 random bytes generated at start and never persisted. Keyed on the consumer application only, never on the JWT `aud`.
 
-**Attestor plugin architecture.** Each identity source is a plugin implementing three methods: `enumerate()` discovers candidate identities, `prove(candidate, challenge)` produces evidence, `freshness(candidate)` checks liveness. A candidate carries no assurance and no presence level; both are derived from the evidence by `Claim::derive`, which is the only constructor for a `Claim`. `prove()` defaults to declining, so an attestor that cannot verify anything contributes no level and the daemon declines rather than asserting. `Claim` lives in `persona-attestors/src/claim.rs` and not in `lib.rs`: private fields on a crate-root struct stay writable from every attestor module, so moving it back would silently remove the guarantee. Plugins are loaded at startup based on platform availability. Missing sources are logged and skipped, never fatal.
+**Attestor plugin architecture.** Each identity source is a plugin implementing three methods: `enumerate()` discovers candidate identities, `prove(candidate, challenge)` produces evidence, `freshness(candidate)` checks liveness. A candidate carries no assurance and no presence level; both are derived from the evidence by `Claim::derive`, which is the only constructor for a `Claim`. `prove()` defaults to declining, so an attestor that cannot verify anything contributes no level and the daemon declines rather than asserting. `Claim` lives in `hire-attestors/src/claim.rs` and not in `lib.rs`: private fields on a crate-root struct stay writable from every attestor module, so moving it back would silently remove the guarantee. Plugins are loaded at startup based on platform availability. Missing sources are logged and skipped, never fatal.
 
-**Consumer authentication via OS process attestation.** Once per connection, at accept, personad attests the calling process from its Unix socket credentials and hashes its main executable: `/proc/{pid}/exe` on Linux, `proc_pidpath` on macOS. (`GetNamedPipeClientProcessId` on Windows is unimplemented.) The consumer's verified identity drives pseudonym derivation, and a peer that cannot be attested is refused.
+**Consumer authentication via OS process attestation.** Once per connection, at accept, hired attests the calling process from its Unix socket credentials and hashes its main executable: `/proc/{pid}/exe` on Linux, `proc_pidpath` on macOS. (`GetNamedPipeClientProcessId` on Windows is unimplemented.) The consumer's verified identity drives pseudonym derivation, and a peer that cannot be attested is refused.
 
-**No persistent storage.** personad is a normalizer, not a vault. Any data it caches is wiped on session end. It holds no secrets that are not already held by the underlying identity source.
+**No persistent storage.** hired is a normalizer, not a vault. Any data it caches is wiped on session end. It holds no secrets that are not already held by the underlying identity source.
 
 **Cryptography via ring and rustls.** TLS on the gRPC socket via `rustls`. SVID signing (X.509, JWT, ECDSA P-256/P-384) and HKDF derivation via `ring`. Algorithm primitives via RustCrypto crates as needed.
 
@@ -80,7 +80,7 @@ For any task touching more than 3 files or requiring more than a few steps:
 - Rust, edition 2021
 - `#[non_exhaustive]` on all public enums
 - Types from `jmap-chat-types` / `jmap-types` are constructed via serde (`serde_json::from_value` pattern) -- do NOT add `new()` constructors to upstream types
-- Error handling: `thiserror` for library crates (`persona-core`, `persona-attestors`, `persona-grpc`), `anyhow` for binaries (`personad`, `persona`)
+- Error handling: `thiserror` for library crates (`hire-core`, `hire-attestors`, `hire-grpc`), `anyhow` for binaries (`hired`, `hire`)
 - Async runtime: `tokio`
 - gRPC framework: `tonic`
 - Tests: `cargo test`, no external test harnesses
@@ -111,11 +111,11 @@ All three must pass clean. If `cargo fmt` changes files, stage and include those
 
 | Project | Location | Relationship |
 |---|---|---|
-| kith | `~/PROJECT/kith/` | First consumer of personad. kithd replaces Tailscale WhoIs with `FetchJWTSVID` on the persona socket. |
-| moot | `~/PROJECT/moot/` | Second JMAP Chat implementation (Python). Future personad consumer. |
+| kith | `~/PROJECT/kith/` | First consumer of hired. kithd replaces Tailscale WhoIs with `FetchJWTSVID` on the hire socket. |
+| moot | `~/PROJECT/moot/` | Second JMAP Chat implementation (Python). Future hired consumer. |
 | jmap-chat-types | crates.io | Mark's crate. Shared JMAP Chat wire types. |
 | jmap-types | crates.io | Mark's crate. Base JMAP types. |
-| SPEC-HIA.md | `~/PROJECT/SPEC-HIA.md` | Authoritative design spec for personad. |
+| SPEC-HIRE.md | `~/PROJECT/SPEC-HIRE.md` | Authoritative design spec for hired. |
 
 ## Beads Issue Tracker
 

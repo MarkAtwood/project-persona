@@ -790,6 +790,115 @@ dependencies = [
 ]
 
 [[package]]
+name = "hire"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.23.1",
+ "hire-attestors",
+ "hire-core",
+ "hire-grpc",
+ "hyper-util",
+ "serde_json",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tower",
+ "tracing",
+]
+
+[[package]]
+name = "hire-attestors"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.23.1",
+ "ctap-hid-fido2",
+ "ed25519-dalek",
+ "hire-core",
+ "libc",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "hire-core"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "hkdf 0.13.0",
+ "jsonwebtoken",
+ "p256",
+ "rand_core",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror",
+ "x509-cert",
+]
+
+[[package]]
+name = "hire-grpc"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.23.1",
+ "ed25519-dalek",
+ "hire-attestors",
+ "hire-core",
+ "hyper-util",
+ "jsonwebtoken",
+ "libc",
+ "prost",
+ "prost-types",
+ "rand_core",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tonic-prost",
+ "tonic-prost-build",
+ "tower",
+ "tracing",
+]
+
+[[package]]
+name = "hire-nmh"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "hire-core",
+ "hire-grpc",
+ "hyper-util",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tonic",
+ "tower",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "hired"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "hire-attestors",
+ "hire-core",
+ "hire-grpc",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "hkdf"
 version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1314,115 +1423,6 @@ name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
-
-[[package]]
-name = "persona"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "base64 0.23.1",
- "hyper-util",
- "persona-attestors",
- "persona-core",
- "persona-grpc",
- "serde_json",
- "tokio",
- "tokio-stream",
- "tonic",
- "tower",
- "tracing",
-]
-
-[[package]]
-name = "persona-attestors"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "base64 0.23.1",
- "ctap-hid-fido2",
- "ed25519-dalek",
- "libc",
- "persona-core",
- "serde_json",
- "sha2 0.11.0",
- "thiserror",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "persona-core"
-version = "0.1.0"
-dependencies = [
- "base64 0.23.1",
- "hkdf 0.13.0",
- "jsonwebtoken",
- "p256",
- "rand_core",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "thiserror",
- "x509-cert",
-]
-
-[[package]]
-name = "persona-grpc"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "base64 0.23.1",
- "ed25519-dalek",
- "hyper-util",
- "jsonwebtoken",
- "libc",
- "persona-attestors",
- "persona-core",
- "prost",
- "prost-types",
- "rand_core",
- "serde_json",
- "sha2 0.11.0",
- "thiserror",
- "tokio",
- "tokio-stream",
- "tonic",
- "tonic-prost",
- "tonic-prost-build",
- "tower",
- "tracing",
-]
-
-[[package]]
-name = "persona-nmh"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "hyper-util",
- "persona-core",
- "persona-grpc",
- "serde",
- "serde_json",
- "tokio",
- "tonic",
- "tower",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "personad"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "persona-attestors",
- "persona-core",
- "persona-grpc",
- "serde_json",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
 
 [[package]]
 name = "petgraph"

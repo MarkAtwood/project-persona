@@ -1,0 +1,14 @@
+[Unit]
+Description=HIRE identity daemon (SPIFFE Workload API)
+After=tailscaled.service
+Documentation=https://github.com/MarkAtwood/project-hire
+
+[Service]
+Type=simple
+ExecStart=%h/.cargo/bin/hired
+Restart=on-failure
+RestartSec=5
+Environment=RUST_LOG=info
+
+[Install]
+WantedBy=default.target

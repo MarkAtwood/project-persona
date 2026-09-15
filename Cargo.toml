@@ -1,11 +1,11 @@
 [workspace]
 members = [
-    "persona-core",
-    "persona-attestors",
-    "persona-grpc",
-    "personad",
-    "persona",
-    "persona-nmh",
+    "hire-core",
+    "hire-attestors",
+    "hire-grpc",
+    "hired",
+    "hire",
+    "hire-nmh",
 ]
 resolver = "2"
 
@@ -15,9 +15,9 @@ version  = "0.1.0"
 rust-version = "1.89"
 
 [workspace.dependencies]
-persona-core     = { path = "persona-core" }
-persona-attestors = { path = "persona-attestors" }
-persona-grpc     = { path = "persona-grpc" }
+hire-core     = { path = "hire-core" }
+hire-attestors = { path = "hire-attestors" }
+hire-grpc     = { path = "hire-grpc" }
 
 async-trait        = "0.1"
 thiserror          = "2"

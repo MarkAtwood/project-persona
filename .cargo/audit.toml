@@ -5,11 +5,11 @@
 #
 # Reachability: not reachable in this workspace. `rsa` is linked only because
 # jsonwebtoken 11's `rust_crypto` feature declares `dep:rsa` unconditionally,
-# with no per-algorithm opt-out (see its [features] table). persona never
+# with no per-algorithm opt-out (see its [features] table). hire never
 # performs an RSA operation — the only algorithm used is ES256, at exactly two
 # call sites:
-#   persona-core/src/signer.rs:155   Header::new(Algorithm::ES256)
-#   persona-grpc/src/service.rs:308  Validation::new(Algorithm::ES256)
+#   hire-core/src/signer.rs:155   Header::new(Algorithm::ES256)
+#   hire-grpc/src/service.rs:308  Validation::new(Algorithm::ES256)
 # The Marvin attack requires observing timing of RSA private-key operations,
 # which this code never invokes.
 #

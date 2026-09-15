@@ -1,0 +1,36 @@
+[package]
+name    = "hire-grpc"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+hire-core.workspace     = true
+hire-attestors.workspace = true
+thiserror.workspace        = true
+tokio.workspace            = true
+tonic.workspace            = true
+tonic-prost.workspace      = true
+prost.workspace            = true
+prost-types.workspace      = true
+tokio-stream.workspace     = true
+serde_json.workspace       = true
+jsonwebtoken.workspace     = true
+tracing.workspace          = true
+libc.workspace             = true
+sha2.workspace             = true
+rand_core.workspace        = true
+
+[dev-dependencies]
+tokio.workspace         = true
+ed25519-dalek.workspace = true
+tower.workspace         = true
+hyper-util.workspace    = true
+base64.workspace        = true
+async-trait.workspace   = true
+serde_json.workspace    = true
+
+[build-dependencies]
+tonic-prost-build.workspace = true

@@ -33,7 +33,7 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      # persona-grpc/build.rs runs protoc; build scripts run under clippy too.
+      # hire-grpc/build.rs runs protoc; build scripts run under clippy too.
       - name: Install protoc
         uses: taiki-e/install-action@v2
         with:
@@ -96,7 +96,7 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc,aarch64-apple-darwin,aarch64-unknown-linux-ohos
 
-      # persona-grpc/build.rs runs protoc, and the workspace check below runs
+      # hire-grpc/build.rs runs protoc, and the workspace check below runs
       # build scripts.
       - name: Install protoc
         uses: taiki-e/install-action@v2
@@ -106,7 +106,7 @@ jobs:
       - name: Cache
         uses: Swatinem/rust-cache@v2
 
-      # persona-core holds the crypto, the HKDF pseudonym derivation and the
+      # hire-core holds the crypto, the HKDF pseudonym derivation and the
       # SPIFFE ID types, and today has no platform surface at all -- no
       # std::env, std::fs, libc or std::os::unix anywhere in it. This step is
       # what keeps it that way. The failure it catches is someone adding one of
@@ -115,16 +115,16 @@ jobs:
       # crate's tests are byte-exact arithmetic with no platform behaviour to
       # exercise. Checking that it still compiles for the target is the whole
       # of what is worth knowing.
-      - name: persona-core stays portable
+      - name: hire-core stays portable
         run: |
           for target in x86_64-pc-windows-msvc aarch64-apple-darwin aarch64-unknown-linux-ohos; do
-            echo "::group::persona-core -> $target"
-            cargo check --target "$target" -p persona-core
+            echo "::group::hire-core -> $target"
+            cargo check --target "$target" -p hire-core
             echo "::endgroup::"
           done
 
-      # Deliberately not --workspace for Windows: persona-grpc is Unix-only by
-      # design -- 21 UnixListener/UnixStream sites, tracked by persona-vvs2 --
+      # Deliberately not --workspace for Windows: hire-grpc is Unix-only by
+      # design -- 21 UnixListener/UnixStream sites, tracked by hire-vvs2 --
       # so that would be a permanently red gate.
       #
       # The macos-latest leg above compiles these same #[cfg(target_os =

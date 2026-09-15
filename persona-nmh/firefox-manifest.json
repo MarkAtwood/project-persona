@@ -1,9 +1,0 @@
-{
-  "name": "personal.atwood.persona",
-  "description": "Persona identity daemon native messaging host",
-  "path": "/usr/local/bin/persona-nmh",
-  "type": "stdio",
-  "allowed_extensions": [
-    "persona@atwood.personal"
-  ]
-}

@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: CC-BY-4.0 -->
-# Why personad exists
+# Why hired exists
 
 Count the things on your laptop that already know who you are.
 
@@ -95,7 +95,7 @@ tractable beachhead, not because human identity was judged out of bounds. The
 same API at a desk instead of a cluster, swap kernel and container attestors for
 FIDO2 and PIV and Tailscale, and the shape fits without modification.
 
-So `personad` invents no protocol. Any objection to the API is an objection to a
+So `hired` invents no protocol. Any objection to the API is an objection to a
 CNCF standard.
 
 That is a procedural choice as much as a technical one. A wire format that a graduated CNCF
@@ -130,7 +130,7 @@ runs today, and the gap between the two is large. Read both.
 ## Further reading
 
 - [README.md](README.md) — overview, current implementation state, installation
-- [SPEC-HIA.md](SPEC-HIA.md) — normative specification, SPIFFE ID schema, trust
+- [SPEC-HIRE.md](SPEC-HIRE.md) — normative specification, SPIFFE ID schema, trust
   domain model, and a full comparison against Kerberos, SPIRE, WebAuthn, platform
   SSO and the rest
 - [PRFAQ.md](PRFAQ.md) — the launch framing and anticipated objections

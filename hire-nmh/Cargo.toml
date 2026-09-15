@@ -1,0 +1,24 @@
+[package]
+name    = "hire-nmh"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "Apache-2.0"
+publish = false
+
+[[bin]]
+name = "hire-nmh"
+path = "src/main.rs"
+
+[dependencies]
+hire-grpc.workspace       = true
+hire-core.workspace       = true
+anyhow.workspace             = true
+tokio.workspace              = true
+tonic.workspace              = true
+serde.workspace              = true
+serde_json.workspace         = true
+tracing.workspace            = true
+tracing-subscriber.workspace = true
+tower.workspace              = true
+hyper-util.workspace         = true
