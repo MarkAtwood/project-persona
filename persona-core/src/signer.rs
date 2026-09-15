@@ -52,8 +52,19 @@ pub struct SvidSigner {
     /// JWK coordinate split in `public_xy` is infallible by construction
     /// rather than by assertion.
     public_key_sec1: [u8; 65],
-    /// PKCS#8 DER bytes kept for jsonwebtoken ES256 signing.
-    pkcs8_der: Vec<u8>,
+    /// The ES256 signing key, built once at construction.
+    ///
+    /// Holds the private key, and is the reason no plain `Vec<u8>` of it is
+    /// kept: `EncodingKey` is `ZeroizeOnDrop`, so this copy is wiped when the
+    /// signer is dropped, whereas the PKCS#8 `Vec<u8>` this replaced was freed
+    /// with the private scalar still in it. Every other copy in the stack
+    /// already zeroizes -- `SigningKey` and the `SecretDocument` that
+    /// `to_pkcs8_der` returns -- so this was the only one that did not.
+    ///
+    /// Built once rather than per signature, which is also what
+    /// `jsonwebtoken` asks for: "This key can be re-used so make sure you only
+    /// initialize it once if you can for better performance."
+    encoding_key: EncodingKey,
     /// Per-process key material for consumer pseudonyms. Same lifetime rule as
     /// the keypair: never persisted, discarded when the process exits.
     ///
@@ -86,11 +97,15 @@ impl SvidSigner {
     }
 
     fn from_signing_key(signing_key: SigningKey) -> Result<Self, SignerError> {
-        let pkcs8_der = signing_key
-            .to_pkcs8_der()
-            .map_err(|e| SignerError::KeyGen(e.to_string()))?
-            .as_bytes()
-            .to_vec();
+        // `to_pkcs8_der` yields a `SecretDocument`, which zeroizes on drop.
+        // Its bytes go straight into the `EncodingKey` without a `to_vec()` in
+        // between, so the private key never lands in an unprotected allocation.
+        let encoding_key = EncodingKey::from_ec_der(
+            signing_key
+                .to_pkcs8_der()
+                .map_err(|e| SignerError::KeyGen(e.to_string()))?
+                .as_bytes(),
+        );
         // `to_encoded_point(false)` and never `to_sec1_bytes`: the latter is the
         // compressing accessor by contract, and a 33-byte point would silently
         // change the published trust bundle. The `try_into` is what makes
@@ -112,7 +127,7 @@ impl SvidSigner {
         Ok(Self {
             signing_key,
             public_key_sec1,
-            pkcs8_der,
+            encoding_key,
             pseudonym_ikm,
         })
     }
@@ -190,13 +205,12 @@ impl SvidSigner {
             spiffe_id: spiffe_id.to_owned(),
             persona: persona_ext,
         };
-        let key = EncodingKey::from_ec_der(&self.pkcs8_der);
         let mut header = Header::new(Algorithm::ES256);
         // Names the JWKS entry that verifies this token. Without it a consumer
         // holding more than one key can only trial-verify, which is O(n)
         // signature checks and cannot tell "wrong key" from "bad token".
         header.kid = Some(self.kid());
-        let token = encode(&header, &claims, &key)?;
+        let token = encode(&header, &claims, &self.encoding_key)?;
         Ok(token)
     }
 
@@ -365,7 +379,14 @@ mod tests {
         // 65-byte uncompressed SEC1 point. SPKI (91 bytes) or a compressed
         // point (33) would fail here, which is the point of the assertion.
         assert_eq!(hex(&signer.public_key_sec1), TEST_SEC1_HEX);
-        assert_eq!(hex(&signer.pkcs8_der), TEST_PKCS8_HEX);
+        // Re-derived from the key actually held rather than read back from a
+        // stored copy, which is a stronger check against the same vector.
+        use p256::pkcs8::EncodePrivateKey as _;
+        let der = signer
+            .signing_key
+            .to_pkcs8_der()
+            .expect("the fixture key must re-encode");
+        assert_eq!(hex(der.as_bytes()), TEST_PKCS8_HEX);
     }
 
     #[test]
