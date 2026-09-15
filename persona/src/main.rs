@@ -71,11 +71,11 @@ async fn main() -> Result<()> {
             println!("  whoami           print current SPIFFE identity");
             println!("  enumerate        list locally-detected identity sources");
             println!("  fetch-jwt        fetch a JWT-SVID from the daemon");
-            println!("  fetch-x509       fetch an X.509-SVID from the daemon");
+            println!("  fetch-x509       (not implemented) fetch an X.509-SVID from the daemon");
             println!("  prove            prove identity to a peer (JWT with challenge)");
             println!("  enroll           (not implemented) enroll an application or origin");
             println!("  install-service  write personad service file (systemd or launchd)");
-            println!("  trust-bundle     list or manage trust bundles");
+            println!("  trust-bundle     list trust bundles (add and remove not implemented)");
             println!("  watch            poll for JWT-SVID changes every 30 seconds");
             println!("  log              show how to view personad logs");
             std::process::exit(0);

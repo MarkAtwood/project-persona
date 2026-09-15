@@ -91,7 +91,7 @@ persona (CLI)  -->  personad (daemon)  -->  identity sources
 ```
 
 - **Daemon:** `personad` -- runs as a user-session service (no root required)
-- **CLI:** `persona` -- `whoami`, `enumerate`, `fetch-jwt`, `enroll app`, `delegate`, etc.
+- **CLI:** `persona` -- `whoami`, `enumerate`, `fetch-jwt`, `prove`, `watch`, `trust-bundle list`. `enroll`, `delegate` and `fetch-x509` are designed in SPEC-HIA.md but not built; they exit non-zero.
 - **Socket (Linux):** `$XDG_RUNTIME_DIR/persona/workload.sock`, normally `/run/user/{uid}/persona/workload.sock`
 - **Socket (macOS):** `<darwin-user-temp>/persona/workload.sock`, the per-user temp directory launchd also exports as `$TMPDIR`
 - **Socket (Windows):** `\\.\pipe\persona-workload-{sid}`
