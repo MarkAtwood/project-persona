@@ -1,0 +1,25 @@
+{
+  "id": "persona-5s4b.132",
+  "title": "typos fails repo-wide on false positives and the vendored proto",
+  "description": "Found during the HIRE rename. 'typos .' exits 2 with 17 findings, and all 16 remaining ones are things that must NOT be changed:\n\n- 13x 'fpr' in hire-attestors/src/gpg.rs. That is gpg's own --with-colons field name for a fingerprint, not a misspelling of 'for'. Same class as the spaced-hex false positive already recorded in Mark's workflow notes.\n- 3x in proto/spiffe/workload/workload.proto ('Reponse' twice, 'succesfully'). That file is VENDORED upstream SPIFFE. Byte-identical vendoring is the point; fixing upstream's typos locally would make the vendored copy diverge and is wrong.\n\nThe one finding that was genuinely ours ('unparseable' in hire-nmh, introduced earlier the same day) is fixed in 4f245c8.\n\ntypos is not CI-gated -- ci.yml has check/portability/msrv/audit and no typos job -- so this is only felt by whoever runs it locally from the pre-push checklist, where it is currently useless because it always exits 2.\n\nFix: add .typos.toml with extend-words for 'fpr' and files.extend-exclude for proto/. Then typos exit 0 means something again. Do NOT fix the proto.",
+  "status": "open",
+  "priority": 3,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-15T19:14:59.387448214Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-15T19:14:59.387448214Z",
+  "labels": [
+    "review"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-5s4b.132",
+      "depends_on_id": "persona-5s4b",
+      "type": "parent-child",
+      "created_at": "2026-09-15T19:14:59.415585445Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}
