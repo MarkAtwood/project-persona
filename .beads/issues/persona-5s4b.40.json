@@ -2,13 +2,15 @@
   "id": "persona-5s4b.40",
   "title": "chrono_timestamp() uses no chrono, and drops the date without saying so",
   "description": "hire/src/main.rs:475-486 — the function is named `chrono_timestamp` and contains no chrono; the crate is not a dependency of persona (confirmed in Cargo.toml). It does modular arithmetic on Unix seconds to produce HH:MM:SS.\n\n    fn chrono_timestamp() -\u003e String {\n        let secs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();\n        let s = secs % 86400;\n        ...\n        format!(\"{h:02}:{m:02}:{sec:02}\")\n    }\n\nTwo things a reader gets wrong:\n1. The name asserts a dependency that is not there. Someone maintaining this will either look for the chrono import, or 'finish the migration' by pulling chrono in for a three-line format — the opposite of what the code deliberately avoids.\n2. It silently discards the date and the timezone. Output is UTC time-of-day only, with no marker. Its one caller is the `watch` loop (hire/src/main.rs:441, printed as `[{now}]` on every 30s poll), so a session running past midnight prints timestamps that appear to go backwards, and a user in a non-UTC zone reads local-looking times that are not local.\n\nFix: rename to something that describes the output, e.g. `utc_hhmmss()`, and add a one-line comment stating that this is intentionally date-less UTC to avoid a chrono dependency for a log prefix — which is a reasonable call worth recording, but it has to be written down. Appending 'Z' to the format string would also stop the timezone misreading at zero cost.",
-  "status": "open",
+  "status": "closed",
   "priority": 3,
   "issue_type": "task",
   "owner": "mark@reviewcommit.com",
   "created_at": "2026-09-13T20:58:27.022520246Z",
   "created_by": "agent",
-  "updated_at": "2026-09-15T19:34:29.149080774Z",
+  "updated_at": "2026-09-15T19:39:16.805096302Z",
+  "closed_at": "2026-09-15T19:39:16.805096302Z",
+  "close_reason": "ALREADY FIXED, verified 2026-09-15. grep for 'chrono' across the workspace returns no hits (the single apparent match is the substring in 'synchronously'). The function is now hire/src/main.rs unix_timestamp(), documented as 'Seconds since the Unix epoch, stamped on each watch line', and its doc records what the bead asked for: it replaced a hand-rolled secs % 86400 split that was UTC without saying so and wrapped at midnight. The misleading name, the dropped date and the unstated timezone are all resolved.",
   "labels": [
     "readability",
     "review"

@@ -2,13 +2,14 @@
   "id": "persona-5s4b.2",
   "title": "OIDC attestor rescans and reparses all token caches on every call",
   "description": "hire-attestors/src/oidc.rs — scan_token_caches() (line 96) reads the gcloud ADC file plus both Azure cache files from disk, JSON-parses each, then base64-decodes and JSON-parses every embedded JWT. It is called from scratch by all three trait methods:\n- enumerate() oidc.rs:163\n- prove() oidc.rs:173\n- freshness() oidc.rs:190\n\nWhat goes wrong:\n1. freshness() is documented in lib.rs:131-134 as 'Called periodically' per claim. With N cached OIDC claims, a freshness sweep costs N full scans of every cache file — O(N * files) disk reads and JWT parses where one scan would do.\n2. enumerate() (oidc.rs:164) builds the (Claim, String) pairs and then immediately throws away every raw token, so the base64+JSON decode of each token payload is done twice whenever enumerate() is followed by prove().\n3. Combined with the serial-enumerate issue, this sits directly in the FetchJWTSVID request path.\n\nFix: have the three methods share one scan per operation. freshness() in particular should take the scan result rather than re-deriving it per claim. If a per-call scan must stay for freshness semantics, at minimum document why re-reading is required rather than leaving it as an accident of the three methods being written independently.",
+  "notes": "RESCOPED 2026-09-15. Two of the three costs are gone. (1) The enumerate/prove double-decode is MOOT: OidcCachedAttestor no longer overrides prove() at all, so it never re-parses tokens -- only name, enumerate and freshness are implemented. (2) The scan no longer blocks a reactor thread; it runs via spawn_blocking (commit b251a07, persona-5s4b.80). WHAT REMAINS: freshness() still triggers a full independent rescan and reparse of every cache file on every call, so the O(N*files) sweep for N cached claims is unchanged. Scope the fix to that alone.",
   "status": "open",
   "priority": 2,
   "issue_type": "task",
   "owner": "mark@reviewcommit.com",
   "created_at": "2026-09-13T20:56:30.43230234Z",
   "created_by": "agent",
-  "updated_at": "2026-09-15T19:34:28.772252402Z",
+  "updated_at": "2026-09-15T19:40:13.140194944Z",
   "labels": [
     "efficiency",
     "review"

@@ -2,13 +2,14 @@
   "id": "persona-ouo5.5",
   "title": "SPEC-HIRE unix-account entry claims 'no network'; getpwuid_r may traverse networked NSS",
   "description": "SPEC-HIRE.md:213 says the method uses 'no agent, no socket, no network'. getpwuid_r reaches NSS on Linux and Open Directory on macOS, either of which can go to the network on an SSSD/LDAP/AD-joined box.\n\nPartly overtaken: the lookup moved from per-request into UnixAttestor::new(), and enumerate() is now infallible, so ':217 the one source that never degrades away' became true. But the once-at-startup lookup still can block, so 'no network' is still inaccurate.\n\nFix: 'no agent and no socket; the name lookup may traverse a networked NSS backend once at startup'.",
+  "notes": "CONFIRMED STILL PRESENT 2026-09-15, and sharper than filed: the repo now contradicts itself in writing. SPEC-HIRE.md:215 says of the unix source 'no agent, no socket, no network', while hire-attestors/src/unix.rs's own doc on UnixAttestor::new says 'The name lookup traverses NSS on Linux and Open Directory on macOS, either of which can reach the network and block for seconds'. Both cannot be true. The 'partly overtaken' note is right that the lookup moved into new() and happens once at startup, but that changes when it blocks, not whether it can touch the network. Fix the SPEC line.",
   "status": "open",
   "priority": 3,
   "issue_type": "task",
   "owner": "mark@reviewcommit.com",
   "created_at": "2026-09-15T01:01:37.741896923Z",
   "created_by": "agent",
-  "updated_at": "2026-09-15T19:34:30.353075554Z",
+  "updated_at": "2026-09-15T19:40:13.529851577Z",
   "dependencies": [
     {
       "issue_id": "persona-ouo5.5",

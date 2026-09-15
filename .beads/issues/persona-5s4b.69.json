@@ -2,13 +2,15 @@
   "id": "persona-5s4b.69",
   "title": "KEEP: HKDF pseudonym tests use externally-computed vectors with the oracle recorded inline",
   "description": "hire-core/src/pseudonym.rs:29-68 — three known-answer tests whose expected values were produced by pyca/cryptography, with the exact generating command preserved in the comment above each one:\n\n    // oracle: python3 -c \"\n    // from cryptography.hazmat.primitives.kdf.hkdf import HKDF\n    // hkdf = HKDF(algorithm=hashes.SHA256(), length=32,\n    //             salt=b'example.com', info=b'com.example.app')\n    // print(hkdf.derive(b'secret-ikm').hex())\"\n\nWhy this is worth defending: these are the only tests in the workspace that could catch a real cryptographic error. derive_pseudonym() (pseudonym.rs:13) picks a specific HKDF parameter binding — trust_domain as salt, consumer_app_id as info, ikm as the secret — and swapping salt and info, or switching to extract-and-expand in one step, would still produce 32 stable, deterministic, well-distributed bytes. Every other test in the file (deterministic, different_ikm_produces_different, output_is_64_hex_chars) passes just as happily against that wrong implementation. Only the external vectors pin the actual construction, which matters because these pseudonyms are meant to be stable identifiers that other implementations must be able to reproduce.\n\nRecording the oracle command inline is what makes them maintainable: anyone can regenerate and confirm without trusting the committed constants, and the tests stay fully offline.\n\nThe likely 'simplification' to resist: someone noticing the three known_vector_* tests look redundant next to the property tests and collapsing them, or 'fixing' a failure by recomputing the constant from the Rust implementation. If derive_pseudonym's parameter binding ever legitimately changes, the vectors must be regenerated from the Python oracle, never from this code.",
-  "status": "open",
+  "status": "closed",
   "priority": 3,
   "issue_type": "task",
   "owner": "mark@reviewcommit.com",
   "created_at": "2026-09-13T20:59:24.544362205Z",
   "created_by": "agent",
-  "updated_at": "2026-09-15T19:34:29.580298988Z",
+  "updated_at": "2026-09-15T19:39:41.945822929Z",
+  "closed_at": "2026-09-15T19:39:41.945822929Z",
+  "close_reason": "KEEP note, not a defect. Verified 2026-09-15 that the practice it flags as worth preserving still holds: hire-core/src/pseudonym.rs derives its known-answer vectors from pyca/cryptography -- an independent HKDF implementation -- with the exact python3 command recorded inline above the tests, so they are reproducible offline by anyone. That property survived today's HIRE rename intact: when the scheme label changed from persona-pseudonym-v1: to hire-pseudonym-v1: the three vectors failed loudly and were recomputed from the same external oracle rather than from this code. The comment format moved from three duplicated commands to one shared template plus per-test salt/info values, which is the same practice more compactly. Closing as recorded; the practice is now also protected by the versioned SCHEME constant.",
   "labels": [
     "review",
     "whats-good"

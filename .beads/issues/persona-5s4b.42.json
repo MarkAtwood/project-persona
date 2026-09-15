@@ -2,13 +2,14 @@
   "id": "persona-5s4b.42",
   "title": "hire-attestors 'goa' and 'pkcs11' features are empty no-ops",
   "description": "hire-attestors/Cargo.toml declares:\n    goa     = []   # placeholder: add zbus dep when implementing D-Bus enumeration\n    pkcs11  = []   # placeholder: add cryptoki dep when implementing\n\nBoth are empty and gate nothing (no cfg(feature = \"goa\") or cfg(feature = \"pkcs11\") anywhere). Enabling them changes no code.\n\nCost: they are part of the crate's public feature surface, so --all-features in CI and the Makefile reports coverage of three features while actually covering one. A downstream member or consumer that turns 'pkcs11' on gets silence rather than an error, and the day the feature is implemented that consumer's build changes behavior without any manifest change on their side.\n\nA TODO comment in the file that will hold the future dep is cheaper than a shipped feature flag. Delete both until there is code behind them.",
+  "notes": "HALF FIXED 2026-09-15. goa now gates observably different behaviour: hire-attestors/src/goa.rs is_available() returns an env probe under cfg(all(target_os=linux, feature=goa)) and false otherwise, so the flag changes what the code does. STILL A NO-OP: pkcs11. hire-attestors/src/piv.rs is_available() has a cfg branch but BOTH arms evaluate to false, so enabling --features pkcs11 changes nothing observable. Worth noting it is stronger than 'no-op': PIV can never activate, which is why the platform docs now list it as (not implemented) rather than feature-gated.",
   "status": "open",
   "priority": 3,
   "issue_type": "task",
   "owner": "mark@reviewcommit.com",
   "created_at": "2026-09-13T20:58:29.368568199Z",
   "created_by": "agent",
-  "updated_at": "2026-09-15T19:34:29.197544395Z",
+  "updated_at": "2026-09-15T19:40:13.24288123Z",
   "labels": [
     "workspace",
     "review"

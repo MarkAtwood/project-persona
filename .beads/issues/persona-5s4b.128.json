@@ -2,13 +2,14 @@
   "id": "persona-5s4b.128",
   "title": "persona log prints advice to stdout and exits 0 with no log data",
   "description": "hire/src/main.rs show_log() prints the journalctl recipe to stdout and returns Ok, so 'hire log \u003e hired.log' yields a file of instructions and exit 0, which a script cannot distinguish from a successfully captured empty log.\n\nSame family as the fetch-x509 defect fixed in 440c6eb: a command whose output a user would redirect, writing prose into the redirect. Either move the advisory lines to stderr and exit non-zero the way fetch_x509 now does, or make the command actually exec journalctl and become a real log reader.\n\nRelated and already filed separately: the same function gives journalctl-only advice, which is wrong on macOS where install_service routes the daemon's output to ~/Library/Logs/hired.log.",
+  "notes": "VERIFIED STILL PRESENT 2026-09-15: hire/src/main.rs show_log() still uses println! throughout and returns Ok(()).\n\nBUT ONE OF ITS TWO FIX DIRECTIONS IS RULED OUT BY SETTLED POLICY. The bead says 'move the advisory lines to stderr and exit non-zero the way fetch_x509 now does'. The exit-non-zero half must NOT be done: the settled rule is that a command which did no work exits non-zero, and that rule explicitly STOPS at commands whose job is to inform -- 'log' and '--help' are named, and they exit 0 correctly. Changing show_log to exit 1 would be reverted.\n\nWhat is still open and compatible with that rule:\n  - moving the advisory prose from stdout to stderr, so 'hire log \u003e f' does not fill f with instructions, while still exiting 0;\n  - or the bead's second direction, making the command actually exec journalctl so it becomes a real log reader, which resolves the redirect problem outright.\n\nWhoever picks this up should take one of those two, not the exit code.",
   "status": "open",
   "priority": 3,
   "issue_type": "bug",
   "owner": "mark@reviewcommit.com",
   "created_at": "2026-09-15T03:47:24.383633299Z",
   "created_by": "agent",
-  "updated_at": "2026-09-15T19:34:28.547972926Z",
+  "updated_at": "2026-09-15T19:37:58.311206448Z",
   "labels": [
     "review"
   ],
