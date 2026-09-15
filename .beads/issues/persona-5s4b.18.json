@@ -2,13 +2,15 @@
   "id": "persona-5s4b.18",
   "title": "persona-grpc is not self-contained: build.rs reads ../proto outside the package dir",
   "description": "persona-grpc/build.rs references \"../proto/spiffe/workload/workload.proto\" with include path \"../proto\". Cargo packages only files under the package root, so the .proto is excluded from any 'cargo package' / 'cargo vendor' output and from docs.rs builds. The crate compiles only from inside this workspace checkout.\n\nThat is tolerable while the workspace is the only consumer, but it forecloses publishing persona-grpc, vendoring it into another build, or building docs on docs.rs — and the failure mode is a build.rs error with a missing-file message, not anything that points at packaging.\n\nFix is cheap: move proto/ into persona-grpc/proto/ (nothing else in the tree references the root proto/ directory), or add an 'include' entry to persona-grpc's [package] and keep a copy. Filing so the constraint is a recorded decision rather than an accident.",
-  "status": "open",
+  "status": "closed",
   "priority": 3,
   "issue_type": "task",
   "owner": "mark@reviewcommit.com",
   "created_at": "2026-09-13T20:57:43.613095504Z",
   "created_by": "agent",
-  "updated_at": "2026-09-13T21:16:47.349770344Z",
+  "updated_at": "2026-09-15T16:47:54.421775262Z",
+  "closed_at": "2026-09-15T16:47:54.421775262Z",
+  "close_reason": "Closed as a RECORDED CONSTRAINT, not fixed, following Mark's 2026-09-15 decision that no crate here is intended for crates.io (see persona-5s4b.43). Implemented in e0cb678.\n\nThe bead's analysis is correct and still current: persona-grpc/build.rs reads ../proto/spiffe/workload/workload.proto with include root ../proto, both above the package root, and cargo package / cargo vendor / docs.rs all exclude files above it. So persona-grpc builds only from inside this workspace checkout. With publish = false on every crate, the workspace IS the only consumer, and one shared proto/ directory is the honest layout for that.\n\nRather than leave it implicit, the ceiling and the undo are now a ponytail comment on the INCLUDE constant in build.rs: the fix is 'git mv proto persona-grpc/proto' plus dropping '../' from both constants. Verified that is genuinely one move -- the whole proto tree is a single file, proto/spiffe/workload/workload.proto, and persona-grpc/build.rs is the ONLY reference to it anywhere in the tree (checked across *.rs, *.toml, *.yml and the Makefile).\n\nReopen if any crate here ever becomes publishable.",
   "labels": [
     "workspace",
     "review"
