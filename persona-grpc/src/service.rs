@@ -505,7 +505,7 @@ impl SpiffeWorkloadApi for WorkloadApiService {
 
         let decoding_key = self
             .bundles
-            .get(&claimed.trust_domain.to_string())
+            .get(&claimed.trust_domain)
             .ok_or_else(reject)?
             .jwt_decoding_key(&kid)
             .ok_or_else(reject)?;

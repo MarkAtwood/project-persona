@@ -1,9 +1,15 @@
+//! Trust bundles: the verification material a consumer needs to check an SVID.
+//!
+//! One [`TrustBundle`] per trust domain, held in a [`TrustBundleStore`] that the
+//! daemon populates at startup and the FetchJWTBundles and FetchX509Bundles RPCs
+//! read.
+
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64URL;
 use base64::Engine as _;
 use jsonwebtoken::jwk::{AlgorithmParameters, EllipticCurve, JwkSet};
 use jsonwebtoken::DecodingKey;
 use std::collections::HashMap;
-use std::sync::RwLock;
+use std::sync::{PoisonError, RwLock};
 
 use crate::{SvidSigner, TrustDomain};
 
@@ -11,6 +17,7 @@ use crate::{SvidSigner, TrustDomain};
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 pub struct TrustBundle {
+    /// The trust domain this bundle is the verification material for.
     pub trust_domain: TrustDomain,
     /// DER-encoded X.509 CA certificates for this trust domain.
     pub x509_authorities: Vec<Vec<u8>>,
@@ -77,12 +84,22 @@ impl TrustBundle {
 ///
 /// Populated at daemon startup from the local CA key and any federated sources.
 /// Read by FetchJWTBundles and FetchX509Bundles RPCs.
+///
+/// Lock poisoning is not a failure mode here. The guarded sections below run no
+/// user code -- a map insert and a clone of the values -- so nothing under the
+/// lock can panic and leave the map torn. A poisoned flag can therefore only
+/// have been set by a panic elsewhere in the process, and refusing to serve
+/// bundles because of it would turn one unrelated panic into a daemon that
+/// fails every FetchJWTBundles and FetchX509Bundles call from then on. The
+/// guards are taken with `unwrap_or_else(PoisonError::into_inner)`, which
+/// removes the failure mode rather than documenting it.
 #[derive(Debug, Default)]
 pub struct TrustBundleStore {
     bundles: RwLock<HashMap<String, TrustBundle>>,
 }
 
 impl TrustBundleStore {
+    /// An empty store.
     pub fn new() -> Self {
         Self::default()
     }
@@ -92,33 +109,118 @@ impl TrustBundleStore {
         let key = bundle.trust_domain.to_string();
         self.bundles
             .write()
-            .expect("trust bundle lock poisoned")
+            .unwrap_or_else(PoisonError::into_inner)
             .insert(key, bundle);
     }
 
-    /// Get a snapshot of all current bundles.
+    /// The bundle for one trust domain, cloned.
+    ///
+    /// Takes the `TrustDomain` rather than the string it is stored under: the
+    /// key is this type's `Display` form, and a caller that had to reproduce it
+    /// would need to know that `PersonalDid(x)` keys as `personal.{x}` and
+    /// `PivIssuer(x)` as `piv.{x}`. That is the store's business, not the
+    /// caller's.
+    ///
+    /// Two trust domains whose `Display` forms collide share an entry here.
+    /// That is persona-5s4b.37 and is deliberately not decided in this function:
+    /// the key is derived exactly as `upsert` derives it, so lookups agree with
+    /// insertions whatever .37 settles on.
+    pub fn get(&self, trust_domain: &TrustDomain) -> Option<TrustBundle> {
+        self.bundles
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(&trust_domain.to_string())
+            .cloned()
+    }
+
+    /// Every bundle currently held, cloned.
     pub fn snapshot(&self) -> Vec<TrustBundle> {
         self.bundles
             .read()
-            .expect("trust bundle lock poisoned")
+            .unwrap_or_else(PoisonError::into_inner)
             .values()
             .cloned()
             .collect()
-    }
-
-    /// Get a single bundle by trust domain string key.
-    pub fn get(&self, trust_domain: &str) -> Option<TrustBundle> {
-        self.bundles
-            .read()
-            .expect("trust bundle lock poisoned")
-            .get(trust_domain)
-            .cloned()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
+
+    #[test]
+    fn a_panic_elsewhere_does_not_stop_the_store_serving_bundles() {
+        // The store is shared across every gRPC handler, so taking the guards
+        // with .expect() meant one unrelated panic anywhere in the process
+        // turned every later FetchJWTBundles call into a daemon panic. The
+        // spawned thread below prints a panic message; that is the test doing
+        // its job, not a failure.
+        let store = Arc::new(TrustBundleStore::new());
+        let signer = SvidSigner::new().expect("signer");
+        store.upsert(TrustBundle::local(TrustDomain::SshLocal, &signer));
+
+        let poisoner = Arc::clone(&store);
+        let _ = std::thread::spawn(move || {
+            let _guard = poisoner.bundles.write().expect("uncontended");
+            panic!("poisoning the lock the way an unrelated bug would");
+        })
+        .join();
+        assert!(
+            store.bundles.is_poisoned(),
+            "precondition: the lock must actually be poisoned"
+        );
+
+        assert_eq!(
+            store.snapshot().len(),
+            1,
+            "a poisoned flag must not lose the bundles already held"
+        );
+        store.upsert(TrustBundle::local(TrustDomain::Tailscale, &signer));
+        assert_eq!(
+            store.snapshot().len(),
+            2,
+            "the store must still accept bundles after an unrelated panic"
+        );
+    }
+
+    #[test]
+    fn a_bundle_is_found_by_the_trust_domain_it_was_stored_under() {
+        // The caller passes the TrustDomain; reproducing its Display form is
+        // the store's business. persona-grpc's ValidateJWTSVID used to spell
+        // out `.get(&claimed.trust_domain.to_string())` at its call site.
+        let store = TrustBundleStore::new();
+        let signer = SvidSigner::new().expect("signer");
+        store.upsert(TrustBundle::local(TrustDomain::SshLocal, &signer));
+
+        let found = store
+            .get(&TrustDomain::SshLocal)
+            .expect("the bundle just inserted must be findable");
+        assert_eq!(found.trust_domain, TrustDomain::SshLocal);
+        assert!(
+            store.get(&TrustDomain::Tailscale).is_none(),
+            "a trust domain with no bundle is a miss"
+        );
+    }
+
+    #[test]
+    fn a_bundle_is_stored_under_its_own_trust_domain() {
+        let store = TrustBundleStore::new();
+        let signer = SvidSigner::new().expect("signer");
+        store.upsert(TrustBundle::local(TrustDomain::SshLocal, &signer));
+        store.upsert(TrustBundle::local(TrustDomain::Tailscale, &signer));
+        let mut domains: Vec<String> = store
+            .snapshot()
+            .iter()
+            .map(|b| b.trust_domain.to_string())
+            .collect();
+        domains.sort();
+        assert_eq!(domains, ["ssh.local", "tailscale"]);
+
+        // upsert replaces rather than accumulates.
+        store.upsert(TrustBundle::local(TrustDomain::SshLocal, &signer));
+        assert_eq!(store.snapshot().len(), 2);
+    }
 
     #[test]
     fn local_bundle_publishes_a_jwt_authority_and_no_x509_authority() {
