@@ -3,27 +3,58 @@
 use hkdf::Hkdf;
 use sha2::Sha256;
 
+use crate::consumer::ConsumerIdentity;
+use crate::spiffe_id::{SpiffeId, TrustDomain};
+
+/// Scheme label and version prefixed to the HKDF `info` input.
+///
+/// A pseudonym is the stable per-consumer identity a relying application keys
+/// its user records on, so the exact bytes fed to HKDF are a wire commitment
+/// from the first release: change them and every downstream application sees
+/// all of its users as new users, with no way to notice and no way to serve
+/// both schemes while it migrates.
+///
+/// The version makes that change expressible instead of silent. Two schemes
+/// derived under different labels are unrelated, so `v2` can be derived
+/// alongside `v1` and an application can accept both during a migration.
+///
+/// Bump this only together with a deliberate change to the derivation, and
+/// treat everything it covers as frozen: the salt (the trust domain's string
+/// form), the `info` layout below, the KDF, and every format string in
+/// [`ConsumerIdentity::selector_key`].
+const SCHEME: &str = "persona-pseudonym-v1:";
+
 /// Derives a stable per-consumer pseudonym via HKDF-SHA256.
 ///
-/// `ikm` is the root identity key material.
-/// `trust_domain` is used as the HKDF salt.
-/// `consumer_app_id` is used as the HKDF info string.
+/// The trust domain is the HKDF salt and the consumer is the HKDF `info`,
+/// prefixed with [`SCHEME`]. Both arrive as their own types rather than as two
+/// adjacent `&str` parameters: salt and info are semantically opposite, and a
+/// call that swapped them used to compile, never error, and return a
+/// well-formed pseudonym that was simply wrong and stably wrong. Nothing above
+/// this function could have detected it, because the only property anything
+/// checks is determinism.
 ///
-/// Returns 32 bytes encoded as a lowercase hex string (64 characters).
-pub fn derive_pseudonym(ikm: &[u8], trust_domain: &str, consumer_app_id: &str) -> String {
-    let hk = Hkdf::<Sha256>::new(Some(trust_domain.as_bytes()), ikm);
+/// Taking `&ConsumerIdentity` also removes an unenforced coupling: the caller
+/// used to be expected, but never required, to pass `selector_key()`.
+///
+/// Returns the raw 32 bytes. Crate-private, like [`derive_pseudonymous_id`] and
+/// for the same reason: a public function taking arbitrary key material invites
+/// a caller to pass something public, and HKDF over public inputs is not
+/// pseudonymity. [`crate::SvidSigner::pseudonymous_id`] is the only entry point.
+pub(crate) fn derive_pseudonym(
+    ikm: &[u8],
+    trust_domain: &TrustDomain,
+    consumer: &ConsumerIdentity,
+) -> [u8; 32] {
+    let hk = Hkdf::<Sha256>::new(Some(trust_domain.to_string().as_bytes()), ikm);
     let mut okm = [0u8; 32];
-    hk.expand(consumer_app_id.as_bytes(), &mut okm)
-        .expect("32 bytes is a valid HKDF-SHA256 output length");
-    okm.iter().fold(String::with_capacity(64), |mut s, b| {
-        use std::fmt::Write as _;
-        write!(s, "{b:02x}").unwrap();
-        s
-    })
+    hk.expand(
+        format!("{SCHEME}{}", consumer.selector_key()).as_bytes(),
+        &mut okm,
+    )
+    .expect("32 bytes is a valid HKDF-SHA256 output length");
+    okm
 }
-
-use crate::consumer::ConsumerIdentity;
-use crate::spiffe_id::SpiffeId;
 
 /// The SPIFFE ID a given consumer sees for a given root identity.
 ///
@@ -33,13 +64,6 @@ use crate::spiffe_id::SpiffeId;
 /// same material. Binding the root matters because one daemon can hold claims
 /// for more than one root identity, and without it a consumer would receive the
 /// same pseudonym for the user's SSH identity and their PIV identity.
-///
-/// Crate-private on purpose. The only public entry point is
-/// `SvidSigner::pseudonymous_id`, which supplies a secret `ikm`. A public
-/// function taking arbitrary key material would invite a caller to pass
-/// something public — the root URI, the trust domain — and HKDF over public
-/// inputs is not pseudonymity: any consumer could then recompute every other
-/// consumer's pseudonym offline.
 pub(crate) fn derive_pseudonymous_id(
     ikm: &[u8; 32],
     root: &SpiffeId,
@@ -49,62 +73,110 @@ pub(crate) fn derive_pseudonymous_id(
     let mut material = Vec::with_capacity(ikm.len() + root_uri.len());
     material.extend_from_slice(ikm);
     material.extend_from_slice(root_uri.as_bytes());
-    let hkdf_id = derive_pseudonym(
-        &material,
-        &root.trust_domain.to_string(),
-        &consumer.selector_key(),
-    );
-    SpiffeId::pseudonymous(root.trust_domain.clone(), &hkdf_id)
+    let okm = derive_pseudonym(&material, &root.trust_domain, consumer);
+    SpiffeId::pseudonymous(root.trust_domain.clone(), &hex(&okm))
+}
+
+/// Lowercase hex, the form a pseudonym takes in a SPIFFE path.
+fn hex(bytes: &[u8; 32]) -> String {
+    bytes.iter().fold(String::with_capacity(64), |mut s, b| {
+        use std::fmt::Write as _;
+        write!(s, "{b:02x}").expect("writing to a String cannot fail");
+        s
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::str::FromStr as _;
 
+    /// Vectors from pyca/cryptography, which is a different HKDF implementation
+    /// from the one under test:
+    ///
+    /// ```text
+    /// python3 -c "
+    /// from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+    /// from cryptography.hazmat.primitives import hashes
+    /// print(HKDF(algorithm=hashes.SHA256(), length=32, salt=SALT, info=INFO)
+    ///       .derive(IKM).hex())"
+    /// ```
+    ///
+    /// `INFO` is the scheme label followed by the consumer's selector key, so
+    /// these also pin the label: dropping it changes every one of them.
     #[test]
-    fn known_vector_v1() {
-        // oracle: python3 -c "
-        // from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-        // from cryptography.hazmat.primitives import hashes
-        // hkdf = HKDF(algorithm=hashes.SHA256(), length=32,
-        //             salt=b'example.com', info=b'com.example.app')
-        // print(hkdf.derive(b'secret-ikm').hex())"
-        let got = derive_pseudonym(b"secret-ikm", "example.com", "com.example.app");
+    fn known_vector_org_oidc_binary_consumer() {
+        // salt=b"example.com"
+        // info=b"persona-pseudonym-v1:binary_sha256:" + b"ab"*32
+        let got = derive_pseudonym(
+            b"secret-ikm",
+            &TrustDomain::OrgOidc("example.com".into()),
+            &ConsumerIdentity::BinarySha256([0xab; 32]),
+        );
         assert_eq!(
-            got,
-            "219792b31e1c5054b9dd68b70a7f94320098a61b2f8481915828aafd5aec7be0"
+            hex(&got),
+            "d672dc2a3978f06551ef5e694f4e3dd9b19fa204597c554bfa886585b79494bf"
         );
     }
 
     #[test]
-    fn known_vector_v2() {
-        // oracle: python3 -c "
-        // hkdf = HKDF(algorithm=hashes.SHA256(), length=32,
-        //             salt=b'tailscale', info=b'com.example.app')
-        // print(hkdf.derive(b'secret-ikm').hex())"
-        let got = derive_pseudonym(b"secret-ikm", "tailscale", "com.example.app");
+    fn known_vector_tailscale_macos_consumer() {
+        // salt=b"tailscale"
+        // info=b"persona-pseudonym-v1:macos:bundle_id:com.example.app:team_id:ABCDE12345"
+        let got = derive_pseudonym(
+            b"secret-ikm",
+            &TrustDomain::Tailscale,
+            &ConsumerIdentity::MacosBundleId {
+                bundle_id: "com.example.app".into(),
+                team_id: "ABCDE12345".into(),
+            },
+        );
         assert_eq!(
-            got,
-            "e7464bdc10f6fc78c94c3fab9bbb044506f2662fdfdc6b1d53f69f038804fa91"
+            hex(&got),
+            "b773a19293a668ac2eafa5da44731ff3e55c05107e310dbd371ab61cc26ede0e"
         );
     }
 
     #[test]
-    fn known_vector_v3() {
-        // oracle: python3 -c "
-        // hkdf = HKDF(algorithm=hashes.SHA256(), length=32,
-        //             salt=b'example.com', info=b'com.app.one')
-        // print(hkdf.derive(b'ikm').hex())"
-        let got = derive_pseudonym(b"ikm", "example.com", "com.app.one");
+    fn known_vector_ssh_local_flatpak_consumer() {
+        // salt=b"ssh.local"
+        // info=b"persona-pseudonym-v1:flatpak:app:org.gnome.Gedit"
+        let got = derive_pseudonym(
+            b"ikm",
+            &TrustDomain::SshLocal,
+            &ConsumerIdentity::FlatpakApp("org.gnome.Gedit".into()),
+        );
         assert_eq!(
-            got,
-            "157b585e2f388f205942c9c2b53c47fef0e07f8e4f20bc44d29bbdcea2c0ae22"
+            hex(&got),
+            "dbe59a023a0cee7dcf387934a81e1651f00b12ba32341c09ae001f380f63c9b2"
+        );
+    }
+
+    #[test]
+    fn the_scheme_label_is_part_of_the_derivation() {
+        // The same inputs with the label omitted, computed by the same external
+        // oracle. A pseudonym that matched this would mean the label had fallen
+        // out of the info input and the version could never be bumped.
+        let unversioned = "b2f13ec714e5e28bdfff08a00a411df23c4fd35083857be052c24d371c145767";
+        let got = derive_pseudonym(
+            b"secret-ikm",
+            &TrustDomain::OrgOidc("example.com".into()),
+            &ConsumerIdentity::BinarySha256([0xab; 32]),
+        );
+        assert_ne!(
+            hex(&got),
+            unversioned,
+            "the scheme label is not being mixed in"
         );
     }
 
     #[test]
     fn output_is_64_hex_chars() {
-        let out = derive_pseudonym(b"ikm", "example.com", "com.example.app");
+        let out = hex(&derive_pseudonym(
+            b"ikm",
+            &TrustDomain::SshLocal,
+            &ConsumerIdentity::SnapName("firefox".into()),
+        ));
         assert_eq!(out.len(), 64, "expected 64 hex chars, got {}", out.len());
         assert!(
             out.chars().all(|c| c.is_ascii_hexdigit()),
@@ -114,35 +186,40 @@ mod tests {
 
     #[test]
     fn deterministic() {
-        let a = derive_pseudonym(b"secret-ikm", "tailscale", "com.example.app");
-        let b = derive_pseudonym(b"secret-ikm", "tailscale", "com.example.app");
-        assert_eq!(a, b);
+        let c = ConsumerIdentity::SnapName("firefox".into());
+        assert_eq!(
+            derive_pseudonym(b"secret-ikm", &TrustDomain::Tailscale, &c),
+            derive_pseudonym(b"secret-ikm", &TrustDomain::Tailscale, &c),
+        );
     }
 
     #[test]
-    fn different_consumer_ids_produce_different_pseudonyms() {
-        let a = derive_pseudonym(b"ikm", "example.com", "com.app.one");
-        let b = derive_pseudonym(b"ikm", "example.com", "com.app.two");
-        assert_ne!(a, b);
+    fn different_consumers_produce_different_pseudonyms() {
+        let td = TrustDomain::OrgOidc("example.com".into());
+        assert_ne!(
+            derive_pseudonym(b"ikm", &td, &ConsumerIdentity::SnapName("one".into())),
+            derive_pseudonym(b"ikm", &td, &ConsumerIdentity::SnapName("two".into())),
+        );
     }
 
     #[test]
     fn different_trust_domains_produce_different_pseudonyms() {
-        let a = derive_pseudonym(b"ikm", "domain-a.example", "com.app");
-        let b = derive_pseudonym(b"ikm", "domain-b.example", "com.app");
-        assert_ne!(a, b);
+        let c = ConsumerIdentity::SnapName("firefox".into());
+        assert_ne!(
+            derive_pseudonym(b"ikm", &TrustDomain::OrgOidc("domain-a.example".into()), &c),
+            derive_pseudonym(b"ikm", &TrustDomain::OrgOidc("domain-b.example".into()), &c),
+        );
     }
 
     #[test]
     fn different_ikm_produces_different_pseudonyms() {
-        let a = derive_pseudonym(b"ikm-alice", "example.com", "com.app");
-        let b = derive_pseudonym(b"ikm-bob", "example.com", "com.app");
-        assert_ne!(a, b);
+        let td = TrustDomain::SshLocal;
+        let c = ConsumerIdentity::SnapName("firefox".into());
+        assert_ne!(
+            derive_pseudonym(b"ikm-alice", &td, &c),
+            derive_pseudonym(b"ikm-bob", &td, &c),
+        );
     }
-
-    use crate::consumer::ConsumerIdentity;
-    use crate::spiffe_id::{SpiffeId, TrustDomain};
-    use std::str::FromStr as _;
 
     fn root() -> SpiffeId {
         SpiffeId::new(TrustDomain::SshLocal, "user/testuser")

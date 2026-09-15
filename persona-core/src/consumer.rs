@@ -27,7 +27,15 @@ pub enum ConsumerIdentity {
 }
 
 impl ConsumerIdentity {
-    /// Returns a stable string key suitable for use as HKDF `info`.
+    /// Returns a stable string key used as the HKDF `info` input.
+    ///
+    /// These format strings are a wire commitment, not an implementation detail
+    /// of a helper. They are the `info` that `pseudonym::derive_pseudonym` mixes
+    /// in, so reformatting one -- respacing it, renaming a field, reordering
+    /// `bundle_id` and `team_id` -- changes every pseudonym derived for that
+    /// variant, and every relying application then sees all of its users as new
+    /// users. Such a change is a scheme change: bump the version in
+    /// `pseudonym::SCHEME` with it.
     ///
     /// Format per variant:
     /// - `BinarySha256`  → `"binary_sha256:<hex>"`
