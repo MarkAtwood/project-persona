@@ -82,6 +82,59 @@ jobs:
           # SSH_AUTH_SOCK is not available in CI; attestor probes skip gracefully
           SSH_AUTH_SOCK: ""
 
+  portability:
+    name: Cross-target check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # `cargo check` runs build scripts but never links, so one ubuntu runner
+      # covers every target here with no cross linker and no extra install
+      # step beyond the target list itself.
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc,aarch64-apple-darwin,aarch64-unknown-linux-ohos
+
+      # persona-grpc/build.rs runs protoc, and the workspace check below runs
+      # build scripts.
+      - name: Install protoc
+        uses: taiki-e/install-action@v2
+        with:
+          tool: protoc
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+
+      # persona-core holds the crypto, the HKDF pseudonym derivation and the
+      # SPIFFE ID types, and today has no platform surface at all -- no
+      # std::env, std::fs, libc or std::os::unix anywhere in it. This step is
+      # what keeps it that way. The failure it catches is someone adding one of
+      # those to that crate, which nothing else notices until a Windows port
+      # begins; no runner tests Windows, and none is proposed, because the
+      # crate's tests are byte-exact arithmetic with no platform behaviour to
+      # exercise. Checking that it still compiles for the target is the whole
+      # of what is worth knowing.
+      - name: persona-core stays portable
+        run: |
+          for target in x86_64-pc-windows-msvc aarch64-apple-darwin aarch64-unknown-linux-ohos; do
+            echo "::group::persona-core -> $target"
+            cargo check --target "$target" -p persona-core
+            echo "::endgroup::"
+          done
+
+      # Deliberately not --workspace for Windows: persona-grpc is Unix-only by
+      # design -- 21 UnixListener/UnixStream sites, tracked by persona-vvs2 --
+      # so that would be a permanently red gate.
+      #
+      # The macos-latest leg above compiles these same #[cfg(target_os =
+      # "macos")] arms, so this is not the only thing that sees them. It fails
+      # in seconds on a warm ubuntu runner rather than after a macOS runner
+      # queues and builds, and it is the step a developer can run locally on
+      # Linux, where those arms are otherwise never type-checked at all.
+      - name: whole workspace for darwin
+        run: cargo check --target aarch64-apple-darwin --workspace
+
   msrv:
     name: MSRV check
     runs-on: ubuntu-latest
