@@ -2,13 +2,15 @@
   "id": "persona-5s4b.75",
   "title": "Identity paths derived from truncated key fingerprints (32-bit GPG short ID, 64-bit DID hash)",
   "description": "EXPLOITABLE with keyring/env write access; the GPG case is cheap enough to be practical today.\n\nTwo locations, same pattern - a truncated fingerprint used as the identity component of a SPIFFE ID:\n\n1. persona-attestors/src/gpg.rs:80-85, make_claim():\n       let short_fp = fingerprint[fingerprint.len() - 8..].to_lowercase();\n       SpiffeId::new(TrustDomain::SshLocal, format!(\"gpg/{short_fp}\"))\n   The last 8 hex characters of an OpenPGP fingerprint is the 32-bit \"short key ID\". Short key IDs are collidable in seconds on commodity hardware - this is the 2016 Evil32 result, which precomputed colliding short IDs for the entire PGP strong set. An attacker who can add a key to the users keyring (gpg.rs reads ~/.gnupg via gpg --list-keys) generates a key whose short ID matches a trusted key and receives the identical SPIFFE ID spiffe://ssh.local/gpg/\u003cshortid\u003e.\n\n2. persona-attestors/src/did_key.rs:36-39, did_short_id():\n       let hash = Sha256::digest(did.as_bytes());\n       hash[..8]...                       // 64 bits\n       SpiffeId::new(TrustDomain::SshLocal, format!(\"did/{short}\"))  // did_key.rs:70\n   64 bits gives a birthday collision around 2^32 work and a targeted second preimage around 2^64. The first is trivial; the second is expensive but not out of reach, and there is no reason to truncate at all here.\n\nCONSEQUENCE: the SPIFFE ID is the authorization subject. Two distinct keys mapping to one SPIFFE ID means a relying partys allow-list entry for a legitimate key also authorizes the attackers colliding key, and audit logs cannot tell the two apart. Truncation buys nothing - the full 40-hex fingerprint / full SHA-256 hex is a legal SPIFFE path segment.\n\nFix direction: use the full fingerprint (GPG) and the full 32-byte hash hex or the did:key multibase value itself (DID). If a short display form is wanted, keep it in display_name, not in the identity path.",
-  "status": "open",
+  "status": "closed",
   "priority": 1,
   "issue_type": "bug",
   "owner": "mark@reviewcommit.com",
   "created_at": "2026-09-13T20:59:47.467283477Z",
   "created_by": "agent",
-  "updated_at": "2026-09-13T20:59:47.467283477Z",
+  "updated_at": "2026-09-15T02:03:37.415534461Z",
+  "closed_at": "2026-09-15T02:03:37.415534461Z",
+  "close_reason": "Fixed in 1a8e749: --list-secret-keys replaces --list-keys (parser retargeted pub/sub -\u003e sec/ssb), the fpr following sec names the identity instead of the last subkey's, and the SPIFFE path carries the full fingerprint (did:key the full SHA-256). Fixtures are real gpg output from throwaway keys. Verified on the real keyring: strangers' keys gone, 15 candidates, all full 40-hex.",
   "labels": [
     "crypto",
     "review"

@@ -2,13 +2,15 @@
   "id": "persona-5s4b.79",
   "title": "GPG attestor uses the last subkey fingerprint as the identity instead of the primary key fingerprint",
   "description": "persona-attestors/src/gpg.rs:253-283 parse_gpg_colons() tracks a single current_fp and overwrites it on every fpr record:\n\n    Some(\u0026\"fpr\") =\u003e { current_fp = fields.get(9).map(|s| s.to_string()); }\n\nbut gpg --with-colons emits an fpr record after every sub record as well as after each pub. Verified against real output from `gpg --batch --no-tty --list-keys --with-colons --fingerprint` on this machine:\n\n    pub:-:1024:17:0FCDD8E5035D6B1D:...\n    fpr:::::::::677AB7B4A1EC7CD7C15B04810FCDD8E5035D6B1D:   \u003c- primary\n    uid:-::::...\n    sub:-:4096:16:57D0B2691725ABC2:...\n    fpr:::::::::C97922CD569356C21C0BADB357D0B2691725ABC2:   \u003c- subkey, overwrites current_fp\n    pub:... (next key -\u003e flush)\n\nTrigger: any GPG key that has at least one subkey -- which is essentially every real-world key, since gpg --gen-key creates an encryption subkey by default.\n\nWhat goes wrong: the flush at gpg.rs:263 (on the next pub) and at gpg.rs:279 (end of output) pairs the primary keys uid with the LAST subkeys fingerprint. make_claim (gpg.rs:285-298) takes the last 8 hex chars of that, so the emitted identity for the key above is spiffe://ssh.local/gpg/1725abc2 (subkey 57D0B2691725ABC2) instead of spiffe://ssh.local/gpg/035d6b1d (primary 0FCDD8E5035D6B1D).\n\nConsequences: (a) the SPIFFE ID does not identify the key the user thinks it does and cannot be cross-referenced against a published primary fingerprint; (b) the identity is unstable -- adding, rotating or expiring an encryption subkey silently changes the users SPIFFE ID, invalidating any relying-party enrollment keyed on it; (c) with multiple subkeys the result depends on gpg output ordering.\n\nThe unit test at gpg.rs:355-366 passes only because its fixture contains no sub record, so the suite gives false confidence. A regression test needs a fixture with subkeys.\n\nFix direction: capture the fpr that immediately follows a pub and ignore fpr records that follow a sub (track which record type was last seen), and flush on pub rather than relying on both current_fp and current_uid being Some.",
-  "status": "open",
+  "status": "closed",
   "priority": 1,
   "issue_type": "bug",
   "owner": "mark@reviewcommit.com",
   "created_at": "2026-09-13T20:59:50.103399808Z",
   "created_by": "agent",
-  "updated_at": "2026-09-13T21:10:28.872287533Z",
+  "updated_at": "2026-09-15T02:03:37.396114951Z",
+  "closed_at": "2026-09-15T02:03:37.396114951Z",
+  "close_reason": "Fixed in 1a8e749: --list-secret-keys replaces --list-keys (parser retargeted pub/sub -\u003e sec/ssb), the fpr following sec names the identity instead of the last subkey's, and the SPIFFE path carries the full fingerprint (did:key the full SHA-256). Fixtures are real gpg output from throwaway keys. Verified on the real keyring: strangers' keys gone, 15 candidates, all full 40-hex.",
   "labels": [
     "correctness",
     "review"
