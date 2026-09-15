@@ -1,3 +1,4 @@
+use std::fs::File;
 use std::path::{Path, PathBuf};
 
 use tokio::net::UnixListener;
@@ -13,7 +14,11 @@ use crate::workload::spiffe_workload_api_server::SpiffeWorkloadApiServer;
 /// The socket is bound by [`bind_listener`], which also prepares its parent
 /// directory and restricts the socket to this user.
 pub async fn serve(socket_path: &Path, service: WorkloadApiService) -> Result<(), ServeError> {
-    let listener = bind_listener(socket_path)?;
+    // `_lock` must stay alive for as long as this server serves: flock is
+    // released when the file descriptor closes, so dropping it here would let a
+    // second daemon take the socket. It is bound to a named variable rather
+    // than `_` for that reason -- `_` would drop it immediately.
+    let (listener, _lock) = bind_listener(socket_path)?;
 
     tracing::info!(?socket_path, "SPIFFE Workload API listening");
 
@@ -49,10 +54,14 @@ pub async fn serve(socket_path: &Path, service: WorkloadApiService) -> Result<()
 /// was rejected: umask is per-process state shared by every thread, so a daemon
 /// that sets and restores it around `bind` changes the mode of files other
 /// tokio workers create at the same time.
-fn bind_listener(socket_path: &Path) -> Result<UnixListener, ServeError> {
+fn bind_listener(socket_path: &Path) -> Result<(UnixListener, File), ServeError> {
     if let Some(parent) = socket_path.parent() {
         prepare_socket_dir(parent)?;
     }
+
+    // Before the unlink below, not after: the lock is what says whether the
+    // socket about to be removed belongs to a daemon that is still running.
+    let lock = acquire_lock(socket_path)?;
 
     // Unlink unconditionally rather than testing `exists()` first: `exists()`
     // follows symlinks, so it reports false for a dangling symlink left at the
@@ -84,7 +93,70 @@ fn bind_listener(socket_path: &Path) -> Result<UnixListener, ServeError> {
         )?;
     }
 
-    Ok(listener)
+    Ok((listener, lock))
+}
+
+/// Path of the lock guarding one socket: the socket's own path plus `.lock`.
+///
+/// Keyed to the socket rather than to its directory because the invariant is
+/// one daemon per socket path, and because several sockets can share a
+/// directory -- the integration tests bind a dozen under `/tmp`, and a
+/// directory-wide lock would make them refuse each other.
+fn lock_path(socket_path: &Path) -> PathBuf {
+    let mut p = socket_path.as_os_str().to_owned();
+    p.push(".lock");
+    PathBuf::from(p)
+}
+
+/// Claims the right to serve on `socket_path`, or reports who already has it.
+///
+/// The socket file cannot answer "is the daemon that made this still alive?" --
+/// a path left by a crash and a path held by a running daemon look identical,
+/// which is why unlinking unconditionally could displace a live daemon. An
+/// advisory lock answers exactly that question: the kernel drops a `flock` when
+/// the process holding it dies, so a crashed daemon's lock is already free and
+/// the ordinary stale-socket cleanup still works, while a live daemon's lock is
+/// held and `LOCK_NB` reports `EWOULDBLOCK` instead of waiting.
+///
+/// The returned `File` is the lock. It is released when that handle closes, so
+/// the caller must hold it for as long as it serves.
+///
+/// The lock file is never unlinked. Removing it would race: another process may
+/// already have opened the same path, and would then lock a file that no longer
+/// names anything. It is an empty file in the runtime directory and costs an
+/// inode.
+fn acquire_lock(socket_path: &Path) -> Result<File, ServeError> {
+    let path = lock_path(socket_path);
+
+    let mut opts = std::fs::OpenOptions::new();
+    opts.create(true).write(true).truncate(false);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        opts.mode(0o600);
+    }
+    let lock = opts.open(&path).map_err(|source| ServeError::Lock {
+        path: path.clone(),
+        source,
+    })?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::io::AsRawFd as _;
+        // SAFETY: flock takes an open file descriptor and a flag set, and has no
+        // other preconditions. `lock` owns the descriptor and outlives the call.
+        if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+            let e = std::io::Error::last_os_error();
+            return Err(match e.kind() {
+                std::io::ErrorKind::WouldBlock => ServeError::AlreadyRunning {
+                    path: socket_path.to_owned(),
+                },
+                _ => ServeError::Lock { path, source: e },
+            });
+        }
+    }
+
+    Ok(lock)
 }
 
 /// Creates the socket's parent directory owned by this user and readable only by them.
@@ -230,6 +302,23 @@ pub enum ServeError {
         source: std::io::Error,
     },
 
+    /// Another daemon is already serving this socket and still running.
+    #[error("another personad is already serving {path}")]
+    AlreadyRunning {
+        /// The socket the running daemon holds.
+        path: PathBuf,
+    },
+
+    /// The lock guarding the socket could not be opened or taken.
+    #[error("cannot lock {path}")]
+    Lock {
+        /// The lock file.
+        path: PathBuf,
+        /// The underlying error from `open(2)` or `flock(2)`.
+        #[source]
+        source: std::io::Error,
+    },
+
     /// The gRPC server stopped with a transport error.
     #[error("the workload API server stopped")]
     Transport(#[from] tonic::transport::Error),
@@ -307,7 +396,7 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         let sock = dir.join("workload.sock");
 
-        let listener = bind_listener(&sock).expect("should bind");
+        let (listener, _lock) = bind_listener(&sock).expect("should bind");
 
         assert_eq!(
             fs::metadata(&dir).expect("directory should exist").mode() & 0o777,
@@ -342,7 +431,8 @@ mod tests {
             "precondition: a dangling symlink is not exists()"
         );
 
-        let listener = bind_listener(&sock).expect("a dangling symlink must not block bind");
+        let (listener, _lock) =
+            bind_listener(&sock).expect("a dangling symlink must not block bind");
         assert!(
             !fs::symlink_metadata(&sock)
                 .expect("socket should exist")
@@ -399,6 +489,72 @@ mod tests {
             }
             other => panic!("wrong variant: {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn a_second_daemon_is_refused_while_the_first_still_holds_the_socket() {
+        // The case that used to be silent: the second daemon unlinked the
+        // first's socket and bound its own, and since the two hold different
+        // signing keys and different pseudonym material, every consumer
+        // re-homed to new pseudonyms and a JWKS that no longer carried the kid
+        // on its existing token.
+        let dir = scratch("occupied");
+        let _ = fs::remove_dir_all(&dir);
+        let sock = dir.join("workload.sock");
+
+        let first = bind_listener(&sock).expect("the first daemon binds");
+
+        let err = bind_listener(&sock).expect_err("the second must be refused");
+        assert!(
+            matches!(err, ServeError::AlreadyRunning { ref path } if *path == sock),
+            "got: {err:?}"
+        );
+        assert!(
+            sock.exists(),
+            "the refused daemon must not have unlinked the running one's socket"
+        );
+
+        drop(first);
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[tokio::test]
+    async fn the_socket_is_reclaimed_once_the_first_daemon_is_gone() {
+        // The other half: a crashed daemon leaves both a socket and a lock
+        // file, and the kernel releases its flock when it dies. A daemon that
+        // refused to reclaim that would be unable to restart after a crash.
+        let dir = scratch("reclaim");
+        let _ = fs::remove_dir_all(&dir);
+        let sock = dir.join("workload.sock");
+
+        let first = bind_listener(&sock).expect("the first daemon binds");
+        drop(first); // what process death does to the lock and leaves the socket
+        assert!(
+            sock.exists(),
+            "precondition: the socket file outlives the daemon"
+        );
+
+        let second = bind_listener(&sock).expect("a released lock must be reclaimable");
+        drop(second);
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[tokio::test]
+    async fn the_lock_covers_one_socket_and_not_its_directory() {
+        // Several sockets share a directory -- the integration tests bind a
+        // dozen under /tmp. A directory-wide lock would make them refuse each
+        // other, so the lock is keyed to the socket path.
+        let dir = scratch("siblings");
+        let _ = fs::remove_dir_all(&dir);
+        let a = dir.join("a.sock");
+        let b = dir.join("b.sock");
+
+        let first = bind_listener(&a).expect("first socket");
+        let second = bind_listener(&b).expect("a different socket must not be blocked");
+
+        drop(first);
+        drop(second);
+        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
