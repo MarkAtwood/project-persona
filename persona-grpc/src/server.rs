@@ -10,28 +10,13 @@ use crate::workload::spiffe_workload_api_server::SpiffeWorkloadApiServer;
 
 /// Bind and serve the SPIFFE Workload API on the given Unix socket path.
 ///
-/// Creates parent directories if needed. Sets socket permissions to 0600.
-/// Removes a stale socket file if one is present before binding.
+/// The socket is bound by [`bind_listener`], which also prepares its parent
+/// directory and restricts the socket to this user.
 pub async fn serve(
     socket_path: &Path,
     service: WorkloadApiService,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if socket_path.exists() {
-        tracing::warn!(?socket_path, "removing stale socket");
-        std::fs::remove_file(socket_path)?;
-    }
-
-    if let Some(parent) = socket_path.parent() {
-        prepare_socket_dir(parent)?;
-    }
-
-    let listener = UnixListener::bind(socket_path)?;
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(socket_path, std::fs::Permissions::from_mode(0o600))?;
-    }
+    let listener = bind_listener(socket_path)?;
 
     tracing::info!(?socket_path, "SPIFFE Workload API listening");
 
@@ -47,6 +32,49 @@ pub async fn serve(
         .await?;
 
     Ok(())
+}
+
+/// Binds the Workload API socket, private to this user.
+///
+/// The order matters. `prepare_socket_dir` runs first, because it is what
+/// establishes that this user owns the directory; unlinking a stale socket
+/// before that check would delete a file inside a directory we are about to
+/// refuse to use.
+///
+/// Access is enforced by the parent directory, not by the socket's own mode.
+/// `bind` creates the socket under the process umask, so there is a window
+/// between `bind` and `set_permissions` in which its mode is whatever the umask
+/// allowed. That window is not reachable: connecting to a Unix socket requires
+/// search permission on every directory above it, and `prepare_socket_dir`
+/// leaves the parent 0700 and owned by this user before the socket exists. The
+/// 0600 mode is set anyway so the permissions read correctly and so the socket
+/// does not depend on the directory alone. Narrowing the window with `umask`
+/// was rejected: umask is per-process state shared by every thread, so a daemon
+/// that sets and restores it around `bind` changes the mode of files other
+/// tokio workers create at the same time.
+fn bind_listener(socket_path: &Path) -> Result<UnixListener, Box<dyn std::error::Error>> {
+    if let Some(parent) = socket_path.parent() {
+        prepare_socket_dir(parent)?;
+    }
+
+    // Unlink unconditionally rather than testing `exists()` first: `exists()`
+    // follows symlinks, so it reports false for a dangling symlink left at the
+    // socket path, which `bind` would then fail on with EADDRINUSE.
+    match std::fs::remove_file(socket_path) {
+        Ok(()) => tracing::warn!(?socket_path, "removed stale socket"),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e.into()),
+    }
+
+    let listener = UnixListener::bind(socket_path)?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(socket_path, std::fs::Permissions::from_mode(0o600))?;
+    }
+
+    Ok(listener)
 }
 
 /// Creates the socket's parent directory owned by this user and readable only by them.
@@ -108,7 +136,7 @@ fn prepare_socket_dir(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(all(test, unix))]
 mod tests {
-    use super::prepare_socket_dir;
+    use super::{bind_listener, prepare_socket_dir};
     use std::fs;
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
     use std::path::PathBuf;
@@ -166,5 +194,85 @@ mod tests {
         assert_eq!(md.mode() & 0o1000, 0, "precondition: /usr is not sticky");
         let err = prepare_socket_dir(&usr).expect_err("must refuse");
         assert!(err.to_string().contains("refusing to use"), "got: {err}");
+    }
+
+    #[tokio::test]
+    async fn the_bound_socket_is_unreachable_by_other_users() {
+        // Both halves matter and neither is sufficient alone: the 0700 directory
+        // is what actually denies other uids, since connect(2) needs search
+        // permission on it, and the 0600 socket is what the permissions read as.
+        let dir = scratch("bound");
+        let _ = fs::remove_dir_all(&dir);
+        let sock = dir.join("workload.sock");
+
+        let listener = bind_listener(&sock).expect("should bind");
+
+        assert_eq!(
+            fs::metadata(&dir).expect("directory should exist").mode() & 0o777,
+            0o700,
+            "another user must not be able to search into the socket directory"
+        );
+        assert_eq!(
+            fs::symlink_metadata(&sock)
+                .expect("socket should exist")
+                .mode()
+                & 0o777,
+            0o600,
+            "another user must not be able to connect to the socket"
+        );
+
+        drop(listener);
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[tokio::test]
+    async fn binds_over_a_dangling_symlink_left_at_the_socket_path() {
+        // Path::exists() follows symlinks, so it reports false here. Testing it
+        // before unlinking left the symlink in place and bind(2) then failed with
+        // EADDRINUSE, which reads as "the daemon is already running".
+        let dir = scratch("dangling");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("create dir");
+        let sock = dir.join("workload.sock");
+        std::os::unix::fs::symlink(dir.join("no-such-target"), &sock).expect("symlink");
+        assert!(
+            !sock.exists(),
+            "precondition: a dangling symlink is not exists()"
+        );
+
+        let listener = bind_listener(&sock).expect("a dangling symlink must not block bind");
+        assert!(
+            !fs::symlink_metadata(&sock)
+                .expect("socket should exist")
+                .file_type()
+                .is_symlink(),
+            "the symlink should have been replaced by a real socket"
+        );
+
+        drop(listener);
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[tokio::test]
+    async fn vets_the_directory_before_touching_anything_inside_it() {
+        // Ordering, not just refusal. The socket's parent here is a regular
+        // file, which prepare_socket_dir rejects by name. Unlinking first would
+        // instead surface the kernel's ENOTDIR from remove_file, so the message
+        // says which of the two ran. Pinning the order matters because the other
+        // rejection prepare_socket_dir makes is "another user owns this
+        // directory", and unlinking before that check deletes a file inside a
+        // directory we are about to refuse to use.
+        let parent = scratch("notdir");
+        let _ = fs::remove_file(&parent);
+        fs::write(&parent, b"not a directory").expect("create the blocking file");
+
+        let err = bind_listener(&parent.join("workload.sock"))
+            .expect_err("must refuse a parent that is not a directory");
+        assert!(
+            err.to_string().contains("exists and is not a directory"),
+            "the directory check must run first; got: {err}"
+        );
+
+        fs::remove_file(&parent).ok();
     }
 }
