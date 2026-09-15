@@ -32,11 +32,14 @@ async fn connect_to_daemon() -> Result<SpiffeWorkloadApiClient<Channel>> {
         );
     }
 
-    let path_str = path.to_str().unwrap().to_owned();
+    // Connect from the PathBuf rather than a String: `XDG_RUNTIME_DIR` is
+    // arbitrary bytes, so a UTF-8 conversion here could fail on a path the
+    // kernel accepts.
+    let sock = path.clone();
     let channel = Endpoint::try_from("http://[::]:50051")
         .context("invalid endpoint")?
         .connect_with_connector(service_fn(move |_: Uri| {
-            let p = path_str.clone();
+            let p = sock.clone();
             async move {
                 let stream = UnixStream::connect(p).await?;
                 Ok::<_, std::io::Error>(TokioIo::new(stream))

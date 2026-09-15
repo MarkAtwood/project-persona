@@ -110,10 +110,10 @@ async fn fetch_jwt(audience: Vec<String>) -> Result<(String, String)> {
     use tonic::transport::{Endpoint, Uri};
     use tower::service_fn;
 
-    let path = persona_grpc::socket::workload_socket_path()
-        .to_str()
-        .unwrap()
-        .to_owned();
+    // Connect from the PathBuf rather than a String: `XDG_RUNTIME_DIR` is
+    // arbitrary bytes, so a UTF-8 conversion here could fail on a path the
+    // kernel accepts.
+    let path = persona_grpc::socket::workload_socket_path();
     let channel = Endpoint::try_from("http://[::]:50051")
         .context("invalid endpoint")?
         .connect_with_connector(service_fn(move |_: Uri| {
