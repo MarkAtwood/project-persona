@@ -6,63 +6,16 @@ use std::path::PathBuf;
 use tonic::transport::Channel;
 
 #[allow(dead_code)] // used only on macOS via #[cfg(target_os = "macos")]
-const LAUNCHD_PLIST: &str = "\
-<?xml version=\"1.0\" encoding=\"UTF-8\"?>
-<!--
-  Template. launchd expands nothing in this file: no ~, no $HOME, no systemd-style
-  specifiers, so every path must be absolute and literal. `persona install-service`
-  substitutes __HOME__ and writes the result to ~/Library/LaunchAgents/personad.plist.
-  Copying this file into place unedited will not work.
+/// The launchd agent template, shared with the copy a packager installs.
+///
+/// `install-service` substitutes `__HOME__` and writes the result to
+/// ~/Library/LaunchAgents/personad.plist. Pulled from the shipped file rather
+/// than copied into this binary: two copies of one config drift, and the
+/// systemd pair already had.
+const LAUNCHD_PLIST: &str = include_str!("../../launchd/personad.plist");
 
-  Output goes to ~/Library/Logs/personad.log. launchd sends the stdout and stderr of
-  an agent with no StandardOutPath to /dev/null, not to the unified log -- measured on
-  macOS 26.6.2, where a test agent ran but produced no log entries. ~/Library is mode
-  0700, so the file is unreadable by other local users even though launchd creates it
-  0644. Do not move this to /tmp: the daemon logs SPIFFE IDs, attestor sources and
-  assurance levels, and a predictable name in a world-writable directory can be
-  pre-created by another user.
--->
-<plist version=\"1.0\">
-<dict>
-    <key>Label</key>
-    <string>personad</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>__HOME__/.cargo/bin/personad</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>StandardOutPath</key>
-    <string>__HOME__/Library/Logs/personad.log</string>
-    <key>StandardErrorPath</key>
-    <string>__HOME__/Library/Logs/personad.log</string>
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>RUST_LOG</key>
-        <string>info</string>
-    </dict>
-</dict>
-</plist>
-";
-
-const SYSTEMD_UNIT: &str = "\
-[Unit]
-Description=Persona identity daemon (SPIFFE Workload API)
-After=tailscaled.service
-Documentation=https://github.com/persona-id/persona
-
-[Service]
-Type=simple
-ExecStart=%h/.cargo/bin/personad
-Restart=on-failure
-RestartSec=5
-Environment=RUST_LOG=info
-
-[Install]
-WantedBy=default.target
-";
+/// The systemd user unit, shared with the copy a packager installs.
+const SYSTEMD_UNIT: &str = include_str!("../../systemd/personad.service");
 
 /// Connects to the personad Unix socket and returns a ready gRPC client.
 async fn connect_to_daemon() -> Result<SpiffeWorkloadApiClient<Channel>> {
