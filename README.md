@@ -117,7 +117,7 @@ question from whether it substantiates its assurance row.
 | Source | Assurance | Presence | Platforms | Built |
 |---|---|---|---|---|
 | Tailscale | iaa2 | none | Linux | yes -- probes `/var/run/tailscale/tailscaled.sock`, the Linux path; the macOS and Windows clients do not create it |
-| FIDO2 (libfido2) | iaa3 | hardware | Linux, macOS, Windows | yes, behind `--features fido2`; off in a default build |
+| FIDO2 (libfido2) | iaa3 | hardware | Linux, macOS | yes, behind `--features fido2`; off in a default build. Not Windows: `hired` does not run there |
 | PIV / smartcard | iaa3 | hardware (with PIN) | cross-platform | no -- `is_available()` returns false even with `--features pkcs11` |
 | Windows Hello | iaa3 | hardware | Windows | no -- no attestor exists |
 | Secure Enclave (TouchID) | iaa3 | hardware | macOS | no -- no attestor exists |

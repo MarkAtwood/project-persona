@@ -56,7 +56,7 @@ For any task touching more than 3 files or requiring more than a few steps:
 | `hired` | Daemon binary: socket listener, startup, signal handling, systemd/launchd integration |
 | `hire` | CLI binary: `hire whoami`, `hire enumerate`, `hire fetch-jwt`, etc. |
 | `hire-core` | Shared types: SPIFFE ID schema, assurance levels (`iaa1`/`iaa2`/`iaa3`), presence model (`none`/`session`/`software`/`hardware`), trust domain model |
-| `hire-attestors` | Attestor plugin trait (`enumerate` -> candidates, `prove` -> evidence, `freshness`) + implementations: tailscale, fido2, piv, oidc, ssh-agent, gpg, did, secure-enclave, windows-hello, gnome-online-accounts |
+| `hire-attestors` | Attestor plugin trait (`enumerate` -> candidates, `prove` -> evidence, `freshness`) + implementations: tailscale, ssh-agent, oidc, gpg, did:key, unix account, plus fido2 behind `--features fido2`. piv and goa are placeholder modules that never activate; there is no secure-enclave and no windows-hello module |
 | `hire-grpc` | SPIFFE Workload API gRPC server: `FetchX509SVIDs`, `FetchX509Bundles`, `FetchJWTSVID`, `FetchJWTBundles`, `ValidateJWTSVID` |
 
 **No gRPC outside `hire-grpc`. No platform-specific attestation outside `hire-attestors`. No `unsafe`.**

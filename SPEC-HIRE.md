@@ -58,7 +58,7 @@ DACL instead, so the SID bought nothing and leaked an identifier into a name.
 **Localhost HTTP gateway:** `127.0.0.1:2443` (for browser native-messaging bridge)
 **User systemd unit (Linux):** `hired.service`
 **LaunchAgent (macOS):** `hired` (`~/Library/LaunchAgents/hired.plist`)
-**Windows user-mode service:** `HireIdentityAgent`
+**Windows user-mode service:** *(not implemented -- `hired` does not run on Windows)*
 
 Storage: nothing persistent that isn't already persistent in the underlying source. `hired` is a normaliser, not a vault. Any data it caches is wiped on session end.
 
@@ -169,7 +169,7 @@ Each source implements a plugin interface: `enumerate()`, `prove(candidate, chal
 - Presence: none (network identity, not physical presence)
 - Notes: tailscaled must be running; automatic re-attest on `tailscale status` change
 
-**windows-hello** (Windows)
+**windows-hello** (Windows) — *(not implemented; no attestor exists, and `hired` does not run on Windows)*
 - Method: `Windows.Security.Credentials.KeyCredentialManager`
 - Returns: TPM-backed attestation that the user authenticated with Hello (PIN or biometric) and when
 - Assurance: `iaa3`, presence: `hardware`
@@ -250,20 +250,27 @@ On each `FetchJWTSVID` or `FetchX509SVID` call, `hired` attests the calling proc
 | Linux | `SO_PEERCRED` (uid/pid) → `/proc/{pid}/exe` → binary hash → AppArmor/SELinux label → Flatpak/Snap app ID | Binary hash or app ID |
 | macOS | `getpeereid` + `LOCAL_PEEREPID` (uid/pid) → `proc_pidpath` → binary hash | Binary hash |
 | macOS (planned) | `LOCAL_PEERTOKEN` → `audit_token_t` → `SecCodeCopyGuestWithAttributes` → signing identity | Bundle ID + Team ID |
-| Windows | `GetNamedPipeClientProcessId` → EXE signing certificate → MSIX Package Family Name | Package Family Name or EXE signer |
+| Windows | *(not implemented)* — `GetNamedPipeClientProcessId` is the likely starting point, but the consumer identity is undecided and deliberately not specified here. An MSIX publisher CN was specified once and removed: it is shared by every application from one publisher, so all of them would derive the same pseudonym | *(undecided)* |
 | Browser (native messaging) | Chrome/Firefox native messaging — origin-bound; the declaring manifest extension specifies allowed origins | Extension ID + origin |
 
 The SPIFFE selector model (`unix:uid`, `unix:path`, `unix:sha256`, `k8s:ns`, ...) is extended with desktop selectors:
 
 ```
 binary_sha256:abc123...
-macos:bundle_id:com.notion.Notion
-macos:team_id:ABCD1234
+macos:bundle_id:com.notion.Notion:team_id:ABCD1234
 flatpak:app:com.obsidian.Obsidian
 snap:name:obsidian
-msix:publisher:CN=Notion...
 chrome_extension:id:abc123...
 ```
+
+This list is normative and must match `ConsumerIdentity::selector_key` exactly:
+it is the HKDF `info` input, so a selector written differently here from the way
+the code emits it describes a different pseudonym. macOS is ONE combined key
+carrying the bundle id and the team id, not two selectors. There is no Windows
+selector: one was specified (`msix:publisher:<cn>`) and removed before any
+Windows code existed, because it identified a publisher rather than an
+application. Whoever implements Windows consumer attestation adds the selector
+then, and bumps the scheme version if the derivation changes.
 
 These selectors drive the SPIFFE Server-style workload registration. The user runs `hire enroll app` to interactively authorize a new consumer app.
 
@@ -817,16 +824,26 @@ meant to federate, not what it currently federates.
 
 The Unix account source is the floor: it needs only a running process, so no Unix platform probes to nothing. The rich case is still partly design — PIV has no working `is_available()`, and FIDO2 is compiled out unless `--features fido2` is set.
 
-The startup probe order:
-1. Tailscale socket (`/var/run/tailscale/tailscaled.sock` or platform equivalent)
-2. FIDO2 devices (`libfido2` enumeration)
-3. PIV/smartcard slots (PKCS#11 enumeration)
-4. Platform keychain (Keychain / Credential Manager / Secret Service)
-5. OIDC token cache (`~/.config/gcloud/`, `~/.azure/`, OS keychain)
-6. SSH agent (`SSH_AUTH_SOCK`)
-7. GPG agent (gpgconf socket)
-8. Kerberos (`KRB5CCNAME` or default ccache)
-9. Platform-specific: GNOME Online Accounts (DBus), KDE Wallet (DBus), WAM (COM)
+The startup probe order, as `hire-attestors/src/registry.rs` actually performs
+it. This list is normative and the order is load-bearing for the reason given
+below, so it must match the code rather than describe an intention:
+
+1. Tailscale socket (`/var/run/tailscale/tailscaled.sock`)
+2. SSH agent (`SSH_AUTH_SOCK`)
+3. OIDC token cache (`~/.config/gcloud/`, `~/.azure/`) — registered
+   unconditionally; it scans lazily in `enumerate()` rather than probing
+4. DID keys (`HIRE_DID_KEYS`)
+5. GPG agent (gpgconf socket)
+6. FIDO2 devices (`libfido2` enumeration) — only with `--features fido2`
+7. GNOME Online Accounts (DBus) — *(not implemented; the `goa` feature is a
+   placeholder and is Linux-only besides)*
+8. PIV/smartcard slots (PKCS#11) — *(not implemented; `is_available()` returns
+   false in both cfg arms, so it never activates)*
+
+Designed, with no position yet because nothing probes them: platform keychain
+(Keychain / Credential Manager / Secret Service), Kerberos (`KRB5CCNAME`), KDE
+Wallet (DBus), WAM (COM). They are *(not implemented)*; adding one means
+choosing its position deliberately, not appending it.
 
 The Unix account source is absent from that list because there is nothing to probe: it is available whenever the kernel is. It is appended after every probed source, and that position is load-bearing. The daemon keeps the first claim it sees at the winning tier, so a source that always produces `iaa1` evidence placed any earlier would take the slot from an SSH key or a hardware touch at the same tier and re-home every pseudonym derived from it.
 
