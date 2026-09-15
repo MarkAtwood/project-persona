@@ -6,7 +6,9 @@
 
 use async_trait::async_trait;
 
-use crate::{Attestor, AttestorError, Candidate, SelfAssertedDomain};
+use crate::{
+    AttainableAssurance, Attestor, AttestorError, Candidate, ProofCost, SelfAssertedDomain,
+};
 
 /// Attestor that lists GPG keys from the user's keyring.
 #[derive(Debug)]
@@ -124,6 +126,10 @@ fn make_candidate(fingerprint: String, display_name: String) -> Candidate {
         format!("gpg/{}", fingerprint.to_lowercase()),
         display_name,
     )
+    .with_attainable(AttainableAssurance::Iaa1)
+    // pinentry prompts for an uncached key and stays silent for a cached one,
+    // and nothing here can tell which this is, so it declares the costlier one.
+    .with_proof_cost(ProofCost::Interactive)
 }
 
 #[async_trait]

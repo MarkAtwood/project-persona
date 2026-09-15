@@ -23,7 +23,10 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 
 use crate::claim::ChallengeSignature;
-use crate::{Attestor, AttestorError, Candidate, Evidence, SelfAssertedDomain};
+use crate::{
+    AttainableAssurance, Attestor, AttestorError, Candidate, Evidence, ProofCost,
+    SelfAssertedDomain,
+};
 
 const SSH_AGENT_FAILURE: u8 = 5;
 const SSH2_AGENTC_REQUEST_IDENTITIES: u8 = 11;
@@ -182,6 +185,12 @@ impl Attestor for SshAgentAttestor {
                     spiffe_path(&key_blob),
                     display_name,
                 )
+                .with_attainable(AttainableAssurance::Iaa1)
+                // A key added with `ssh-add -c` prompts on every signature, and
+                // the agent's identities answer does not carry that constraint,
+                // so nothing here can tell a confirm-flagged key from a plain
+                // one. `Silent` is a guarantee and this cannot give it.
+                .with_proof_cost(ProofCost::Interactive)
             })
             .collect())
     }

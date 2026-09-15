@@ -55,6 +55,59 @@ impl From<SelfAssertedDomain> for TrustDomain {
     }
 }
 
+/// The highest tier an attestor believes a candidate *could* reach, if asked.
+///
+/// A claim about the future, made before any evidence exists. It is what lets
+/// the daemon prove lazily in descending order instead of proving everything,
+/// and what lets `hire enumerate` say what a box is capable of.
+///
+/// DELIBERATELY NOT [`IdentityAssurance`], and there is no conversion between
+/// them in either direction. [`Claim::derive`] takes no level precisely so a
+/// tier can never be asserted without evidence; a type that could stand in for
+/// a proven level would re-open that hole from the discovery side, which is the
+/// hole the `Candidate`/`Claim` split was built to close. A FIDO2 key that is
+/// merely plugged in attains `Iaa3` and has proven nothing.
+///
+/// It also deliberately does not derive `Serialize`, so it cannot reach an
+/// issued token even by accident: `HireClaims` is built by serde, and a type
+/// serde cannot write is a type that cannot appear in a JWT.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum AttainableAssurance {
+    /// Could reach self-asserted: an SSH key, a GPG key, a DID, a local account.
+    Iaa1,
+    /// Could reach IdP-verified: Tailscale, GNOME Online Accounts, cached OIDC.
+    Iaa2,
+    /// Could reach hardware-bound and IdP-verified: FIDO2, PIV, Windows Hello.
+    Iaa3,
+}
+
+/// Whether proving a candidate can interrupt a human.
+///
+/// The daemon answers `FetchJWTSVID` from silent candidates only. Proving is
+/// not free when a human is the authenticator: enumerate every candidate on
+/// every request once a hardware attestor can prompt, and one call becomes a
+/// FIDO2 tap plus a PIV PIN. An application that asks for everything and lets
+/// the user tap through walks away holding every identity they have, so this
+/// is a consent boundary rather than a performance hint.
+///
+/// FAILS SAFE, AND THE ASYMMETRY IS THE POINT. [`Silent`](Self::Silent) is a
+/// guarantee that proving *cannot* prompt; [`Interactive`](Self::Interactive)
+/// means only that it *may*. A source that cannot tell which it is must say
+/// `Interactive` — gpg-agent prompts through pinentry for an uncached key and
+/// signs silently for a cached one, so it is `Interactive` unless it has
+/// checked. Guessing wrong in this direction costs a source its place in the
+/// unprompted set; guessing wrong in the other costs the user an unasked-for
+/// prompt on somebody else's `FetchJWTSVID`.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ProofCost {
+    /// Proving cannot prompt a human. Eligible for the unprompted path.
+    Silent,
+    /// Proving may prompt a human. Reached only by an explicit request.
+    Interactive,
+}
+
 /// An identity an attestor can see. Discovery is not proof: a candidate has no
 /// assurance and no presence, because nothing has been verified yet.
 ///
@@ -71,10 +124,22 @@ pub struct Candidate {
     pub path: String,
     /// Human-readable display name.
     pub display_name: String,
+    /// The highest tier this candidate could reach if proven. Not evidence.
+    pub attainable: AttainableAssurance,
+    /// Whether proving this candidate can interrupt a human.
+    pub proof_cost: ProofCost,
 }
 
 impl Candidate {
-    /// Construct a new [`Candidate`].
+    /// Construct a new [`Candidate`], attaining nothing and costing a prompt.
+    ///
+    /// Both declarations default to their conservative end:
+    /// [`AttainableAssurance::Iaa1`] and [`ProofCost::Interactive`]. An
+    /// attestor that says nothing is therefore proved last and never on the
+    /// unprompted path — it stops working rather than starting to prompt, and
+    /// of the two ways to be wrong that is the one a user forgives. Declare the
+    /// real values with [`with_attainable`](Self::with_attainable) and
+    /// [`with_proof_cost`](Self::with_proof_cost).
     pub fn new(
         source: impl Into<String>,
         domain: SelfAssertedDomain,
@@ -86,7 +151,29 @@ impl Candidate {
             domain,
             path: path.into(),
             display_name: display_name.into(),
+            attainable: AttainableAssurance::Iaa1,
+            proof_cost: ProofCost::Interactive,
         }
+    }
+
+    /// Declare the highest tier this candidate could reach if proven.
+    ///
+    /// An upper bound the attestor offers, never a claim. Nothing reads it to
+    /// decide what an issued credential says — see [`AttainableAssurance`].
+    #[must_use]
+    pub fn with_attainable(mut self, attainable: AttainableAssurance) -> Self {
+        self.attainable = attainable;
+        self
+    }
+
+    /// Declare whether proving this candidate can interrupt a human.
+    ///
+    /// Use [`ProofCost::Silent`] only where prompting is impossible, not merely
+    /// unlikely — see [`ProofCost`] for why the two directions differ.
+    #[must_use]
+    pub fn with_proof_cost(mut self, proof_cost: ProofCost) -> Self {
+        self.proof_cost = proof_cost;
+        self
     }
 
     /// The SPIFFE ID this candidate would map to if nothing further is proven.
@@ -906,6 +993,75 @@ mod tests {
             claim.spiffe_id().to_string(),
             "spiffe://ssh.local/unix/1000"
         );
+    }
+
+    /// hire-jl4j.3: what a candidate says it could attain does not reach the
+    /// claim derived from it.
+    ///
+    /// `AttainableAssurance` and `IdentityAssurance` are separate types with no
+    /// conversion between them, so the compiler already refuses to substitute
+    /// one for the other. This covers the case the compiler cannot: that
+    /// `Claim::derive` reads the tier off the evidence and ignores the field
+    /// entirely, rather than consulting it when the evidence is weaker.
+    ///
+    /// The oracle is SPEC-HIRE, not this crate: the assurance table grades a
+    /// local account self-asserted, `iaa1`. A candidate declaring it could
+    /// reach `iaa3` — which is what a FIDO2 key merely plugged in declares —
+    /// and backed only by the kernel naming an account must still derive
+    /// `Iaa1`. If this ever reports `Iaa3`, discovery has become attestation
+    /// again, which is the defect the `Candidate`/`Claim` split exists to
+    /// prevent.
+    #[test]
+    fn an_attainable_tier_does_not_raise_the_derived_claim() {
+        let boastful = Candidate::new("unix", SelfAssertedDomain::SshLocal, "unix/1000", "mark")
+            .with_attainable(AttainableAssurance::Iaa3);
+        assert_eq!(boastful.attainable, AttainableAssurance::Iaa3);
+
+        let evidence = platform_assertion_for("unix/1000", SystemTime::now());
+        let claim = Claim::derive(&boastful, TEST_CHALLENGE, &[evidence])
+            .expect("the account the kernel named must derive");
+
+        assert_eq!(
+            claim.assurance(),
+            IdentityAssurance::Iaa1,
+            "a declared attainable tier raised the proven assurance level"
+        );
+        assert_eq!(claim.presence(), PresenceLevel::None);
+    }
+
+    /// hire-jl4j.3: an attestor that declares nothing is proved last and never
+    /// without a prompt.
+    ///
+    /// Both defaults sit at their conservative end on purpose. The failure an
+    /// omission produces is a source that does not appear, which is visible and
+    /// annoying; the failure the other defaults would produce is a hardware
+    /// ceremony on a request that never asked for one, which is silent and is
+    /// the consent-fatigue problem `ProofCost` exists to bound.
+    #[test]
+    fn an_undeclared_candidate_defaults_to_the_safe_end_of_both_axes() {
+        let bare = Candidate::new("test", SelfAssertedDomain::SshLocal, "user/alice", "Alice");
+
+        assert_eq!(bare.attainable, AttainableAssurance::Iaa1);
+        assert_eq!(bare.proof_cost, ProofCost::Interactive);
+    }
+
+    /// hire-jl4j.3: each builder sets its own field and leaves the other alone.
+    ///
+    /// Two consuming setters over adjacent fields is exactly the shape a
+    /// copy-paste error survives silently — `with_proof_cost` assigning
+    /// `attainable` still compiles, still returns `Self`, and produces a
+    /// candidate that prompts when it said it would not.
+    #[test]
+    fn each_declaration_sets_only_its_own_field() {
+        let base = Candidate::new("test", SelfAssertedDomain::SshLocal, "user/alice", "Alice");
+
+        let tiered = base.clone().with_attainable(AttainableAssurance::Iaa2);
+        assert_eq!(tiered.attainable, AttainableAssurance::Iaa2);
+        assert_eq!(tiered.proof_cost, ProofCost::Interactive, "cost drifted");
+
+        let costed = base.with_proof_cost(ProofCost::Silent);
+        assert_eq!(costed.proof_cost, ProofCost::Silent);
+        assert_eq!(costed.attainable, AttainableAssurance::Iaa1, "tier drifted");
     }
 }
 

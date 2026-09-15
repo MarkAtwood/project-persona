@@ -13,7 +13,7 @@ use sha2::{Digest, Sha256};
 use crate::{Attestor, AttestorError, Candidate};
 
 #[cfg(feature = "fido2")]
-use crate::SelfAssertedDomain;
+use crate::{AttainableAssurance, ProofCost, SelfAssertedDomain};
 
 /// Attestor for FIDO2 hardware authenticators.
 ///
@@ -91,6 +91,8 @@ impl Attestor for Fido2Attestor {
                         format!("fido2/{path_hash}"),
                         format!("FIDO2 {product}"),
                     )
+                    .with_attainable(AttainableAssurance::Iaa3)
+                    .with_proof_cost(ProofCost::Interactive)
                 })
                 .collect();
 

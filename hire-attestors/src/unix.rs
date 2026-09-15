@@ -13,7 +13,10 @@ use std::mem::MaybeUninit;
 use async_trait::async_trait;
 
 use crate::claim::PlatformIdentity;
-use crate::{Attestor, AttestorError, Candidate, Evidence, SelfAssertedDomain};
+use crate::{
+    AttainableAssurance, Attestor, AttestorError, Candidate, Evidence, ProofCost,
+    SelfAssertedDomain,
+};
 
 /// Largest passwd buffer worth trying before giving up, in bytes.
 ///
@@ -182,7 +185,9 @@ impl Attestor for UnixAttestor {
             SelfAssertedDomain::SshLocal,
             spiffe_path(self.uid),
             self.display_name.clone(),
-        )])
+        )
+        .with_attainable(AttainableAssurance::Iaa1)
+        .with_proof_cost(ProofCost::Silent)])
     }
 
     async fn prove(

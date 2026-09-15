@@ -12,7 +12,10 @@ use base64::Engine as _;
 
 use hire_core::PresenceLevel;
 
-use crate::{Attestor, AttestorError, Candidate, FreshnessResult, SelfAssertedDomain};
+use crate::{
+    AttainableAssurance, Attestor, AttestorError, Candidate, FreshnessResult, ProofCost,
+    SelfAssertedDomain,
+};
 
 /// Attestor that reads cached OIDC tokens from well-known local paths.
 #[derive(Debug)]
@@ -74,12 +77,16 @@ fn candidate_from_jwt(raw_token: &str) -> Option<Candidate> {
     //   ceiling: OIDC identities sit under ssh.local and cap at the floor tier |
     //   upgrade path: a signature-verifying prove() returns
     //   Evidence::IdpVerified, which re-anchors the domain to the verified issuer
-    Some(Candidate::new(
-        "oidc-cached",
-        SelfAssertedDomain::SshLocal,
-        format!("user/{sub}/via/oidc-cached"),
-        display_name,
-    ))
+    Some(
+        Candidate::new(
+            "oidc-cached",
+            SelfAssertedDomain::SshLocal,
+            format!("user/{sub}/via/oidc-cached"),
+            display_name,
+        )
+        .with_attainable(AttainableAssurance::Iaa2)
+        .with_proof_cost(ProofCost::Silent),
+    )
 }
 
 /// Runs [`scan_token_caches`] on a blocking thread.

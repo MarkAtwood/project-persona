@@ -6,7 +6,9 @@
 use async_trait::async_trait;
 use sha2::{Digest, Sha256};
 
-use crate::{Attestor, AttestorError, Candidate, SelfAssertedDomain};
+use crate::{
+    AttainableAssurance, Attestor, AttestorError, Candidate, ProofCost, SelfAssertedDomain,
+};
 
 /// Attestor that returns did:key identifiers configured via HIRE_DID_KEYS.
 #[derive(Debug)]
@@ -73,6 +75,8 @@ impl Attestor for DidKeyAttestor {
                     format!("did/{id}"),
                     did.clone(),
                 )
+                .with_attainable(AttainableAssurance::Iaa1)
+                .with_proof_cost(ProofCost::Silent)
             })
             .collect();
         Ok(candidates)

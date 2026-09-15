@@ -8,7 +8,9 @@
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use crate::{Attestor, AttestorError, Candidate, SelfAssertedDomain};
+use crate::{
+    AttainableAssurance, Attestor, AttestorError, Candidate, ProofCost, SelfAssertedDomain,
+};
 
 /// Attests identity via the Tailscale LocalAPI Unix socket.
 #[derive(Debug)]
@@ -152,7 +154,9 @@ impl Attestor for TailscaleAttestor {
             SelfAssertedDomain::Tailscale,
             format!("user/{login_name}/node/{node_name}"),
             display,
-        );
+        )
+        .with_attainable(AttainableAssurance::Iaa2)
+        .with_proof_cost(ProofCost::Silent);
 
         Ok(vec![candidate])
     }
