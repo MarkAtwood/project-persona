@@ -484,7 +484,7 @@ async fn watch() -> Result<()> {
     loop {
         tokio::select! {
             _ = ticker.tick() => {
-                let now = chrono_timestamp();
+                let now = unix_timestamp();
                 let mut client = match connect_to_daemon().await {
                     Ok(c) => c,
                     Err(e) => {
@@ -518,17 +518,23 @@ async fn watch() -> Result<()> {
     Ok(())
 }
 
-fn chrono_timestamp() -> String {
+/// Seconds since the Unix epoch, stamped on each `watch` line.
+///
+/// Raw epoch seconds rather than a wall-clock rendering. They carry the date,
+/// so a watch left running overnight does not print the same stamp twice; they
+/// need no zone marker, so correlating a line against journald is arithmetic
+/// rather than guesswork; and they sort. Whatever reads the stream renders one
+/// when a human wants it (`date -d @1789437608`), which keeps date formatting
+/// out of this crate's dependencies.
+///
+/// This replaced a hand-rolled `secs % 86400` split into hh:mm:ss, which was
+/// UTC but carried no marker saying so, and wrapped at midnight.
+fn unix_timestamp() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let secs = SystemTime::now()
+    SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
-        .as_secs();
-    let s = secs % 86400;
-    let h = s / 3600;
-    let m = (s % 3600) / 60;
-    let sec = s % 60;
-    format!("{h:02}:{m:02}:{sec:02}")
+        .as_secs()
 }
 
 /// Prints how to read personad's log on this platform.
