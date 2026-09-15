@@ -44,14 +44,25 @@ fn default_gnupg_dir() -> std::path::PathBuf {
     std::path::PathBuf::from(home).join(".gnupg")
 }
 
-/// Pushes a candidate for a primary key whose secret half the operator holds.
+/// Returns true if the record's validity field marks it revoked.
+///
+/// Field 2 of a `sec` or `uid` record. A revocation certificate is the owner's
+/// explicit statement that the key must not be used, so it must not become an
+/// authorization subject even when its secret half is right here. Expiry is
+/// deliberately not treated the same way: the operator still holds the secret
+/// half of an expired key, and an expired identity beats no identity at all.
+fn is_revoked(field: Option<&&str>) -> bool {
+    matches!(field, Some(&"r"))
+}
+
+/// Pushes a candidate for a primary key the operator holds and has not revoked.
 fn flush_key(
     candidates: &mut Vec<Candidate>,
     fingerprint: Option<String>,
     uid: Option<String>,
-    secret_held: bool,
+    enrollable: bool,
 ) {
-    if let (true, Some(fp), Some(uid)) = (secret_held, fingerprint, uid) {
+    if let (true, Some(fp), Some(uid)) = (enrollable, fingerprint, uid) {
         candidates.push(make_candidate(fp, uid));
     }
 }
@@ -60,7 +71,7 @@ fn parse_gpg_colons(output: &str) -> Vec<Candidate> {
     let mut candidates = Vec::new();
     let mut current_fp: Option<String> = None;
     let mut current_uid: Option<String> = None;
-    let mut secret_held = false;
+    let mut enrollable = false;
     // gpg prints an `fpr` after the primary and another after every subkey.
     // Only the first one names the identity; this flag consumes it.
     let mut want_primary_fpr = false;
@@ -73,26 +84,31 @@ fn parse_gpg_colons(output: &str) -> Vec<Candidate> {
                     &mut candidates,
                     current_fp.take(),
                     current_uid.take(),
-                    secret_held,
+                    enrollable,
                 );
                 // Field 15 says where the secret key lives: `+` local, `#` not
                 // available (offline-primary stub), anything else a token
                 // serial number. A stub proves no more than a stranger's
-                // public key does.
-                secret_held = fields.get(14).is_some_and(|f| *f != "#");
+                // public key does. Possession is necessary but not
+                // sufficient: a revoked key is one the owner has withdrawn.
+                let secret_held = fields.get(14).is_some_and(|f| *f != "#");
+                enrollable = secret_held && !is_revoked(fields.get(1));
                 want_primary_fpr = true;
             }
             Some(&"fpr") if want_primary_fpr => {
                 current_fp = fields.get(9).map(|s| s.to_string());
                 want_primary_fpr = false;
             }
-            Some(&"uid") if current_uid.is_none() => {
+            // gpg lists revoked uids after live ones, so first-uid-wins picks
+            // a live address on its own; this guard holds when that ordering
+            // does not. The operator reads this string to choose an identity.
+            Some(&"uid") if current_uid.is_none() && !is_revoked(fields.get(1)) => {
                 current_uid = fields.get(9).map(|s| s.to_string());
             }
             _ => {}
         }
     }
-    flush_key(&mut candidates, current_fp, current_uid, secret_held);
+    flush_key(&mut candidates, current_fp, current_uid, enrollable);
     candidates
 }
 
@@ -169,6 +185,24 @@ ssb:u:2048:1:FA6F485F7C9D2A23:1789436364::::::e:::+:::23:\n\
 fpr:::::::::5C279EBDFC1ED9498785B16FFA6F485F7C9D2A23:\n\
 grp:::::::::205EF534C20346592E8EA09DDE80AAC06C0D06D8:\n";
 
+    /// A key the owner revoked, by importing the revocation certificate gpg
+    /// wrote at generation. Revoking the key marks every uid `r` as well.
+    const REVOKED_KEY: &str = "\
+sec:r:2048:1:ACDA14AE1B81B6E6:1789437608:::-:::sc:::+:::23::0:\n\
+fpr:::::::::C48C869670DD7FDADADE70C5ACDA14AE1B81B6E6:\n\
+uid:r::::1789437609::7708B404760C34E3AEFB2FC069C86D79AA921DD5::Persona Current <current@example.invalid>::::::::::0:\n\
+uid:r::::::776A75185DC89FE288065594A412DF1ACA1D95D5::Persona Retired <retired@example.invalid>::::::::::0:\n";
+
+    /// The same key before the revocation, with one of its two uids revoked via
+    /// `gpg --quick-revoke-uid`. Real gpg prints the live uid first here; the
+    /// two uid lines are swapped below so the assertion tests the guard rather
+    /// than gpg's ordering.
+    const REVOKED_UID_KEY: &str = "\
+sec:u:2048:1:ACDA14AE1B81B6E6:1789437608:::u:::scSC:::+:::23::0:\n\
+fpr:::::::::C48C869670DD7FDADADE70C5ACDA14AE1B81B6E6:\n\
+uid:r::::::776A75185DC89FE288065594A412DF1ACA1D95D5::Persona Retired <retired@example.invalid>::::::::::0:\n\
+uid:u::::1789437609::7708B404760C34E3AEFB2FC069C86D79AA921DD5::Persona Current <current@example.invalid>::::::::::0:\n";
+
     const HELD_FP: &str = "dca433d5e52c0e3bc2ffaacaf89b03dd7c1c7cf3";
     const HELD_SUBKEY_FP: &str = "6ff79de07e215542036ac32495f75069f2c940fa";
     const STUB_FP: &str = "0a4cdbe63c2e43ad2f713ed74912b1b94bcc7ce7";
@@ -214,6 +248,46 @@ grp:::::::::205EF534C20346592E8EA09DDE80AAC06C0D06D8:\n";
         let candidates = parse_gpg_colons(&listing);
         assert_eq!(candidates.len(), 1, "smartcard key dropped");
         assert!(candidates[0].spiffe_id().uri().contains(HELD_FP));
+    }
+
+    #[test]
+    fn parse_gpg_colons_rejects_revoked_primary() {
+        assert!(parse_gpg_colons(REVOKED_KEY).is_empty());
+
+        // The same listing with one uid left live. gpg does not print this --
+        // revoking a primary marks every uid `r`, so the real fixture above is
+        // refused for having no live uid and never reaches the `sec` check.
+        // Field 2 of `sec` is what refuses this one, which is the intent
+        // stated directly rather than inherited from how gpg marks uids.
+        let live_uid = REVOKED_KEY.replace("uid:r::::1789437609:", "uid:u::::1789437609:");
+        assert_ne!(live_uid, REVOKED_KEY, "fixture edit did not apply");
+        assert!(
+            parse_gpg_colons(&live_uid).is_empty(),
+            "revoked key enrolled"
+        );
+    }
+
+    #[test]
+    fn parse_gpg_colons_accepts_expired_primary() {
+        // An expired key is one the operator still holds; only the validity
+        // window lapsed. Dropping it would delete a capability rather than
+        // label it, so field 2 of `e` stays enrollable.
+        let listing = HELD_KEY.replace("sec:u:", "sec:e:");
+
+        let candidates = parse_gpg_colons(&listing);
+        assert_eq!(candidates.len(), 1, "expired key dropped");
+        assert!(candidates[0].spiffe_id().uri().contains(HELD_FP));
+    }
+
+    #[test]
+    fn parse_gpg_colons_skips_revoked_uid_for_display_name() {
+        let candidates = parse_gpg_colons(REVOKED_UID_KEY);
+        assert_eq!(candidates.len(), 1);
+        // A revoked address names someone the owner stopped answering as.
+        assert_eq!(
+            candidates[0].display_name,
+            "Persona Current <current@example.invalid>"
+        );
     }
 
     #[test]
