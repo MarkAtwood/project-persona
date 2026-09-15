@@ -531,11 +531,28 @@ fn chrono_timestamp() -> String {
     format!("{h:02}:{m:02}:{sec:02}")
 }
 
+/// Prints how to read personad's log on this platform.
+///
+/// Directions, not data: the platform's own reader does the work. So this goes
+/// to stdout and exits 0 the way `--help` does, rather than following the
+/// not-implemented commands to stderr and exit 1. journalctl is wrong on macOS,
+/// where launchd writes an agent's output to the file named in the plist and
+/// the unified log never sees it.
 async fn show_log() -> Result<()> {
-    println!("Note: personad writes structured audit events to its stderr/journald.");
-    println!("To view logs: journalctl --user -u personad -f");
-    println!("Or if running directly: check personad stderr output.");
-    Ok(())
+    println!("personad writes structured audit events to its stderr.");
+    #[cfg(target_os = "macos")]
+    {
+        println!("launchd routes that to a file; the unified log never sees it.");
+        println!("To follow it: tail -f ~/Library/Logs/personad.log");
+        return Ok(());
+    }
+    #[allow(unreachable_code)]
+    {
+        println!("systemd routes that to the journal.");
+        println!("To follow it: journalctl --user -u personad -f");
+        println!("Running personad by hand instead? Read its stderr.");
+        Ok(())
+    }
 }
 
 async fn install_service() -> Result<()> {
