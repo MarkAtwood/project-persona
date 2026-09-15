@@ -170,17 +170,41 @@ async fn whoami() -> Result<()> {
     Ok(())
 }
 
+/// Formats the count line for `persona enumerate`.
+///
+/// Sources and candidates are counted separately. `probe_sources` registers the
+/// Unix attestor unconditionally, so a run that yields no candidates still has
+/// at least one active source, and saying "no identity sources" would be false.
+///
+/// `sources` is the number of attestors `probe_sources` returned as active, not
+/// the number it checked: sources that failed their availability probe are not
+/// in the vector, and two are added without a probe at all. "active" is the
+/// quantity actually measured, so that is the word used.
+fn enumerate_summary(sources: usize, candidates: usize) -> String {
+    let s = if sources == 1 { "source" } else { "sources" };
+    let c = if candidates == 1 {
+        "candidate"
+    } else {
+        "candidates"
+    };
+    format!("{sources} identity {s} active, {candidates} {c} found")
+}
+
+/// Lists the identity candidates visible to this process.
+///
+/// This runs the attestors in the CLI, not in personad. Every probe reads
+/// process-local state, so the two see different worlds.
 async fn enumerate() -> Result<()> {
     use persona_attestors::probe_sources;
 
     let sources = probe_sources().await;
-    let mut any = false;
+    let mut candidates = 0usize;
 
     for attestor in &sources {
         match attestor.enumerate().await {
-            Ok(candidates) => {
-                for cand in candidates {
-                    any = true;
+            Ok(found) => {
+                for cand in found {
+                    candidates += 1;
                     println!(
                         "{} | {} | {}",
                         cand.source,
@@ -195,9 +219,11 @@ async fn enumerate() -> Result<()> {
         }
     }
 
-    if !any {
-        println!("no identity sources active");
-    }
+    eprintln!("{}", enumerate_summary(sources.len(), candidates));
+    eprintln!("This list is what this shell can see. personad probes its own environment,");
+    eprintln!("which this command does not read and cannot report: the daemon can hold");
+    eprintln!("identities missing from this list and miss ones this list shows. Ask personad");
+    eprintln!("directly with 'persona whoami'.");
 
     Ok(())
 }
@@ -509,7 +535,45 @@ async fn install_service() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::LAUNCHD_PLIST;
+    use super::{enumerate_summary, LAUNCHD_PLIST};
+
+    #[test]
+    fn enumerate_summary_counts_sources_and_candidates_separately() {
+        // The registry pushes the Unix attestor unconditionally, so zero candidates
+        // does not mean zero sources. The old wording collapsed the two and printed
+        // "no identity sources active" on a machine with one active source.
+        assert_eq!(
+            enumerate_summary(1, 0),
+            "1 identity source active, 0 candidates found"
+        );
+        assert_eq!(
+            enumerate_summary(4, 7),
+            "4 identity sources active, 7 candidates found"
+        );
+        assert_eq!(
+            enumerate_summary(2, 1),
+            "2 identity sources active, 1 candidate found"
+        );
+        assert_eq!(
+            enumerate_summary(0, 0),
+            "0 identity sources active, 0 candidates found"
+        );
+    }
+
+    #[test]
+    fn enumerate_summary_never_denies_sources_it_found() {
+        for sources in 1..8usize {
+            let line = enumerate_summary(sources, 0);
+            assert!(
+                line.starts_with(&format!("{sources} identity source")),
+                "the count must lead: {line}"
+            );
+            assert!(
+                !line.contains("0 identity"),
+                "a run with {sources} active sources must not report none: {line}"
+            );
+        }
+    }
 
     #[test]
     fn launchd_plist_is_a_template_that_substitutes_cleanly() {
