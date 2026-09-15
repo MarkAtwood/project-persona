@@ -3,13 +3,15 @@
   "title": "persona watch mixes diagnostics into its identity stream",
   "description": "persona/src/main.rs:479 and :500 print watch()'s failure lines with println!, so they land on stdout in the same '[{now}] {text}' shape as the real identity lines at :488. A consumer running 'persona watch \u003e identities.log' or piping into 'while read ts id' reads 'error:' as the SPIFFE ID field, so a personad outage is recorded as an identity change and the log gives no way to tell them apart afterwards.\n\nwatch is the command in this CLI whose output is most plausibly redirected -- it is a long-running monitor -- which is why this outranks the other stream defects even though the fix is two eprintln! calls.\n\nSeparate decision in the same function: the loop never exits non-zero and never stops after repeated failures, so a silently-dead daemon produces a stdout file that looks like normal operation. Staying a pure monitor is a legitimate choice; failing after N consecutive errors is also legitimate. Record whichever is chosen rather than leaving it implicit.\n\n'[{now}] no identity' at :492 is the weaker half. In a change-event stream, no-identity is arguably a real observed state, unlike whoami where persona-5s4b.122 ruled it a non-answer. If it stays on stdout it should be a distinguishable token rather than prose occupying the SPIFFE ID column.\n\nFound by the exit-code lens during the .122/.123/.124 pass; not fixed there because watch was not one of those beads.",
   "acceptance_criteria": "watch diagnostics go to stderr; identity lines stay on stdout in a parseable shape; the keep-running-vs-fail decision is recorded in the code or a bead.",
-  "status": "open",
+  "status": "closed",
   "priority": 2,
   "issue_type": "bug",
   "owner": "mark@reviewcommit.com",
   "created_at": "2026-09-15T03:47:24.313856473Z",
   "created_by": "agent",
-  "updated_at": "2026-09-15T03:47:24.313856473Z",
+  "updated_at": "2026-09-15T04:19:13.054981063Z",
+  "closed_at": "2026-09-15T04:19:13.054981063Z",
+  "close_reason": "Fixed in 76a4a7d: both error lines moved to stderr; identity lines stay on stdout. Verified by running with personad down -- stdout is 0 lines, the error appears on stderr, and timeout kills it at exit 124, i.e. it was still polling. The give-up question was decided by Mark: watch never terminates on its own. A daemon restart must not kill a watch someone is reading, and the fail-open hazard needs a command to exit before it can mislead, which watch does not. No threshold, no knob. 'no identity' stays on stdout as an observed state.",
   "labels": [
     "review"
   ],
