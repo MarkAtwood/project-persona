@@ -16,14 +16,16 @@
 //! of the same lookup. `id` rather than `getent` because POSIX mandates `id`
 //! and both CI legs carry it, while `getent` is absent on macOS and on musl.
 //!
-//! One test mutates the process environment, which is safe here and was not
-//! safe in `ssh_agent_live.rs`: the subject of these tests reads no environment
-//! variable at all, so no other test in this binary can observe the change.
+//! Nothing here mutates the process environment. The oracle below is a
+//! fork/exec that reads the `environ` array, and a sibling thread calling
+//! `setenv` can reallocate that array underneath it, so the one test that
+//! needs a stripped environment lives in `unix_account_bare_env.rs` and gets
+//! a process to itself.
 
 use std::process::Command;
 use std::time::SystemTime;
 
-use persona_attestors::{probe_sources, Attestor, Candidate, Claim, Evidence, UnixAttestor};
+use persona_attestors::{Attestor, Candidate, Claim, Evidence, UnixAttestor};
 use persona_core::{IdentityAssurance, PresenceLevel, TrustDomain};
 
 /// The uid `id -u` reports for this process.
@@ -183,53 +185,4 @@ async fn a_unix_account_is_iaa1_with_no_presence_because_a_uid_is_not_a_seat() {
          persona_require_presence be satisfied by a cron job. Reading logind or \
          utmp is a different claim and a separate bead."
     );
-}
-
-#[tokio::test]
-async fn the_os_is_an_identity_source_with_no_agent_no_token_and_no_cloud_account() {
-    // Take away what the other eight need. HOME is redirected rather than
-    // unset, so the oidc token scan and the gpg keyring scan look somewhere
-    // real and find nothing, instead of falling back to /root.
-    let empty_home = std::env::temp_dir().join(format!("persona-unix-bare-{}", std::process::id()));
-    std::fs::create_dir_all(&empty_home).expect("scratch dir");
-    std::env::set_var("HOME", &empty_home);
-    for var in [
-        "SSH_AUTH_SOCK",
-        "PERSONA_DID_KEYS",
-        "GNOME_DESKTOP_SESSION_ID",
-        "XDG_CURRENT_DESKTOP",
-    ] {
-        std::env::remove_var(var);
-    }
-
-    let sources = probe_sources().await;
-    let names: Vec<&str> = sources.iter().map(|a| a.name()).collect();
-
-    assert!(
-        names.contains(&"unix"),
-        "the OS is an identity source whenever the kernel is, so this source is \
-         never absent: {names:?}"
-    );
-    assert_eq!(
-        names.last(),
-        Some(&"unix"),
-        "position is load-bearing and invisible in a per-file diff: \
-         persona-grpc keeps the first claim seen at the winning tier, so an \
-         always-available iaa1 source placed any earlier takes the slot from an \
-         ssh key or a hardware touch at the same tier and re-homes every \
-         pseudonym derived from it: {names:?}"
-    );
-
-    // Availability the registry cannot fake: the source actually answers.
-    let unix = sources.last().expect("at least the unix source");
-    let candidates = unix.enumerate().await.expect("enumerate on a bare box");
-    assert_eq!(candidates.len(), 1);
-    let challenge = [0x2cu8; 32];
-    let evidence = unix
-        .prove(&candidates[0], &challenge)
-        .await
-        .expect("prove on a bare box");
-    assert!(Claim::derive(&candidates[0], &challenge, &evidence).is_some());
-
-    std::fs::remove_dir_all(&empty_home).expect("scratch dir cleanup");
 }
