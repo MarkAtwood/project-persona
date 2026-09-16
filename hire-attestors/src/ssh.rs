@@ -70,7 +70,7 @@ impl Default for SshAgentAttestor {
     }
 }
 
-async fn connect() -> Result<UnixStream, AttestorError> {
+pub(crate) async fn connect() -> Result<UnixStream, AttestorError> {
     let sock_path = std::env::var("SSH_AUTH_SOCK")
         .map_err(|_| AttestorError::Unavailable("SSH_AUTH_SOCK not set".into()))?;
     UnixStream::connect(&sock_path)
@@ -134,7 +134,22 @@ pub(crate) fn spiffe_path(key_blob: &[u8]) -> String {
     format!("key/{fingerprint}")
 }
 
-async fn list_identities(stream: &mut UnixStream) -> Result<Vec<(Vec<u8>, String)>, AttestorError> {
+/// The ed25519 public key an agent key blob carries, or `None` for any other
+/// key type or a malformed blob.
+///
+/// Used to match an agent key against a key named somewhere other than by its
+/// SSH fingerprint — a `did:key`, for instance. It answers "is this the same
+/// key?" and nothing else; whether a signature by it is any good is decided by
+/// a verifying constructor in `claim.rs`, never here.
+pub(crate) fn ed25519_point_of(key_blob: &[u8]) -> Option<[u8; 32]> {
+    let (algorithm, rest) = read_string(key_blob)?;
+    let (point, rest) = read_string(rest)?;
+    (algorithm == SSH_ED25519 && rest.is_empty()).then(|| point.try_into().ok())?
+}
+
+pub(crate) async fn list_identities(
+    stream: &mut UnixStream,
+) -> Result<Vec<(Vec<u8>, String)>, AttestorError> {
     let resp = agent_roundtrip(stream, SSH2_AGENTC_REQUEST_IDENTITIES, &[]).await?;
     if resp.first() != Some(&SSH2_AGENT_IDENTITIES_ANSWER) {
         return Err(AttestorError::Unavailable(
@@ -165,6 +180,55 @@ async fn list_identities(stream: &mut UnixStream) -> Result<Vec<(Vec<u8>, String
         ));
     }
     Ok(keys)
+}
+
+/// Ask the agent to sign `challenge` with `key_blob`, returning the signature
+/// blob as the agent framed it: `[algorithm:string][signature:string]`.
+///
+/// Returned framed rather than unwrapped, because the verifying constructors
+/// check that the signature names the same algorithm as the key, and a caller
+/// handing over a bare 64 bytes has already discarded what that check reads.
+///
+/// `subject` appears only in the refusal message, so an operator reading a log
+/// can tell which identity the agent declined.
+pub(crate) async fn sign(
+    stream: &mut UnixStream,
+    key_blob: &[u8],
+    challenge: &[u8],
+    subject: &str,
+) -> Result<Vec<u8>, AttestorError> {
+    // [key_blob:string][data:string][flags:u32be]. flags = 0: the three defined
+    // flags (OLD_SIGNATURE, RSA_SHA2_256, RSA_SHA2_512) are all RSA-only, and
+    // every caller here has already refused anything but ssh-ed25519.
+    let mut payload = Vec::with_capacity(key_blob.len() + challenge.len() + 12);
+    push_string(&mut payload, key_blob);
+    push_string(&mut payload, challenge);
+    payload.extend_from_slice(&0u32.to_be_bytes());
+
+    let resp = agent_roundtrip(stream, SSH2_AGENTC_SIGN_REQUEST, &payload).await?;
+    let body = match resp.split_first() {
+        Some((&SSH2_AGENT_SIGN_RESPONSE, body)) => body,
+        Some((&SSH_AGENT_FAILURE, _)) => {
+            return Err(AttestorError::ChallengeFailed(format!(
+                "ssh-agent declined to sign for {subject}"
+            )))
+        }
+        _ => {
+            return Err(AttestorError::ChallengeFailed(
+                "unexpected response to ssh-agent sign request".into(),
+            ))
+        }
+    };
+
+    let (signature, trailing) = read_string(body).ok_or_else(|| {
+        AttestorError::ChallengeFailed("malformed SIGN_RESPONSE from ssh-agent".into())
+    })?;
+    if !trailing.is_empty() {
+        return Err(AttestorError::ChallengeFailed(
+            "trailing bytes after ssh-agent signature".into(),
+        ));
+    }
+    Ok(signature.to_vec())
 }
 
 #[async_trait]
@@ -246,41 +310,10 @@ impl Attestor for SshAgentAttestor {
             )));
         }
 
-        // [key_blob:string][data:string][flags:u32be]. flags = 0: the three
-        // defined flags (OLD_SIGNATURE, RSA_SHA2_256, RSA_SHA2_512) are all
-        // RSA-only, and RSA keys are refused above.
-        let mut payload = Vec::with_capacity(key_blob.len() + challenge.len() + 12);
-        push_string(&mut payload, &key_blob);
-        push_string(&mut payload, challenge);
-        payload.extend_from_slice(&0u32.to_be_bytes());
-
-        let resp = agent_roundtrip(&mut stream, SSH2_AGENTC_SIGN_REQUEST, &payload).await?;
-        let body = match resp.split_first() {
-            Some((&SSH2_AGENT_SIGN_RESPONSE, body)) => body,
-            Some((&SSH_AGENT_FAILURE, _)) => {
-                return Err(AttestorError::ChallengeFailed(format!(
-                    "ssh-agent declined to sign for {}",
-                    candidate.path
-                )))
-            }
-            _ => {
-                return Err(AttestorError::ChallengeFailed(
-                    "unexpected response to ssh-agent sign request".into(),
-                ))
-            }
-        };
-
-        let (signature, trailing) = read_string(body).ok_or_else(|| {
-            AttestorError::ChallengeFailed("malformed SIGN_RESPONSE from ssh-agent".into())
-        })?;
-        if !trailing.is_empty() {
-            return Err(AttestorError::ChallengeFailed(
-                "trailing bytes after ssh-agent signature".into(),
-            ));
-        }
+        let signature = sign(&mut stream, &key_blob, challenge, &candidate.path).await?;
 
         Ok(vec![Evidence::Possession(
-            ChallengeSignature::verify_ssh_ed25519(candidate, challenge, &key_blob, signature)?,
+            ChallengeSignature::verify_ssh_ed25519(candidate, challenge, &key_blob, &signature)?,
         )])
     }
 }

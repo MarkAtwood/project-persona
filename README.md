@@ -31,7 +31,7 @@ identity claims it signs. Treat the assurance and presence levels below as targe
 | JWT-SVID issuance, ephemeral in-memory CA | works |
 | Attestor registry, startup probing, `enumerate()` | works for most sources; returns candidates, not claims |
 | CLI (`whoami`, `enumerate`, `fetch-jwt`, ...) | works -- `fetch-jwt --spiffe-id` names one identity to prove |
-| `prove()` -- evidence backing a claim | ssh-agent (ed25519 keys only) and gpg prove possession by signing the daemon's challenge; the Unix account source attests the local account and always succeeds. Every other attestor still declines |
+| `prove()` -- evidence backing a claim | ssh-agent (ed25519 keys only), gpg and `did:key` prove possession by signing the daemon's challenge; the Unix account source attests the local account and always succeeds. Every other attestor still declines |
 | `FetchJWTSVID` consent gate | an unnamed request proves only candidates that declare proving cannot prompt a human, so today it is answered by the Unix account source alone. Naming one identity in `spiffe_id` is the consent to prove it, and is how ssh-agent and gpg are reached |
 | Identity assurance levels | derived from evidence -- see below |
 | Presence levels | enforced across every audience, and unknown requirements are refused rather than ignored |
@@ -126,7 +126,7 @@ question from whether it substantiates its assurance row.
 | OIDC cached | iaa2/iaa1 | session | cross-platform | yes -- always registered, scans gcloud and Azure caches |
 | SSH agent | iaa1 | none | cross-platform | yes -- `prove()` is ed25519 only |
 | GPG | iaa1 | none | cross-platform | yes, when a `gpg` binary is present -- `prove()` signs the challenge through gpg-agent |
-| DID | iaa1/iaa2 | none | cross-platform | `did:key` yes, via `HIRE_DID_KEYS`; `did:web` no |
+| DID | iaa1/iaa2 | none | cross-platform | `did:key` yes, via `HIRE_DID_KEYS` -- `prove()` signs through whichever local agent holds the key the identifier encodes; `did:web` no |
 | Unix account | iaa1 | none | Linux, macOS, BSD | yes -- always available |
 
 ## Platform Support

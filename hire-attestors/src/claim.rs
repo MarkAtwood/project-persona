@@ -288,6 +288,78 @@ impl ChallengeSignature {
         })
     }
 
+    /// Check a signature by the key a `did:key` encodes, and witness it only if
+    /// every part holds.
+    ///
+    /// Four checks, and dropping any one makes the other three prove nothing:
+    ///
+    /// 1. the DID hashes to the path the candidate names — without this, the
+    ///    proof is of *some* DID the operator configured;
+    /// 2. the DID encodes an ed25519 key, by its multicodec prefix rather than
+    ///    by its shape;
+    /// 3. the signature names `ssh-ed25519` and carries exactly 64 bytes;
+    /// 4. the signature verifies over *this* challenge, under the key the DID
+    ///    itself encodes.
+    ///
+    /// Check 4 is why the identifier is the input rather than a public key: in
+    /// `did:key` the identifier *is* the verification method, so there is no
+    /// step where a caller could substitute a different key and no resolution
+    /// to get wrong. The DID string is passed in and check 1 is what stops a
+    /// caller passing one the candidate does not name.
+    ///
+    /// The signature arrives in SSH agent framing because the ssh agent is
+    /// where the secret half lives — see the `did_key` module header for why
+    /// hire looks there and holds no key material of its own. A future
+    /// custodian with different framing wants its own constructor here, not a
+    /// second format accepted by this one.
+    ///
+    /// ## Errors
+    /// Returns [`AttestorError::ChallengeFailed`] if any check fails. No variant
+    /// of failure yields evidence.
+    pub fn verify_did_key_ed25519(
+        candidate: &Candidate,
+        challenge: &[u8],
+        did: &str,
+        signature: &[u8],
+    ) -> Result<Self, AttestorError> {
+        if crate::did_key::spiffe_path(did) != candidate.path {
+            return Err(AttestorError::ChallengeFailed(
+                "did:key signature is for a DID the candidate does not name".into(),
+            ));
+        }
+
+        let point = crate::did_key::ed25519_point(did).ok_or_else(|| {
+            AttestorError::ChallengeFailed(format!("{did} does not encode an ed25519 key"))
+        })?;
+        let key = VerifyingKey::from_bytes(&point).map_err(|_| {
+            AttestorError::ChallengeFailed("did:key does not encode a valid ed25519 point".into())
+        })?;
+
+        let (sig_algorithm, rest) = read_string(signature).ok_or_else(malformed)?;
+        let (sig_bytes, rest) = read_string(rest).ok_or_else(malformed)?;
+        if sig_algorithm != SSH_ED25519 || !rest.is_empty() {
+            return Err(malformed());
+        }
+        let sig_bytes = <&[u8; 64]>::try_from(sig_bytes).map_err(|_| malformed())?;
+
+        // verify_strict, for the reasons given in `verify_ssh_ed25519`.
+        key.verify_strict(challenge, &Signature::from_bytes(sig_bytes))
+            .map_err(|_| {
+                AttestorError::ChallengeFailed(
+                    "did:key signature does not verify over the challenge".into(),
+                )
+            })?;
+
+        Ok(Self {
+            assertion: SignedAssertion::new(
+                sig_bytes.to_vec(),
+                "application/vnd.hire.did-key-ed25519-signature",
+            ),
+            challenge: challenge.to_vec(),
+            observed_at: SystemTime::now(),
+        })
+    }
+
     /// Check an OpenPGP signed message, and witness it only if every part holds.
     ///
     /// The second verifying constructor, and like the first it is the trust

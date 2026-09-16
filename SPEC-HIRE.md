@@ -216,9 +216,10 @@ Each source implements a plugin interface: `enumerate()`, `prove(candidate, chal
 - Notes: the candidate names the **primary** key; the signature may be made by a signing subkey, which is the smartcard shape -- a certify-only primary delegating to a subkey on the card. `VALIDSIG` carries both fingerprints and either may match. An offline-primary stub (`#` in field 15 of `sec`) is not enrolled even though gpg could sign with its subkeys
 
 **did-self** (`did:key`, `did:ipfs`, `did:web`)
-- Method: resolve DID document; sign challenge with controlled key
+- Method: for `did:key` there is no resolution step -- the identifier encodes the verification method, so the challenge is signed by the key the identifier names. hire holds no key material of its own, so the secret half is looked for in the local ssh agent; a `did:key` no local agent can answer for enumerates and does not prove. `did:web` and `did:ipfs` are not implemented
 - Returns: DID, verification method, signed assertion
 - Assurance: `iaa1` for `did:key` (self-issued); `iaa2` for `did:web` if the DID document is hosted under a domain the user controls
+- Proof cost: interactive, because the ssh agent prompts for a key added with `ssh-add -c` and does not report that constraint
 
 **unix-account** (Linux, macOS, BSD)
 - Method: `getuid()` for the account, `getpwuid_r` for its name; no agent, no socket, no network
