@@ -13,8 +13,8 @@ pub mod tailscale;
 pub mod unix;
 
 pub use claim::{
-    AttainableAssurance, Candidate, ChallengeSignature, Claim, Evidence, HardwareTouch,
-    PlatformIdentity, ProofCost, SelfAssertedDomain, VerifiedToken,
+    AttainableAssurance, Candidate, ChallengeSignature, Claim, DaemonIdentity, Evidence,
+    HardwareTouch, PlatformIdentity, ProofCost, SelfAssertedDomain, VerifiedToken,
 };
 pub use did_key::DidKeyAttestor;
 pub use fido2::Fido2Attestor;

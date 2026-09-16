@@ -628,6 +628,67 @@ impl PlatformIdentity {
     }
 }
 
+/// A locally-installed daemon's answer to which identity it holds, and the
+/// moment the daemon was asked.
+///
+/// TRUST FOLLOWS THE INSTALL, AND THAT IS THE WHOLE DECISION HERE. tailscaled
+/// runs because the operator installed it, listens on a socket under
+/// `/var/run` that only their account reaches, and reports an identity an
+/// identity provider issued it. hire believes it, for the same reason
+/// [`PlatformIdentity`] believes `getuid()`: whoever can replace the daemon can
+/// replace `hired`. Refusing to believe it does not make the identity local, it
+/// makes Tailscale unsupported.
+///
+/// It is [`IdentityAssurance::Iaa2`] and [`PresenceLevel::None`] together,
+/// which no other evidence variant is, and the pairing is the point: an IdP
+/// verified this human at some past moment, and nothing here says anybody is at
+/// the keyboard now. A Tailscale login outlives the session that made it by
+/// months.
+///
+/// NOT A PLACE TO PUT A BEARER TOKEN. This variant is for a daemon answering a
+/// question hire asks it right now, not for an artifact hire read off disk. A
+/// cached OIDC token has a real signature that could be checked against the
+/// issuer's JWKS and is not checked today; routing it through here would mint
+/// `Iaa2` from an unverified file. That one belongs in [`VerifiedToken`],
+/// behind the verifying constructor it does not yet have.
+///
+/// The instant is stamped in [`observe`](Self::observe) rather than passed in,
+/// so nothing can re-date a cached answer, and there is no signature because
+/// there is none to have — the daemon holds the credential, not hire.
+#[derive(Debug, Clone)]
+pub struct DaemonIdentity {
+    subject: String,
+    asked_at: SystemTime,
+}
+
+impl DaemonIdentity {
+    /// Record that a local daemon was asked which identity it holds, and named
+    /// `subject` — a SPIFFE path component, as it would appear on a
+    /// [`Candidate`].
+    ///
+    /// Crate-visible, so no downstream crate can state an identity no daemon
+    /// named.
+    pub(crate) fn observe(subject: impl Into<String>) -> Self {
+        Self {
+            subject: subject.into(),
+            asked_at: SystemTime::now(),
+        }
+    }
+
+    /// The identity the daemon named, as a SPIFFE path component.
+    pub fn subject(&self) -> &str {
+        &self.subject
+    }
+
+    /// When the daemon was asked.
+    ///
+    /// It dates a question, not a person — read [`PlatformIdentity::asked_at`],
+    /// which says the same thing at greater length and means it here too.
+    pub fn asked_at(&self) -> SystemTime {
+        self.asked_at
+    }
+}
+
 /// Evidence supporting a candidate, produced by
 /// [`Attestor::prove`](crate::Attestor::prove).
 ///
@@ -645,6 +706,8 @@ pub enum Evidence {
     HardwarePresence(HardwareTouch),
     /// The operating system named the account this process runs under.
     PlatformAssertion(PlatformIdentity),
+    /// A locally-installed daemon named the identity it holds.
+    DaemonAssertion(DaemonIdentity),
 }
 
 impl Evidence {
@@ -682,6 +745,12 @@ impl Evidence {
             Evidence::PlatformAssertion(p) => {
                 (IdentityAssurance::Iaa1, PresenceLevel::None, p.asked_at())
             }
+            // A daemon hire trusts by installation reports an identity an IdP
+            // issued it. That is IdP-verified, and it is not a human being
+            // present: the login that produced it may be months old.
+            Evidence::DaemonAssertion(d) => {
+                (IdentityAssurance::Iaa2, PresenceLevel::None, d.asked_at())
+            }
         }
     }
 
@@ -708,6 +777,12 @@ impl Evidence {
             // a legitimately obtained one re-wraps onto an arbitrary candidate
             // and mints a claim for an account nobody asked the kernel about.
             Evidence::PlatformAssertion(p) => p.account() == candidate.path,
+            // Unbound to the request for the same reason, and bound to the
+            // subject for the same reason: the daemon answers the same question
+            // however it is asked, so there is no nonce for it to carry, and a
+            // value obtained legitimately from one candidate's `prove` must not
+            // re-wrap onto another.
+            Evidence::DaemonAssertion(d) => d.subject() == candidate.path,
             Evidence::IdpVerified(_) | Evidence::HardwarePresence(_) => true,
         }
     }
@@ -988,6 +1063,17 @@ mod tests {
         assert!(!names_key("", PRIMARY_FPR));
     }
 
+    fn daemon_assertion(at: SystemTime) -> Evidence {
+        daemon_assertion_for(candidate().path, at)
+    }
+
+    fn daemon_assertion_for(subject: impl Into<String>, at: SystemTime) -> Evidence {
+        Evidence::DaemonAssertion(DaemonIdentity {
+            subject: subject.into(),
+            asked_at: at,
+        })
+    }
+
     #[test]
     fn no_evidence_yields_no_claim() {
         assert!(Claim::derive(&candidate(), TEST_CHALLENGE, &[]).is_none());
@@ -998,6 +1084,35 @@ mod tests {
         let c = Claim::derive(&candidate(), TEST_CHALLENGE, &[possession()]).unwrap();
         assert_eq!(c.assurance(), IdentityAssurance::Iaa1);
         assert_eq!(c.presence(), PresenceLevel::None);
+    }
+
+    #[test]
+    fn a_daemon_assertion_is_iaa2_with_no_presence() {
+        // The pairing no other variant has, and the one the tailscale attestor
+        // rests on: an IdP verified this human at some past moment, and nothing
+        // says anybody is at the keyboard now.
+        let c = Claim::derive(
+            &candidate(),
+            TEST_CHALLENGE,
+            &[daemon_assertion(epoch_plus(1_000))],
+        )
+        .unwrap();
+        assert_eq!(c.assurance(), IdentityAssurance::Iaa2);
+        assert_eq!(c.presence(), PresenceLevel::None);
+        assert_eq!(c.attested_at(), epoch_plus(1_000));
+    }
+
+    #[test]
+    fn a_daemon_assertion_about_another_subject_is_not_evidence() {
+        // Obtainable by any caller of `prove` and carrying no secret, so
+        // without the subject comparison a legitimately obtained one re-wraps
+        // onto an arbitrary candidate -- and this one mints Iaa2, not the floor.
+        assert!(Claim::derive(
+            &candidate(),
+            TEST_CHALLENGE,
+            &[daemon_assertion_for("user/someone-else", epoch_plus(1_000))],
+        )
+        .is_none());
     }
 
     #[test]

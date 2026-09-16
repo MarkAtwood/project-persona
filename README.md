@@ -31,8 +31,8 @@ identity claims it signs. Treat the assurance and presence levels below as targe
 | JWT-SVID issuance, ephemeral in-memory CA | works |
 | Attestor registry, startup probing, `enumerate()` | works for most sources; returns candidates, not claims |
 | CLI (`whoami`, `enumerate`, `fetch-jwt`, ...) | works -- `fetch-jwt --spiffe-id` names one identity to prove |
-| `prove()` -- evidence backing a claim | ssh-agent (ed25519 keys only), gpg and `did:key` prove possession by signing the daemon's challenge; the Unix account source attests the local account and always succeeds. Every other attestor still declines |
-| `FetchJWTSVID` consent gate | an unnamed request proves only candidates that declare proving cannot prompt a human, so today it is answered by the Unix account source alone. Naming one identity in `spiffe_id` is the consent to prove it, and is how ssh-agent and gpg are reached |
+| `prove()` -- evidence backing a claim | ssh-agent (ed25519 keys only), gpg and `did:key` prove possession by signing the daemon's challenge; tailscaled and the kernel are asked again and must answer the same way. OIDC, FIDO2, PIV and GOA still decline |
+| `FetchJWTSVID` consent gate | an unnamed request proves only candidates that declare proving cannot prompt a human -- Tailscale where it runs, the Unix account otherwise. Naming one identity in `spiffe_id` is the consent to prove it, and is how ssh-agent, gpg and `did:key` are reached |
 | Identity assurance levels | derived from evidence -- see below |
 | Presence levels | enforced across every audience, and unknown requirements are refused rather than ignored |
 | Presence freshness (`hire_max_age`, 300s presence TTL) | enforced -- but no attestor yet establishes presence at all, so the bound is checked against an observation that always reports no presence |
@@ -117,7 +117,7 @@ question from whether it substantiates its assurance row.
 
 | Source | Assurance | Presence | Platforms | Built |
 |---|---|---|---|---|
-| Tailscale | iaa2 | none | Linux | yes -- probes `/var/run/tailscale/tailscaled.sock`, the Linux path; the macOS and Windows clients do not create it |
+| Tailscale | iaa2 | none | Linux | yes -- probes `/var/run/tailscale/tailscaled.sock`, the Linux path; the macOS and Windows clients do not create it. `prove()` re-reads the daemon's status and requires the same answer |
 | FIDO2 (libfido2) | iaa3 | hardware | Linux, macOS | yes, behind `--features fido2`; off in a default build. Not Windows: `hired` does not run there |
 | PIV / smartcard | iaa3 | hardware (with PIN) | cross-platform | no -- `is_available()` returns false even with `--features pkcs11` |
 | Windows Hello | iaa3 | hardware | Windows | no -- no attestor exists |
