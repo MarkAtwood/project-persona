@@ -1,13 +1,34 @@
 //! GPG attestor — enumerates keys whose secret half the operator holds, via
-//! `gpg --list-secret-keys --with-colons`.
+//! `gpg --list-secret-keys --with-colons`, and proves one by having gpg-agent
+//! sign the daemon's challenge.
 //!
-// ponytail: enumerate only; signing not implemented | upgrade path is
-//   gpg --detach-sign --local-user <fingerprint> via stdin/stdout
+//! The secret key never leaves the agent, and on a smartcard it never leaves
+//! the card. That is the kernel.org signing workflow, and it is why this is the
+//! shortest path to a real hardware proof on a box that has no FIDO2 support
+//! compiled in: a Yubikey or Nitrokey holding a PGP key is reached through the
+//! gpg already installed, with no new dependency and no new feature flag.
+//!
+//! Proof is possession and nothing else — `Iaa1`, no presence. pinentry may
+//! well have appeared, and that is deliberately not read as a human being
+//! present: gpg-agent signs silently for a key already cached, so the same key
+//! proves with or without anybody there. What a prompt proves is not knowable
+//! from this side of it, and guessing would put a presence claim on a JWT that
+//! nothing observed.
+//!
+// ponytail: the verifier is the locally installed gpg | ceiling: hire believes
+//   what `/usr/bin/gpg` reports about a signature | upgrade path: none worth
+//   taking — see ChallengeSignature::verify_openpgp, where in-process packet
+//   parsing is shown to shrink the trust set by nothing, because the public key
+//   it would verify against comes from the same binary's keyring.
 
 use async_trait::async_trait;
+use std::path::Path;
+use tokio::io::AsyncWriteExt as _;
 
+use crate::claim::ChallengeSignature;
 use crate::{
-    AttainableAssurance, Attestor, AttestorError, Candidate, ProofCost, SelfAssertedDomain,
+    AttainableAssurance, Attestor, AttestorError, Candidate, Evidence, ProofCost,
+    SelfAssertedDomain,
 };
 
 /// Attestor that lists GPG keys from the user's keyring.
@@ -19,9 +40,9 @@ impl GpgAttestor {
         Self
     }
 
-    /// Returns true if a gpg binary exists and `~/.gnupg/` is present.
+    /// Returns true if a gpg binary exists and its home directory is present.
     pub fn is_available() -> bool {
-        which_gpg().is_some() && default_gnupg_dir().exists()
+        which_gpg().is_some() && gnupg_home().exists()
     }
 }
 
@@ -31,7 +52,12 @@ impl Default for GpgAttestor {
     }
 }
 
-fn which_gpg() -> Option<std::path::PathBuf> {
+/// The gpg to run, from a fixed list rather than from `PATH`.
+///
+/// `PATH` is inherited from whatever started the daemon, so resolving through
+/// it would let anything earlier on it answer for the operator's keyring — and
+/// this binary is the verifier as well as the signer.
+pub(crate) fn which_gpg() -> Option<std::path::PathBuf> {
     for p in &["/usr/bin/gpg", "/usr/local/bin/gpg", "/usr/bin/gpg2"] {
         let p = std::path::Path::new(p);
         if p.exists() {
@@ -41,9 +67,67 @@ fn which_gpg() -> Option<std::path::PathBuf> {
     None
 }
 
-fn default_gnupg_dir() -> std::path::PathBuf {
+/// Where gpg will look for the keyring, by gpg's own rule.
+///
+/// `GNUPGHOME` first, because that is what the gpg this module runs will
+/// honour. Checking `~/.gnupg` while gpg reads somewhere else would report a
+/// source unavailable that works, and available that does not.
+fn gnupg_home() -> std::path::PathBuf {
+    if let Some(home) = std::env::var_os("GNUPGHOME") {
+        return std::path::PathBuf::from(home);
+    }
     let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_owned());
     std::path::PathBuf::from(home).join(".gnupg")
+}
+
+/// Run gpg with the batch flags every call needs, feeding `stdin` and
+/// collecting both output streams.
+///
+/// `--batch` and `--no-tty` keep gpg from ever trying to read a passphrase off
+/// the daemon's terminal, which it does not have. They do not stop gpg-agent
+/// raising its own pinentry, and nothing here should: that dialog belongs to
+/// the operator, and how long they take to answer it is their business, so
+/// there is no timeout on this call. It is reached only from an explicitly
+/// requested proof — `FetchJWTSVID` never gets here, because gpg candidates
+/// declare [`ProofCost::Interactive`].
+///
+/// The write runs in its own task rather than ahead of the read. gpg's output
+/// is a few hundred bytes today and a pipe buffer holds far more, so the
+/// ordering cannot deadlock in practice; doing it this way means it cannot
+/// deadlock in principle either, for the cost of one spawn.
+pub(crate) async fn run(
+    gpg: &Path,
+    args: &[&str],
+    stdin: &[u8],
+) -> Result<std::process::Output, AttestorError> {
+    let mut child = tokio::process::Command::new(gpg)
+        .args(["--batch", "--no-tty"])
+        .args(args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| AttestorError::Unavailable(format!("gpg exec failed: {e}")))?;
+
+    let mut pipe = child
+        .stdin
+        .take()
+        .ok_or_else(|| AttestorError::Unavailable("gpg stdin was not piped".into()))?;
+    let payload = stdin.to_vec();
+    let writer = tokio::spawn(async move {
+        pipe.write_all(&payload).await?;
+        pipe.shutdown().await
+    });
+
+    let output = child
+        .wait_with_output()
+        .await
+        .map_err(|e| AttestorError::Unavailable(format!("gpg did not run: {e}")))?;
+    // A gpg that exited before reading its input breaks the pipe, and that is
+    // gpg's answer rather than an error of ours -- the exit status and the
+    // status lines say what went wrong, and they are what the caller reads.
+    let _ = writer.await;
+    Ok(output)
 }
 
 /// Returns true if the record's validity field marks it revoked.
@@ -161,6 +245,68 @@ impl Attestor for GpgAttestor {
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         Ok(parse_gpg_colons(&stdout))
+    }
+
+    async fn prove(
+        &self,
+        candidate: &Candidate,
+        challenge: &[u8],
+    ) -> Result<Vec<Evidence>, AttestorError> {
+        let gpg =
+            which_gpg().ok_or_else(|| AttestorError::Unavailable("gpg binary not found".into()))?;
+
+        // Re-enumerate rather than trust the path, exactly as ssh.rs re-lists.
+        // It costs one `gpg --list-secret-keys` and asks the truthful question:
+        // is this key held and enrollable *now*? Reading the fingerprint back
+        // out of the enumerated candidate also means the enrolment rule -- no
+        // stub, no revoked key -- gates signing too, with one spelling of it.
+        let fingerprint = self
+            .enumerate()
+            .await?
+            .iter()
+            .find(|c| c.path == candidate.path)
+            .and_then(|c| c.path.strip_prefix("gpg/"))
+            .map(str::to_owned)
+            .ok_or_else(|| {
+                AttestorError::ChallengeFailed(format!(
+                    "gpg does not hold an enrollable key for {}",
+                    candidate.path
+                ))
+            })?;
+
+        // Inline rather than detached, so the verifier can compare the data the
+        // signature actually covers against the challenge instead of being told
+        // what was signed. `--local-user <fingerprint>` without a trailing `!`:
+        // the `!` would force the primary key itself, and the hardware case
+        // this exists for is a certify-only primary that delegates signing to a
+        // subkey on the card. The primary is named in gpg's VALIDSIG output and
+        // that is where the candidate is matched.
+        let signed = run(
+            &gpg,
+            &["--local-user", &fingerprint, "--sign", "--output", "-"],
+            challenge,
+        )
+        .await?;
+
+        if !signed.status.success() {
+            // The operator's own reason -- key expired, pinentry cancelled, card
+            // not inserted -- is worth having in the log and is not worth
+            // putting in the error a consumer sees.
+            tracing::debug!(
+                event = "gpg_sign_failed",
+                key = %candidate.path,
+                stderr = %String::from_utf8_lossy(&signed.stderr).trim(),
+                "gpg-agent did not sign the challenge"
+            );
+            return Err(AttestorError::ChallengeFailed(format!(
+                "gpg-agent did not sign for {}",
+                candidate.path
+            )));
+        }
+
+        Ok(vec![Evidence::Possession(
+            ChallengeSignature::verify_openpgp(candidate, challenge, &signed.stdout).await?,
+        )])
     }
 }
 

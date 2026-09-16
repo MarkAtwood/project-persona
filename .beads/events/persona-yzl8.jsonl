@@ -2,3 +2,4 @@
 {"id":"01a0a6ca-f798-7214-a7a8-ff31dad989c0","issue_id":"persona-yzl8","event_type":"label_added","actor":"agent","comment":"Added label: security","created_at":"2026-09-15T20:38:34.64813727Z"}
 {"id":"01a0a6ca-f79b-7d16-89d0-f84f6aa95736","issue_id":"persona-yzl8","event_type":"label_added","actor":"agent","comment":"Added label: crypto","created_at":"2026-09-15T20:38:34.651858248Z"}
 {"id":"01a0a6ca-f79f-7aa8-8560-51fae2661576","issue_id":"persona-yzl8","event_type":"label_added","actor":"agent","comment":"Added label: correctness","created_at":"2026-09-15T20:38:34.655698822Z"}
+{"id":"01a0a7c4-524b-75ed-9008-bbf099cb3f4f","issue_id":"persona-yzl8","event_type":"closed","actor":"agent","old_value":"","new_value":"Landed in 84f6596 and 3b482e5; full workspace suite green, clippy and fmt clean.","created_at":"2026-09-16T01:10:56.331389372Z"}

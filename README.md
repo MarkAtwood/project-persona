@@ -31,8 +31,8 @@ identity claims it signs. Treat the assurance and presence levels below as targe
 | JWT-SVID issuance, ephemeral in-memory CA | works |
 | Attestor registry, startup probing, `enumerate()` | works for most sources; returns candidates, not claims |
 | CLI (`whoami`, `enumerate`, `fetch-jwt`, ...) | works |
-| `prove()` -- evidence backing a claim | ssh-agent (ed25519 keys only) proves possession; the Unix account source attests the local account and always succeeds. Every other attestor still declines |
-| `FetchJWTSVID` consent gate | proves only candidates that declare proving cannot prompt a human. ssh-agent and gpg cannot give that guarantee, so today the Unix account source is the only one that reaches issuance |
+| `prove()` -- evidence backing a claim | ssh-agent (ed25519 keys only) and gpg prove possession by signing the daemon's challenge; the Unix account source attests the local account and always succeeds. Every other attestor still declines |
+| `FetchJWTSVID` consent gate | proves only candidates that declare proving cannot prompt a human. ssh-agent and gpg cannot give that guarantee -- so both can prove, and neither is reached this way until `hire_min_assurance` lands the path that asks. Today the Unix account source is the only one that reaches issuance |
 | Identity assurance levels | derived from evidence -- see below |
 | Presence levels | enforced across every audience, and unknown requirements are refused rather than ignored |
 | Presence freshness (`hire_max_age`, 300s presence TTL) | enforced -- but no attestor yet establishes presence at all, so the bound is checked against an observation that always reports no presence |
@@ -125,7 +125,7 @@ question from whether it substantiates its assurance row.
 | GNOME Online Accounts | iaa2 | session | Linux (GNOME) | no -- `goa` is a placeholder feature with no D-Bus dependency |
 | OIDC cached | iaa2/iaa1 | session | cross-platform | yes -- always registered, scans gcloud and Azure caches |
 | SSH agent | iaa1 | none | cross-platform | yes -- `prove()` is ed25519 only |
-| GPG | iaa1 | none | cross-platform | yes, when a `gpg` binary is present |
+| GPG | iaa1 | none | cross-platform | yes, when a `gpg` binary is present -- `prove()` signs the challenge through gpg-agent |
 | DID | iaa1/iaa2 | none | cross-platform | `did:key` yes, via `HIRE_DID_KEYS`; `did:web` no |
 | Unix account | iaa1 | none | Linux, macOS, BSD | yes -- always available |
 
