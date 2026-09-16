@@ -195,6 +195,7 @@ async fn fetch_jwt(args: &[String]) -> Result<()> {
     use hire_grpc::workload::JwtsvidRequest;
 
     let mut audience: Option<String> = None;
+    let mut spiffe_id = String::new();
     let mut decode = false;
     let mut i = 0;
     while i < args.len() {
@@ -202,6 +203,14 @@ async fn fetch_jwt(args: &[String]) -> Result<()> {
             "--audience" => {
                 i += 1;
                 audience = args.get(i).cloned();
+            }
+            // Naming an identity is the consent to prove it, so this is the
+            // only way to reach a source whose proof may prompt -- gpg through
+            // pinentry, ssh-agent for a key added with `ssh-add -c`. Without it
+            // the daemon answers from the sources that cannot interrupt anyone.
+            "--spiffe-id" => {
+                i += 1;
+                spiffe_id = args.get(i).cloned().unwrap_or_default();
             }
             "--decode" => {
                 decode = true;
@@ -218,7 +227,7 @@ async fn fetch_jwt(args: &[String]) -> Result<()> {
         Some(a) => a,
         None => {
             eprintln!("error: --audience is required");
-            eprintln!("usage: hire fetch-jwt --audience <url> [--decode]");
+            eprintln!("usage: hire fetch-jwt --audience <url> [--spiffe-id <id>] [--decode]");
             std::process::exit(1);
         }
     };
@@ -228,7 +237,7 @@ async fn fetch_jwt(args: &[String]) -> Result<()> {
     let response = client
         .fetch_jwtsvid(JwtsvidRequest {
             audience: vec![audience],
-            spiffe_id: String::new(),
+            spiffe_id,
         })
         .await;
 

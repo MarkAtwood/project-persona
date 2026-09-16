@@ -4,10 +4,10 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tonic::{Request, Response, Status};
 
-use hire_attestors::{Attestor, Claim, ProofCost};
+use hire_attestors::{Attestor, Candidate, Claim, ProofCost};
 use hire_core::{
-    AudienceExtensions, HireClaims, PresenceInfo, PresenceLevel, SvidSigner, TrustBundleStore,
-    TrustDomain,
+    AudienceExtensions, HireClaims, PresenceInfo, PresenceLevel, SpiffeId, SvidSigner,
+    TrustBundleStore, TrustDomain,
 };
 
 use crate::consumer_attest::PeerIdentity;
@@ -71,6 +71,35 @@ pub struct WorkloadApiService {
     pub signer: Arc<SvidSigner>,
     pub bundles: Arc<TrustBundleStore>,
     pub attestors: Vec<Arc<dyn Attestor>>,
+}
+
+impl WorkloadApiService {
+    /// Every candidate every attestor can see, in attestor registration order.
+    ///
+    /// The order is load-bearing and is asserted in
+    /// `hire-grpc/tests/selector.rs`: among claims of equal assurance the first
+    /// registered attestor wins, and `registry.rs` appends the Unix account
+    /// source last precisely so that anything which actually proved a key beats
+    /// "the kernel says this uid". Before hire-5s4b.87 that behaviour rested on
+    /// the order of two push calls and nothing else.
+    ///
+    /// An attestor that fails to enumerate is logged and skipped. One source
+    /// being unreachable is not a reason to refuse an identity another source
+    /// can prove.
+    async fn enumerate_all(&self) -> Vec<(&Arc<dyn Attestor>, Candidate)> {
+        let mut found = Vec::new();
+        for attestor in &self.attestors {
+            match attestor.enumerate().await {
+                Ok(candidates) => {
+                    found.extend(candidates.into_iter().map(|c| (attestor, c)));
+                }
+                Err(e) => {
+                    tracing::warn!(name = attestor.name(), err = %e, "attestor enumerate failed");
+                }
+            }
+        }
+        found
+    }
 }
 
 impl WorkloadApiService {
@@ -280,75 +309,129 @@ impl SpiffeWorkloadApi for WorkloadApiService {
         // the `max` fold over require_presence.
         let max_age = exts.iter().filter_map(|e| e.max_age).min();
 
-        let challenge = new_challenge()?;
+        // Optional selector. `spiffe_id` unset means "whatever I am entitled
+        // to"; set, it names one identity and asks for that one.
+        // workload.proto:120-122 makes it optional, and ignoring it was worse
+        // than it looks: the response carries a per-consumer pseudonym rather
+        // than the requested ID, so a caller comparing the two cannot tell a
+        // substitution from ordinary pseudonymisation (hire-5s4b.87).
+        let requested = match req.spiffe_id.as_str() {
+            "" => None,
+            raw => Some(raw.parse::<SpiffeId>().map_err(|e| {
+                let reason = e.to_string();
+                tracing::info!(event = "svid_denied", reason = %reason);
+                Status::invalid_argument(reason)
+            })?),
+        };
 
-        // Discover candidates, then ask each attestor to prove one. Assurance
-        // exists only on the far side of prove(): a candidate with no evidence
-        // yields no claim at all.
-        //
-        // ponytail: every silent candidate is proved on every request | ceiling:
-        //   redundant proofs, one socket roundtrip each, and the best claim wins
-        //   anyway | upgrade path: cache the proven Claim for the presence TTL,
-        //   keyed by spiffe_id, and prove lazily in descending attainable tier
-        let mut best: Option<Claim> = None;
-        for attestor in &self.attestors {
-            let candidates = match attestor.enumerate().await {
-                Ok(c) => c,
-                Err(e) => {
-                    tracing::warn!(name = attestor.name(), err = %e, "attestor enumerate failed");
-                    continue;
-                }
-            };
-            for candidate in candidates {
-                // The consent boundary, and it is a constraint rather than a
-                // budget: this RPC is reachable by any attested consumer, so a
-                // single FetchJWTSVID must never become a pinentry dialog or a
-                // FIDO2 tap. An application that asked for everything and let
-                // the user tap through would walk away holding every identity
-                // they have.
-                //
-                // Tested against `Silent` rather than for `Interactive`:
-                // `Silent` is the guarantee an attestor gives that proving
-                // *cannot* prompt, `Interactive` means only that it may, and
-                // `ProofCost` is non_exhaustive — so a variant added later is
-                // skipped here until someone decides otherwise, which is the
-                // direction that costs a source its place rather than costing
-                // the user an unasked-for prompt.
-                //
-                // An interactive candidate is not unreachable, it is reached by
-                // asking: hire-ouo5.3's hire_min_assurance spends exactly one
-                // touch, on request. Until that lands, this is the whole story.
-                if candidate.proof_cost != ProofCost::Silent {
+        let challenge = new_challenge()?;
+        let candidates = self.enumerate_all().await;
+
+        // Assurance exists only on the far side of prove(): a candidate with no
+        // evidence yields no claim at all.
+        let best: Option<Claim> = match &requested {
+            // NAMING AN IDENTITY IS THE CONSENT TO PROVE IT, and it is the only
+            // consent there is. A caller that names one identity gets one proof
+            // of one identity, so the prompt it may cost is the prompt it asked
+            // for -- which is why the ProofCost gate below does not apply here,
+            // and why this branch proves exactly one candidate and then stops
+            // whatever the outcome. Retrying the next match would spend a
+            // second touch on a request that authorised one.
+            //
+            // The pre-filter is on the PATH and not on the whole SPIFFE ID,
+            // because the path is what cannot move: Candidate::spiffe_id()
+            // documents that a proven claim may sit under a different trust
+            // domain, since a verified token re-anchors it. The full identity is
+            // compared after the proof, where it is a fact rather than a guess.
+            Some(want) => {
+                let found = candidates
+                    .into_iter()
+                    .find(|(_, candidate)| candidate.path == want.path);
+
+                // One refusal for every way this can fail: no such candidate,
+                // the source declined, the proof did not bind, the proven
+                // identity was a different one. A caller that could tell them
+                // apart could enumerate which identities this human holds by
+                // reading the difference between "unknown" and "refused".
+                let deny = || {
+                    tracing::info!(event = "svid_denied", reason = "selector not proven");
+                    Status::not_found("no such identity could be proven")
+                };
+
+                let (attestor, candidate) = found.ok_or_else(deny)?;
+                let evidence = attestor.prove(&candidate, &challenge).await.map_err(|e| {
                     tracing::debug!(
                         name = attestor.name(),
-                        candidate = %candidate.path,
-                        "not proved: proving it may prompt a human"
+                        err = %e,
+                        "attestor cannot prove the selected candidate"
                     );
-                    continue;
+                    deny()
+                })?;
+                let claim = Claim::derive(&candidate, &challenge, &evidence).ok_or_else(deny)?;
+                if claim.spiffe_id() != want {
+                    return Err(deny());
                 }
+                Some(claim)
+            }
 
-                let evidence = match attestor.prove(&candidate, &challenge).await {
-                    Ok(ev) => ev,
-                    Err(e) => {
+            // ponytail: every silent candidate is proved on every request |
+            //   ceiling: redundant proofs, one socket roundtrip each, and the
+            //   best claim wins anyway | upgrade path: cache the proven Claim
+            //   for the presence TTL, keyed by spiffe_id, and prove lazily in
+            //   descending attainable tier
+            None => {
+                let mut best: Option<Claim> = None;
+                for (attestor, candidate) in candidates {
+                    // The consent boundary, and it is a constraint rather than
+                    // a budget: an unnamed request is reachable by any attested
+                    // consumer, so it must never become a pinentry dialog or a
+                    // FIDO2 tap. An application that asked for everything and
+                    // let the user tap through would walk away holding every
+                    // identity they have.
+                    //
+                    // Tested against `Silent` rather than for `Interactive`:
+                    // `Silent` is the guarantee an attestor gives that proving
+                    // *cannot* prompt, `Interactive` means only that it may,
+                    // and `ProofCost` is non_exhaustive -- so a variant added
+                    // later is skipped here until someone decides otherwise,
+                    // which is the direction that costs a source its place
+                    // rather than costing the user an unasked-for prompt.
+                    if candidate.proof_cost != ProofCost::Silent {
                         tracing::debug!(
                             name = attestor.name(),
-                            err = %e,
-                            "attestor cannot prove candidate"
+                            candidate = %candidate.path,
+                            "not proved: proving it may prompt a human, and nobody asked for it"
                         );
                         continue;
                     }
-                };
-                let Some(claim) = Claim::derive(&candidate, &challenge, &evidence) else {
-                    continue;
-                };
-                if best
-                    .as_ref()
-                    .is_none_or(|b| claim.assurance() > b.assurance())
-                {
-                    best = Some(claim);
+
+                    let evidence = match attestor.prove(&candidate, &challenge).await {
+                        Ok(ev) => ev,
+                        Err(e) => {
+                            tracing::debug!(
+                                name = attestor.name(),
+                                err = %e,
+                                "attestor cannot prove candidate"
+                            );
+                            continue;
+                        }
+                    };
+                    let Some(claim) = Claim::derive(&candidate, &challenge, &evidence) else {
+                        continue;
+                    };
+                    // Strictly greater, so an equal-assurance claim never
+                    // displaces one already held: the first registered attestor
+                    // wins a tie. See `enumerate_all`.
+                    if best
+                        .as_ref()
+                        .is_none_or(|b| claim.assurance() > b.assurance())
+                    {
+                        best = Some(claim);
+                    }
                 }
+                best
             }
-        }
+        };
 
         let claim = best.ok_or_else(|| {
             let reason = "no identity claims available";

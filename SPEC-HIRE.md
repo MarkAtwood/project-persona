@@ -348,6 +348,8 @@ hire whoami                           # print current identity summary
 hire enumerate                        # list all candidate identities with source and SPIFFE ID
 hire disclose --audience X            # show which claims would be disclosed to audience X
 hire fetch-jwt --audience X           # fetch JWT-SVID for audience X (calls FetchJWTSVID)
+hire fetch-jwt --audience X --spiffe-id S  # prove identity S specifically; the only way to reach a
+                                      #   source whose proof may prompt (pinentry, ssh-add -c)
 hire fetch-x509                       # fetch X.509-SVID bundle (calls FetchX509SVIDs)
 hire prove --audience X --challenge N # produce signed assertion for nonce N
 hire watch                            # stream claim add/remove/refresh events

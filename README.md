@@ -30,9 +30,9 @@ identity claims it signs. Treat the assurance and presence levels below as targe
 | SPIFFE Workload API over gRPC/UDS | works -- covered by an end-to-end test |
 | JWT-SVID issuance, ephemeral in-memory CA | works |
 | Attestor registry, startup probing, `enumerate()` | works for most sources; returns candidates, not claims |
-| CLI (`whoami`, `enumerate`, `fetch-jwt`, ...) | works |
+| CLI (`whoami`, `enumerate`, `fetch-jwt`, ...) | works -- `fetch-jwt --spiffe-id` names one identity to prove |
 | `prove()` -- evidence backing a claim | ssh-agent (ed25519 keys only) and gpg prove possession by signing the daemon's challenge; the Unix account source attests the local account and always succeeds. Every other attestor still declines |
-| `FetchJWTSVID` consent gate | proves only candidates that declare proving cannot prompt a human. ssh-agent and gpg cannot give that guarantee -- so both can prove, and neither is reached this way until `hire_min_assurance` lands the path that asks. Today the Unix account source is the only one that reaches issuance |
+| `FetchJWTSVID` consent gate | an unnamed request proves only candidates that declare proving cannot prompt a human, so today it is answered by the Unix account source alone. Naming one identity in `spiffe_id` is the consent to prove it, and is how ssh-agent and gpg are reached |
 | Identity assurance levels | derived from evidence -- see below |
 | Presence levels | enforced across every audience, and unknown requirements are refused rather than ignored |
 | Presence freshness (`hire_max_age`, 300s presence TTL) | enforced -- but no attestor yet establishes presence at all, so the bound is checked against an observation that always reports no presence |
