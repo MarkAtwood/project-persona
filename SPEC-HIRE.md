@@ -78,13 +78,13 @@ spiffe://{trust-domain}/user/{sub}/via/{source}
 
 Examples:
 ```
-spiffe://example.com/user/mark/via/google-workspace
+spiffe://oidc.example.com/user/mark/via/google-workspace
 spiffe://tailscale/user/mark@example.com/node/heft
 spiffe://personal.atwood/identity/mark/attested-by/onlykey
-spiffe://example.com/user/mark/via/piv-smartcard
+spiffe://oidc.example.com/user/mark/via/piv-smartcard
 ```
 
-A consumer that accepts `spiffe://example.com/**` is trusting the example.com trust domain (backed by example.com's Google Workspace). A consumer that additionally accepts `spiffe://tailscale/**` is widening its trust to include Tailscale-network identity. Each trust domain is independent.
+A consumer that accepts `spiffe://oidc.example.com/**` is trusting the example.com trust domain (backed by example.com's Google Workspace). A consumer that additionally accepts `spiffe://tailscale/**` is widening its trust to include Tailscale-network identity. Each trust domain is independent.
 
 ### Pseudonymous IDs (per-consumer)
 
@@ -146,13 +146,17 @@ Each identity source on the desktop publishes into a different trust domain. `hi
 | Trust domain | Backing authority | Verification |
 |---|---|---|
 | `tailscale` | Tailscale coordination server | Tailscale LocalAPI `Status`; node keypair |
-| `{org}.com` | Org's OIDC/SAML IdP | OIDC ID token; JWKS from IdP |
+| `oidc.{org}.com` | Org's OIDC/SAML IdP | OIDC ID token; JWKS from IdP |
 | `personal.{user}` | User's DID document | `did:key`, `did:ipfs`, or `did:web` resolution |
 | `piv.{issuer}` | PIV/CAC certificate chain | Certificate path validation to issuing CA |
 | `ssh.local` | SSH agent (locally trusted) | Agent-signed challenge; weak assurance |
 | `pgp.local` | GPG key | Signed challenge; assurance depends on key custody |
 
-SPIFFE Federation handles cross-domain trust bundle distribution for any of these that need to be accepted by remote relying parties.
+**Every trust domain sits in a reserved namespace, and an authority in none of them is not a hire trust domain.** The string form is injective: two distinct trust domains cannot collide, so re-parsing an issued SPIFFE ID gives back the domain it was minted under. Without the `oidc.` prefix an IdP at `piv.acme.example` would mint IDs that any relying party re-parsing them reads as a PIV smart-card domain -- a different and higher-trust source, reachable from a cached token's `iss` claim.
+
+Authorities are also restricted to the SPIFFE character set (`[a-z0-9.-_]`), and a well-formed authority in no reserved namespace fails to parse rather than being taken as an org domain. `hired` holds no trust bundle for a domain it did not mint, so the alternative is a value that parses and then fails at the next step.
+
+SPIFFE Federation handles cross-domain trust bundle distribution for any of these that need to be accepted by remote relying parties, and lands as a further reserved namespace.
 
 ---
 
@@ -382,11 +386,11 @@ The JWT-SVID payload carries standard SPIFFE claims plus a `hire` extension obje
 
 ```json
 {
-  "sub": "spiffe://example.com/pseudonym/3f1a7b...",
+  "sub": "spiffe://oidc.example.com/pseudonym/3f1a7b...",
   "aud": ["https://example.com"],
   "exp": 1746000000,
   "iat": 1745999700,
-  "spiffe_id": "spiffe://example.com/pseudonym/3f1a7b...",
+  "spiffe_id": "spiffe://oidc.example.com/pseudonym/3f1a7b...",
   "hire": {
     "root_trust_domain": "example.com",
     "sources": ["tailscale", "piv-smartcard"],
@@ -683,7 +687,7 @@ A delegation grant is a signed, short-lived cryptographic object:
   "expires_at": "2026-04-28T22:00:00Z",
 
   "grantor": {
-    "spiffe_id": "spiffe://example.com/user/mark/via/tailscale",
+    "spiffe_id": "spiffe://oidc.example.com/user/mark/via/tailscale",
     "presence_at_issuance": "hardware",
     "presence_attested_at": "2026-04-28T13:59:44Z"
   },

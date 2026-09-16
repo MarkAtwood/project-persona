@@ -106,8 +106,13 @@ mod tests {
     /// these also pin the label: dropping it changes every one of them.
     #[test]
     fn known_vector_org_oidc_binary_consumer() {
-        // salt=b"example.com"
+        // salt=b"oidc.example.com"
         // info=b"hire-pseudonym-v1:binary_sha256:" + b"ab"*32
+        //
+        // The salt is the trust domain's string form, so hire-5s4b.37 moved it
+        // when `OrgOidc` gained its `oidc.` namespace. Recomputed by running the
+        // command above with the new salt -- not by copying what the code now
+        // returns, which would make the vector agree with whatever it produced.
         let got = derive_pseudonym(
             b"secret-ikm",
             &TrustDomain::OrgOidc("example.com".into()),
@@ -115,7 +120,7 @@ mod tests {
         );
         assert_eq!(
             hex(&got),
-            "3200c8d15c6e187ee34b50a34bf055533350c68aebb6644d2e8fe4aa89cdfa3b"
+            "7d8204dd56110454850c7b941aba99c1bcef5d233228c268a736e05bd53fbb3d"
         );
     }
 
