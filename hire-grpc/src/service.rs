@@ -512,6 +512,20 @@ impl SpiffeWorkloadApi for WorkloadApiService {
 
         let mut validation = Validation::new(Algorithm::ES256);
         validation.set_audience(&[&req.audience]);
+        // Chosen, not inherited: jsonwebtoken defaults `leeway` to 60, which
+        // honours a 300s token for 360s. The daemon and every consumer of this
+        // RPC are on the same host behind a Unix socket and read the same
+        // clock, so there is no skew to accommodate and no value above zero
+        // that can be defended here. It also has to be zero for a short TTL to
+        // mean anything: hire-3tly.7.1 gives a source that cannot observe
+        // departure a TTL as its entire safety margin, and a 2s token accepted
+        // for 62s is not a short TTL.
+        //
+        // `reject_tokens_expiring_in_less_than` stays 0 deliberately, and it is
+        // the opposite question: a token valid at the instant it is checked is
+        // valid, and how much of its life a consumer needs left is the
+        // consumer's bound to apply, not ours to guess on its behalf.
+        validation.leeway = 0;
 
         // Checks signature, exp and aud.
         let token_data = decode::<serde_json::Value>(&req.svid, &decoding_key, &validation)

@@ -809,3 +809,80 @@ async fn a_replayed_proof_is_denied() {
     handle.abort();
     let _ = std::fs::remove_file(&socket_path);
 }
+
+// ── hire-yzl8: a token past its exp is past its exp ─────────────────────────
+
+/// Mint an ES256 JWT-SVID with a chosen `exp`, signed by `signer`'s published
+/// key.
+///
+/// `SvidSigner::sign_jwt_svid` hardcodes a 300s life, so a test about expiry
+/// cannot use it without sleeping for five minutes. This assembles the same
+/// token shape around `sign_raw`, which is documented as producing exactly the
+/// fixed-width `r || s` an ES256 JWS carries, and the `kid` keeps it verifiable
+/// against the bundle `TrustBundle::local` publishes for the same signer.
+///
+/// It is not an oracle for itself: the verifying side is `jsonwebtoken` inside
+/// the daemon, and the far-future control below is what proves a token built
+/// here validates at all — so a rejection can only be about the `exp`.
+fn token_expiring_at(signer: &SvidSigner, spiffe_id: &str, exp: u64) -> String {
+    let b64 = |b: &[u8]| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b);
+    let header = serde_json::json!({ "alg": "ES256", "typ": "JWT", "kid": signer.kid() });
+    let claims = serde_json::json!({
+        "sub": spiffe_id,
+        "aud": [AUDIENCE],
+        "exp": exp,
+        "iat": exp.saturating_sub(300),
+        "spiffe_id": spiffe_id,
+        "hire": {},
+    });
+    let signing_input = format!(
+        "{}.{}",
+        b64(&serde_json::to_vec(&header).unwrap()),
+        b64(&serde_json::to_vec(&claims).unwrap())
+    );
+    let signature = signer.sign_raw(signing_input.as_bytes()).unwrap();
+    format!("{signing_input}.{}", b64(&signature))
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock before epoch")
+        .as_secs()
+}
+
+#[tokio::test]
+async fn a_token_seconds_past_exp_is_refused() {
+    let socket_path = tmp_socket_path();
+    let (mut client, foreign, handle) = start_daemon_with_foreign_bundle(&socket_path).await;
+    let id = "spiffe://ssh.local/pseudonym/deadbeef";
+
+    // Control: the same minting path, still inside its life. If this fails the
+    // test below proves nothing, so it is asserted first.
+    let live = token_expiring_at(&foreign, id, unix_now() + 300);
+    let ok = client
+        .validate_jwtsvid(ValidateJwtsvidRequest {
+            svid: live,
+            audience: AUDIENCE.to_owned(),
+        })
+        .await
+        .expect("a token inside its life must validate");
+    assert_eq!(ok.into_inner().spiffe_id, id);
+
+    // Five seconds dead. jsonwebtoken's default leeway of 60 accepts this;
+    // nothing in the daemon's own contract does, and the token says so itself.
+    let expired = token_expiring_at(&foreign, id, unix_now() - 5);
+    assert!(
+        client
+            .validate_jwtsvid(ValidateJwtsvidRequest {
+                svid: expired,
+                audience: AUDIENCE.to_owned(),
+            })
+            .await
+            .is_err(),
+        "an expired JWT-SVID must not validate: leeway is a policy constant, not clock skew"
+    );
+
+    handle.abort();
+    let _ = std::fs::remove_file(&socket_path);
+}
