@@ -3,6 +3,7 @@
 pub mod assurance;
 pub mod audience;
 pub mod consumer;
+pub mod hint;
 pub mod hvid;
 pub mod pseudonym;
 pub mod signer;
@@ -12,6 +13,7 @@ pub mod trust_bundle;
 pub use assurance::{AssuranceError, IdentityAssurance, PresenceLevel};
 pub use audience::{AudienceExtensions, AudienceParseError};
 pub use consumer::ConsumerIdentity;
+pub use hint::{HintParseError, SvidHint};
 pub use hvid::{HireClaims, PresenceInfo};
 pub use signer::{SignerError, SvidSigner};
 pub use spiffe_id::{SpiffeId, SpiffeIdError, TrustDomain};

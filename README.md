@@ -33,6 +33,8 @@ identity claims it signs. Treat the assurance and presence levels below as targe
 | CLI (`whoami`, `enumerate`, `fetch-jwt`, ...) | works -- `fetch-jwt --spiffe-id` names one identity to prove |
 | `prove()` -- evidence backing a claim | ssh-agent (ed25519 keys only), gpg and `did:key` prove possession by signing the daemon's challenge; tailscaled and the kernel are asked again and must answer the same way. OIDC, FIDO2, PIV and GOA still decline |
 | `FetchJWTSVID` consent gate | an unnamed request proves only candidates that declare proving cannot prompt a human -- Tailscale where it runs, the Unix account otherwise. Naming one identity in `spiffe_id` is the consent to prove it, and is how ssh-agent, gpg and `did:key` are reached |
+| `FetchJWTSVID` returns a list | every silently-provable identity, one SVID each, best-first and deduplicated by SPIFFE ID |
+| `hint` tag on each SVID | `source=...&identity_assurance=...&presence=...&age=...` -- normative, while the order is advisory |
 | Identity assurance levels | derived from evidence -- see below |
 | Presence levels | enforced across every audience, and unknown requirements are refused rather than ignored |
 | Presence freshness (`hire_max_age`, 300s presence TTL) | enforced -- but no attestor yet establishes presence at all, so the bound is checked against an observation that always reports no presence |

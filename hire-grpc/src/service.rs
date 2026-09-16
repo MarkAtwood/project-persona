@@ -6,13 +6,13 @@ use tonic::{Request, Response, Status};
 
 use hire_attestors::{Attestor, Candidate, Claim, ProofCost};
 use hire_core::{
-    AudienceExtensions, HireClaims, PresenceInfo, PresenceLevel, SpiffeId, SvidSigner,
-    TrustBundleStore, TrustDomain,
+    AudienceExtensions, ConsumerIdentity, HireClaims, PresenceInfo, PresenceLevel, SpiffeId,
+    SvidHint, SvidSigner, TrustBundleStore, TrustDomain,
 };
 
 use crate::consumer_attest::PeerIdentity;
 use crate::workload::{
-    spiffe_workload_api_server::SpiffeWorkloadApi, JwtBundlesRequest, JwtBundlesResponse,
+    spiffe_workload_api_server::SpiffeWorkloadApi, JwtBundlesRequest, JwtBundlesResponse, Jwtsvid,
     JwtsvidRequest, JwtsvidResponse, ValidateJwtsvidRequest, ValidateJwtsvidResponse,
     WitBundlesRequest, WitBundlesResponse, WitsvidRequest, WitsvidResponse, X509BundlesRequest,
     X509BundlesResponse, X509svidRequest, X509svidResponse,
@@ -86,6 +86,142 @@ impl WorkloadApiService {
     /// An attestor that fails to enumerate is logged and skipped. One source
     /// being unreachable is not a reason to refuse an identity another source
     /// can prove.
+    /// Turn one proven claim into one JWT-SVID, or say why it cannot be.
+    ///
+    /// The policy gates live here rather than around the loop, so a claim that
+    /// fails one is left out of the list instead of refusing the request: an
+    /// audience demanding hardware presence gets the identities that have it,
+    /// and an empty result is what refuses.
+    ///
+    /// `now` is a parameter so every claim in one response is measured against
+    /// one instant. Reading the clock per claim would let two identities
+    /// attested in the same millisecond publish different ages.
+    fn issue(
+        &self,
+        claim: &Claim,
+        consumer: &ConsumerIdentity,
+        audiences: &[&str],
+        require_presence: PresenceLevel,
+        max_age: Option<Duration>,
+        now: SystemTime,
+    ) -> Result<Jwtsvid, Status> {
+        let age = claim.age_at(now);
+
+        if !within_max_age(age, max_age) {
+            // The measured age is not in the reason: it is a per-human value
+            // and this string goes to the consumer. The bound is the caller's
+            // own parameter, so naming it tells a colluder nothing.
+            return Err(Status::unauthenticated(
+                "presence observation is older than the requested hire_max_age",
+            ));
+        }
+
+        // The daemon's own TTL, applied as decay rather than as a second refusal
+        // path: past the TTL the claim asserts no presence, and the gate below —
+        // and the `Ord` on PresenceLevel it rests on — keeps doing all the work.
+        let presence = if age.is_some_and(|age| age < PRESENCE_TTL) {
+            claim.presence()
+        } else {
+            PresenceLevel::None
+        };
+
+        // Presence gate. `require_presence` is the strictest level named by any
+        // audience, so satisfying it satisfies every audience the token names.
+        if require_presence > presence {
+            return Err(Status::unauthenticated(format!(
+                "required presence level not satisfied (need {require_presence:?}, have {presence:?})"
+            )));
+        }
+
+        // Both published instants are whole Unix seconds and both are functions
+        // of the observation, not of the clock at request time, so re-requesting
+        // cannot move them. Truncation is the fail-closed direction: attested_at
+        // reads up to a second older than it was and present_until up to a
+        // second shorter, never the reverse. A pre-epoch observation publishes
+        // as 0, which is honestly "maximally old" — unlike the
+        // `unwrap_or_default()` this replaces, where zero meant "now".
+        //
+        // hire-5s4b.118, accepted and bounded: two consumers served from one
+        // observation receive byte-identical values here, so this is a join key
+        // across their distinct pseudonyms, stable for the whole presence
+        // window. It is published anyway. Withholding it leaves a consumer
+        // unable to judge freshness for itself and forced to trust a TTL it
+        // cannot check, which is hearsay one layer down. Whole seconds is the
+        // floor: finer resolution buys a JWT consumer nothing and multiplies the
+        // linkage.
+        let attested_at = claim
+            .attested_at()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let present_until = attested_at.saturating_add(PRESENCE_TTL.as_secs());
+
+        // Built through the type that defines the wire format, so a field added
+        // to `HireClaims` stops compiling here instead of silently vanishing
+        // from the token.
+        let hire_ext = serde_json::to_value(HireClaims::new(
+            claim.spiffe_id().trust_domain.to_string(),
+            vec![claim.source().to_owned()],
+            claim.assurance(),
+            PresenceInfo {
+                present: presence != PresenceLevel::None,
+                attested_by: claim.source().to_owned(),
+                attested_at,
+                present_until,
+            },
+            vec![claim.source().to_owned()],
+        ))
+        .expect("HireClaims serialises as JSON");
+
+        // The root identity is an input to derivation and never an output. There
+        // is no branch here that can emit claim.spiffe_id().uri().
+        let spiffe_id = self
+            .signer
+            .pseudonymous_id(claim.spiffe_id(), consumer)
+            .uri();
+
+        let token = self
+            .signer
+            .sign_jwt_svid(&spiffe_id, audiences, hire_ext)
+            .map_err(|e| Status::internal(e.to_string()))?;
+
+        // The tag is normative and the order SVIDs arrive in is not, so this is
+        // what a caller with several SVIDs is expected to read. An age that
+        // cannot be measured — a claim dated into the future — publishes as
+        // `u64::MAX`, which is honestly "maximally old" and is the fail-shut
+        // direction for any caller gating on it.
+        let hint = SvidHint {
+            source: claim.source().to_owned(),
+            identity_assurance: claim.assurance(),
+            presence,
+            age: age.map_or(u64::MAX, |age| age.as_secs()),
+        }
+        .to_string();
+
+        // Deliberately no root identity here. Logging it beside the pseudonym would
+        // write the join table this feature exists to withhold, and hired is a
+        // user-session daemon: its log goes to the user journal or to
+        // ~/Library/Logs, both readable by every consumer, which all run as that
+        // same user. An operator debugging "which application got which identity"
+        // gets the consumer and the pseudonym, which is enough to follow a request;
+        // the mapping back to the root is the secret.
+        tracing::info!(
+            event = "svid_issued",
+            consumer = %consumer.selector_key(),
+            spiffe_id = %spiffe_id,
+            source = %claim.source(),
+            assurance = %claim.assurance(),
+            presence = ?presence,
+            audiences = ?audiences,
+        );
+
+        Ok(Jwtsvid {
+            spiffe_id,
+            svid: token,
+            hint,
+        })
+    }
+
     async fn enumerate_all(&self) -> Vec<(&Arc<dyn Attestor>, Candidate)> {
         let mut found = Vec::new();
         for attestor in &self.attestors {
@@ -254,8 +390,6 @@ impl SpiffeWorkloadApi for WorkloadApiService {
         &self,
         req: Request<JwtsvidRequest>,
     ) -> Result<Response<JwtsvidResponse>, Status> {
-        use crate::workload::Jwtsvid;
-
         // Consumer attestation, before anything else is parsed. A caller the
         // daemon cannot name learns nothing further — not whether the audience was
         // well formed, not whether this user has any identity at all.
@@ -329,7 +463,7 @@ impl SpiffeWorkloadApi for WorkloadApiService {
 
         // Assurance exists only on the far side of prove(): a candidate with no
         // evidence yields no claim at all.
-        let best: Option<Claim> = match &requested {
+        let claims: Vec<Claim> = match &requested {
             // NAMING AN IDENTITY IS THE CONSENT TO PROVE IT, and it is the only
             // consent there is. A caller that names one identity gets one proof
             // of one identity, so the prompt it may cost is the prompt it asked
@@ -371,7 +505,7 @@ impl SpiffeWorkloadApi for WorkloadApiService {
                 if claim.spiffe_id() != want {
                     return Err(deny());
                 }
-                Some(claim)
+                vec![claim]
             }
 
             // ponytail: every silent candidate is proved on every request |
@@ -380,7 +514,7 @@ impl SpiffeWorkloadApi for WorkloadApiService {
             //   for the presence TTL, keyed by spiffe_id, and prove lazily in
             //   descending attainable tier
             None => {
-                let mut best: Option<Claim> = None;
+                let mut proven: Vec<Claim> = Vec::new();
                 for (attestor, candidate) in candidates {
                     // The consent boundary, and it is a constraint rather than
                     // a budget: an unnamed request is reachable by any attested
@@ -419,26 +553,41 @@ impl SpiffeWorkloadApi for WorkloadApiService {
                     let Some(claim) = Claim::derive(&candidate, &challenge, &evidence) else {
                         continue;
                     };
-                    // Strictly greater, so an equal-assurance claim never
-                    // displaces one already held: the first registered attestor
-                    // wins a tie. See `enumerate_all`.
-                    if best
-                        .as_ref()
-                        .is_none_or(|b| claim.assurance() > b.assurance())
-                    {
-                        best = Some(claim);
-                    }
+                    proven.push(claim);
                 }
-                best
+
+                // Best-first, and DOCUMENTED BUT ADVISORY: `hint` is what a
+                // caller gates on. hire-3tly.5 holds that presence is at least
+                // three independent axes, so a stale hardware touch and a live
+                // session have no honest total order and nothing here pretends
+                // otherwise. What this order does guarantee is that `svids[0]`
+                // is a defensible cheap answer for a caller that reads no
+                // further.
+                //
+                // A stable sort, which is what keeps the registration-order
+                // tiebreak: among equal-assurance claims the first registered
+                // attestor stays first, and `registry.rs` appends the Unix
+                // account source last precisely so anything that proved a key
+                // beats "the kernel says this uid".
+                proven.sort_by_key(|claim| std::cmp::Reverse(claim.assurance()));
+
+                // One SVID per distinct identity. Two attestors that prove the
+                // same SPIFFE ID have proven the same thing twice, and handing
+                // a caller two tokens for one subject makes it choose between
+                // indistinguishable options. The survivor is the one the sort
+                // put first, so the tiebreak decides which source is named.
+                let mut seen = std::collections::HashSet::new();
+                proven.retain(|claim| seen.insert(claim.spiffe_id().uri()));
+                proven
             }
         };
 
-        let claim = best.ok_or_else(|| {
-            let reason = "no identity claims available";
-            tracing::info!(event = "svid_denied", reason);
-            Status::unauthenticated(reason)
-        })?;
-
+        // Every identity the caller is entitled to, not the one the daemon
+        // ranked highest. workload.proto calls `svids` "the list of returned
+        // JWT-SVIDs" and defines `hint` as guidance "when more than one SVID is
+        // returned", so a list is the conformant shape and returning one was
+        // the deviation (hire-jl4j).
+        //
         // ponytail: no clock seam. Unit tests pass `now` explicitly to
         //   Claim::age_at, so the fold and the age arithmetic are exercised
         //   against fixed constants. The end-to-end tests cannot do that — the
@@ -453,117 +602,32 @@ impl SpiffeWorkloadApi for WorkloadApiService {
         //   those tests move the clock instead of waiting. Not worth a field on
         //   a production type until the waits actually hurt.
         let now = SystemTime::now();
-        let age = claim.age_at(now);
-
-        if !within_max_age(age, max_age) {
-            // The measured age is not in the reason: it is a per-human value
-            // and this string goes to the consumer. The bound is the caller's
-            // own parameter, so naming it tells a colluder nothing.
-            let reason = "presence observation is older than the requested hire_max_age";
-            tracing::info!(event = "svid_denied", reason);
-            return Err(Status::unauthenticated(reason));
-        }
-
-        // The daemon's own TTL, applied as decay rather than as a second refusal
-        // path: past the TTL the claim asserts no presence, and the gate below —
-        // and the `Ord` on PresenceLevel it rests on — keeps doing all the work.
-        let presence = if age.is_some_and(|age| age < PRESENCE_TTL) {
-            claim.presence()
-        } else {
-            PresenceLevel::None
-        };
-
-        // Presence gate. `require_presence` is the strictest level named by any
-        // audience, so satisfying it satisfies every audience the token names.
-        if require_presence > presence {
-            let reason = format!(
-                "required presence level not satisfied (need {require_presence:?}, have {presence:?})"
-            );
-            tracing::info!(event = "svid_denied", reason = %reason);
-            return Err(Status::unauthenticated(reason));
-        }
-
-        // Both published instants are whole Unix seconds and both are functions
-        // of the observation, not of the clock at request time, so re-requesting
-        // cannot move them. Truncation is the fail-closed direction: attested_at
-        // reads up to a second older than it was and present_until up to a
-        // second shorter, never the reverse. A pre-epoch observation publishes
-        // as 0, which is honestly "maximally old" — unlike the
-        // `unwrap_or_default()` this replaces, where zero meant "now".
-        //
-        // hire-5s4b.118, accepted and bounded: two consumers served from one
-        // observation receive byte-identical values here, so this is a join key
-        // across their distinct pseudonyms, stable for the whole presence
-        // window. It is published anyway. Withholding it leaves a consumer
-        // unable to judge freshness for itself and forced to trust a TTL it
-        // cannot check, which is hearsay one layer down. Whole seconds is the
-        // floor: finer resolution buys a JWT consumer nothing and multiplies the
-        // linkage.
-        let attested_at = claim
-            .attested_at()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-        let present_until = attested_at.saturating_add(PRESENCE_TTL.as_secs());
-
-        // Built through the type that defines the wire format, so a field added
-        // to `HireClaims` stops compiling here instead of silently vanishing
-        // from the token.
-        let hire_ext = serde_json::to_value(HireClaims::new(
-            claim.spiffe_id().trust_domain.to_string(),
-            vec![claim.source().to_owned()],
-            claim.assurance(),
-            PresenceInfo {
-                present: presence != PresenceLevel::None,
-                attested_by: claim.source().to_owned(),
-                attested_at,
-                present_until,
-            },
-            vec![claim.source().to_owned()],
-        ))
-        .expect("HireClaims serialises as JSON");
-
-        // The root identity is an input to derivation and never an output. There
-        // is no branch here that can emit claim.spiffe_id().uri().
-        let spiffe_id_str = self
-            .signer
-            .pseudonymous_id(claim.spiffe_id(), &consumer)
-            .uri();
         let audiences: Vec<&str> = exts.iter().map(|e| e.audience.as_str()).collect();
 
-        let token = self
-            .signer
-            .sign_jwt_svid(&spiffe_id_str, &audiences, hire_ext)
-            .map_err(|e| {
-                let reason = e.to_string();
-                tracing::info!(event = "svid_denied", reason = %reason);
-                Status::internal(reason)
-            })?;
+        let mut svids = Vec::with_capacity(claims.len());
+        // The first refusal, kept so an empty list can say why rather than
+        // reporting the generic absence. Claims arrive best-first, so the first
+        // refusal is the one about the identity the caller most likely wanted.
+        let mut refusal: Option<Status> = None;
+        for claim in &claims {
+            match self.issue(claim, &consumer, &audiences, require_presence, max_age, now) {
+                Ok(svid) => svids.push(svid),
+                Err(status) => {
+                    tracing::info!(event = "svid_denied", reason = %status.message());
+                    refusal.get_or_insert(status);
+                }
+            }
+        }
 
-        // Deliberately no root identity here. Logging it beside the pseudonym would
-        // write the join table this feature exists to withhold, and hired is a
-        // user-session daemon: its log goes to the user journal or to
-        // ~/Library/Logs, both readable by every consumer, which all run as that
-        // same user. An operator debugging "which application got which identity"
-        // gets the consumer and the pseudonym, which is enough to follow a request;
-        // the mapping back to the root is the secret.
-        tracing::info!(
-            event = "svid_issued",
-            consumer = %consumer.selector_key(),
-            spiffe_id = %spiffe_id_str,
-            source = %claim.source(),
-            assurance = %claim.assurance(),
-            presence = ?presence,
-            audiences = ?audiences,
-        );
+        if svids.is_empty() {
+            return Err(refusal.unwrap_or_else(|| {
+                let reason = "no identity claims available";
+                tracing::info!(event = "svid_denied", reason);
+                Status::unauthenticated(reason)
+            }));
+        }
 
-        Ok(Response::new(JwtsvidResponse {
-            svids: vec![Jwtsvid {
-                spiffe_id: spiffe_id_str,
-                svid: token,
-                hint: String::new(),
-            }],
-        }))
+        Ok(Response::new(JwtsvidResponse { svids }))
     }
 
     // hire-t67: JWT-SVID validation, against the published trust bundle and

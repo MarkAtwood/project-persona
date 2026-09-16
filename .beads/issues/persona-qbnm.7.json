@@ -1,0 +1,27 @@
+{
+  "id": "persona-qbnm.7",
+  "title": "oidc: verify the cached token against the issuer's JWKS",
+  "description": "Split from persona-qbnm.6, whose tailscale half landed in 510c875. oidc is not a trust-assertion problem at all: a cached ID token carries a real signature that could be checked against the issuer's JWKS and simply is not. That makes it a verifier to write, not a trust to assert -- the opposite of tailscale, which is why bundling them was wrong.\n\nMEASURED STATE (2026-09-15): oidc.rs:119-168 reads ~/.config/gcloud/application_default_credentials.json and ~/.azure/{msal_token_cache.json,accessTokens.json}, decodes the payload with NO signature check (:37-44), and uses exp for freshness only (:57-61). Nothing in the workspace fetches a JWKS or verifies a third-party JWT: jsonwebtoken appears only in hire-core/src/signer.rs, hire-core/src/trust_bundle.rs:60-70 (which already parses a JwkSet and finds a key by kid -- reusable shape) and hire-grpc/src/service.rs. There is no HTTPS client anywhere; hyper-util is the UDS transport, not a TLS client. A discovery + JWKS fetch needs a new dependency.\n\nTHE BLOCKER IS auth_time, NOT THE FETCH. VerifiedToken's doc comment (claim.rs) requires authenticated_at to come from the token's auth_time and requires the constructor to REFUSE when auth_time is absent, because stamping SystemTime::now() would make every cached token permanently session-fresh -- persona-ogiv's bug restored on the OIDC path, beside a type that looks like it prevents exactly that. auth_time is OPTIONAL in OIDC Core unless max_age or auth_time was requested at authorization time, and neither gcloud ADC nor Azure v2.0 generally includes it. So the honest outcome of doing all the JWKS work is that the verifying constructor refuses most real cached tokens and oidc still contributes nothing.\n\nDECIDE THAT FIRST, before writing any fetch code. Refusing is correct per the type's own contract; the alternative is changing what authenticated_at means, which reopens the bug the field exists to prevent. If the answer is 'refuse', this bead is cheap and mostly documentation -- and that is a constraint deleting a category of work, not a failure.\n\nSECOND OPEN QUESTION: Evidence::binds_to returns true unconditionally for IdpVerified (claim.rs), with a ponytail naming the token nonce as the intended binding. A cached token carries a nonce from someone else's login flow, not hire's challenge, so the replay window stays open unless that is decided too.",
+  "acceptance_criteria": "A decision recorded on what to do when auth_time is absent, before any JWKS fetching code exists.",
+  "status": "open",
+  "priority": 2,
+  "issue_type": "task",
+  "owner": "mark@reviewcommit.com",
+  "created_at": "2026-09-16T01:37:15.883403454Z",
+  "created_by": "agent",
+  "updated_at": "2026-09-16T01:37:15.883403454Z",
+  "labels": [
+    "attestor",
+    "driver"
+  ],
+  "dependencies": [
+    {
+      "issue_id": "persona-qbnm.7",
+      "depends_on_id": "persona-qbnm",
+      "type": "parent-child",
+      "created_at": "2026-09-16T01:37:15.907496363Z",
+      "created_by": "agent",
+      "metadata": "{}"
+    }
+  ]
+}

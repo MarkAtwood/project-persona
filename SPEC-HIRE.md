@@ -300,11 +300,25 @@ Register `hired` as a FedCM identity provider. The browser handles the trust UI;
 
 - `FetchX509SVIDs` — streaming; returns X.509-SVIDs, refreshes before expiry
 - `FetchX509Bundles` — trust bundles for all active trust domains
-- `FetchJWTSVID` — returns JWT-SVID for a given audience; triggers presence challenge if `hire_require_presence` is set in the audience claim
+- `FetchJWTSVID` — returns JWT-SVIDs for a given audience; triggers presence challenge if `hire_require_presence` is set in the audience claim. `spiffe_id` unset returns every identity provable **without prompting a human**; `spiffe_id` set names one identity to prove, and naming it is the consent to prompt for it
 - `FetchJWTBundles` — JWKS endpoints for all trust domains
 - `ValidateJWTSVID` — validates a JWT-SVID against the trust bundle
 
 No new wire protocol is invented. Any SPIFFE-aware consumer (envoy, ghostunnel, spiffe-helper, go-spiffe, rust-spiffe, java-spiffe) works against `hired` out of the box.
+
+### Choosing among several SVIDs
+
+`FetchJWTSVID` returns a list, and each entry carries a machine-readable `hint`:
+
+```text
+source=tailscale&identity_assurance=iaa2&presence=none&age=3
+```
+
+**The tag is normative; the order is advisory.** `svids[0]` is a defensible cheap answer for a caller that reads no further, but no caller is ever required to depend on the order to be correct. A caller that needs a particular kind of identity reads the tag and chooses.
+
+The four fields do not reduce to one score, deliberately: a stale hardware touch and a live session have no honest ordering, so the daemon reports both axes and the caller decides. Every name in the tag is one the caller already meets elsewhere — `source` and `identity_assurance` are fields of the `hire` claim block, `presence` takes the same values as `hire_require_presence`, and `age` is in seconds like `hire_max_age`.
+
+An unknown or repeated key in a tag is a parse error, never something to skip: the `hire_` audience namespace is closed for the same reason, and a caller gating on the tag must never be told yes by a daemon that carried a field the caller could not see.
 
 ### Presence extension
 
