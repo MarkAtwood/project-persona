@@ -4,7 +4,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tonic::{Request, Response, Status};
 
-use hire_attestors::{Attestor, Claim};
+use hire_attestors::{Attestor, Claim, ProofCost};
 use hire_core::{
     AudienceExtensions, HireClaims, PresenceInfo, PresenceLevel, SvidSigner, TrustBundleStore,
     TrustDomain,
@@ -286,10 +286,10 @@ impl SpiffeWorkloadApi for WorkloadApiService {
         // exists only on the far side of prove(): a candidate with no evidence
         // yields no claim at all.
         //
-        // ponytail: every candidate is proved on every request | ceiling: once a
-        //   hardware attestor can prompt, this is one touch per candidate per RPC
-        //   | upgrade path: cache the proven Claim for the presence TTL, keyed by
-        //   spiffe_id, and prove lazily in descending attainable tier
+        // ponytail: every silent candidate is proved on every request | ceiling:
+        //   redundant proofs, one socket roundtrip each, and the best claim wins
+        //   anyway | upgrade path: cache the proven Claim for the presence TTL,
+        //   keyed by spiffe_id, and prove lazily in descending attainable tier
         let mut best: Option<Claim> = None;
         for attestor in &self.attestors {
             let candidates = match attestor.enumerate().await {
@@ -300,6 +300,33 @@ impl SpiffeWorkloadApi for WorkloadApiService {
                 }
             };
             for candidate in candidates {
+                // The consent boundary, and it is a constraint rather than a
+                // budget: this RPC is reachable by any attested consumer, so a
+                // single FetchJWTSVID must never become a pinentry dialog or a
+                // FIDO2 tap. An application that asked for everything and let
+                // the user tap through would walk away holding every identity
+                // they have.
+                //
+                // Tested against `Silent` rather than for `Interactive`:
+                // `Silent` is the guarantee an attestor gives that proving
+                // *cannot* prompt, `Interactive` means only that it may, and
+                // `ProofCost` is non_exhaustive — so a variant added later is
+                // skipped here until someone decides otherwise, which is the
+                // direction that costs a source its place rather than costing
+                // the user an unasked-for prompt.
+                //
+                // An interactive candidate is not unreachable, it is reached by
+                // asking: hire-ouo5.3's hire_min_assurance spends exactly one
+                // touch, on request. Until that lands, this is the whole story.
+                if candidate.proof_cost != ProofCost::Silent {
+                    tracing::debug!(
+                        name = attestor.name(),
+                        candidate = %candidate.path,
+                        "not proved: proving it may prompt a human"
+                    );
+                    continue;
+                }
+
                 let evidence = match attestor.prove(&candidate, &challenge).await {
                     Ok(ev) => ev,
                     Err(e) => {

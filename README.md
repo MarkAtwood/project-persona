@@ -32,6 +32,7 @@ identity claims it signs. Treat the assurance and presence levels below as targe
 | Attestor registry, startup probing, `enumerate()` | works for most sources; returns candidates, not claims |
 | CLI (`whoami`, `enumerate`, `fetch-jwt`, ...) | works |
 | `prove()` -- evidence backing a claim | ssh-agent (ed25519 keys only) proves possession; the Unix account source attests the local account and always succeeds. Every other attestor still declines |
+| `FetchJWTSVID` consent gate | proves only candidates that declare proving cannot prompt a human. ssh-agent and gpg cannot give that guarantee, so today the Unix account source is the only one that reaches issuance |
 | Identity assurance levels | derived from evidence -- see below |
 | Presence levels | enforced across every audience, and unknown requirements are refused rather than ignored |
 | Presence freshness (`hire_max_age`, 300s presence TTL) | enforced -- but no attestor yet establishes presence at all, so the bound is checked against an observation that always reports no presence |

@@ -10,7 +10,7 @@ use base64::Engine as _;
 use ed25519_dalek::{Signer as _, SigningKey};
 use sha2::{Digest, Sha256};
 
-use hire_attestors::{Candidate, ChallengeSignature, Evidence, SelfAssertedDomain};
+use hire_attestors::{Candidate, ChallengeSignature, Evidence, ProofCost, SelfAssertedDomain};
 
 /// A fixed seed rather than `SigningKey::generate`: the doubles need
 /// determinism, not randomness, and a seed sidesteps the `rand_core` version
@@ -46,6 +46,11 @@ pub fn candidate(source: &str) -> Candidate {
         format!("key/{fingerprint}"),
         "Test User",
     )
+    // Honest rather than convenient: the double signs with a fixed key held in
+    // this process, so proving it cannot reach a human by any path. Without the
+    // declaration FetchJWTSVID's consent gate skips it and every test in this
+    // directory that expects an issued SVID stops seeing one.
+    .with_proof_cost(ProofCost::Silent)
 }
 
 /// Sign `challenge` with the test key and verify it, exactly as the ssh

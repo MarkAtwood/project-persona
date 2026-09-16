@@ -18,7 +18,7 @@ use tokio::time::sleep;
 use tonic::transport::{Endpoint, Uri};
 use tower::service_fn;
 
-use hire_attestors::{Attestor, AttestorError, Candidate, SelfAssertedDomain};
+use hire_attestors::{Attestor, AttestorError, Candidate, ProofCost, SelfAssertedDomain};
 use hire_core::{SvidSigner, TrustBundle, TrustBundleStore, TrustDomain};
 use hire_grpc::{
     service::WorkloadApiService, workload::spiffe_workload_api_client::SpiffeWorkloadApiClient,
@@ -35,12 +35,17 @@ impl Attestor for CandidateOnlyAttestor {
     }
 
     async fn enumerate(&self) -> Result<Vec<Candidate>, AttestorError> {
+        // Silent, so FetchJWTSVID's consent gate lets it through to prove().
+        // What is under test here is the default prove() refusal; a candidate
+        // skipped before prove() would yield no claim for the wrong reason and
+        // this file would pass whatever the default body did.
         Ok(vec![Candidate::new(
             "candidate-only",
             SelfAssertedDomain::SshLocal,
             "user/testuser",
             "Test User",
-        )])
+        )
+        .with_proof_cost(ProofCost::Silent)])
     }
 }
 
